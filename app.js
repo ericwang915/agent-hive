@@ -145,7 +145,7 @@ const iconBtns = a => `<button class="btn sm icon ghost" data-act="more" data-id
 function cardHtml(a) {
   const g = a.git ? `<div class="gitline">${ICON.branch}<span class="ell">${esc(a.git.url.replace(/^.*[:/]([^/:]+\/[^/]+?)(\.git)?$/, '$1'))}${a.git.branch ? '@' + esc(a.git.branch) : ''}</span></div>` : ''
   return `<div class="card${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}">
-  <div class="card-head">${beeOf(a, 44)}<div class="grow"><div class="nm round ell">${esc(a.name)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status)}</div>
+  <div class="card-head">${beeOf(a, 44)}<div class="grow"><div class="nmrow"><span class="nm round ell">${esc(a.name)}</span>${rankChip(a)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a)}</div>
   <div class="meta"><span class="task ell">${esc(a.task)}</span><span class="sched">${esc(schedMeta(a))}</span></div>
@@ -169,7 +169,7 @@ function relHtml(a, A) {
 }
 function miniHtml(a, tight) {
   return `<div class="mini${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}">
-  <div class="card-head">${beeOf(a, 30)}<div class="grow"><div class="nm round ell">${esc(a.name)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status, tight)}</div>
+  <div class="card-head">${beeOf(a, 30)}<div class="grow"><div class="nmrow"><span class="nm round ell">${esc(a.name)}</span>${rankChip(a)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status, tight)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a, true)}${relHtml(a, S.agents)}</div>
   <div class="card-actions">${mainBtn(a, true)}<span class="sp"></span><button class="btn sm icon ghost" data-act="chat" data-id="${a.id}" title="Chat">${ICON.chat}</button>${iconBtns(a)}</div>
@@ -859,8 +859,8 @@ function roomEntryHtml(e) {
     const tag = e.direct && e.status === 'DONE' ? '' : `<span class="tagx s-${esc(e.status)}">${RLABEL[e.status] || esc(e.status)}</span>`
     const body = e.direct ? `<div class="md">${renderMd(e.text || '')}</div>` : `<div class="tx">${txt}</div>`
     const stick = e.sticker ? `<div class="sticker" title="${esc(STICKER[e.sticker] ? STICKER[e.sticker][0] : '')}">${stickerSvg(e.sticker, e.color)}</div>` : ''
-    if (stick && !e.text) return `<div class="rm"><span class="av">${beeSvg(e.color || '#ccc', 'happy', 28)}</span><div class="col"><div class="nm"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button><time>${hm(e.t)}</time></div>${stick}</div></div>`
-    return `<div class="rm"><span class="av">${beeSvg(e.color || '#ccc', e.status === 'ERROR' ? 'sad' : 'happy', 28)}</span><div class="rm-card result col${e.direct ? ' direct' : ''}${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" title="Open ${esc(e.name)}'s full chat" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button>${tag}${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'}</span>` : ''}<span class="grow"></span><time>${hm(e.t)}</time></div>${body}${stick}</div></div>`
+    if (stick && !e.text) return `<div class="rm"><span class="av">${beeFace(byId(e.who) || { color: e.color || '#ccc' })}</span><div class="col"><div class="nm"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button><time>${hm(e.t)}</time></div>${stick}</div></div>`
+    return `<div class="rm"><span class="av">${beeFace(byId(e.who) || { color: e.color || '#ccc' }, 28, e.status === 'ERROR' ? 'sad' : 'happy')}</span><div class="rm-card result col${e.direct ? ' direct' : ''}${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" title="Open ${esc(e.name)}'s full chat" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button>${tag}${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'}</span>` : ''}<span class="grow"></span><time>${hm(e.t)}</time></div>${body}${stick}</div></div>`
   }
   return `<div class="rm"><span class="av">${queenSvg(28)}</span><div class="col"><div class="nm">Queen<time>${hm(e.t)}</time></div><div class="md">${renderMd(e.text || '')}</div></div></div>`
 }

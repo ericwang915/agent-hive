@@ -48,6 +48,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 - **Memory and skills.** Overnight, *Dreamer* tidies long-term memory and *Gardener* turns the day's conversations into reusable skills. New sessions start with both.
 - **Dashboard.** A 24-hour activity timeline, spend, and Queen's daily report.
 - **Upgrades.** When a newer release is out, an Upgrade button appears in the sidebar. It downloads the release, checks that it is signed by the same developer, swaps the app and restarts.
+- **Ranks.** Every finished round counts. A bee climbs from Bronze through Silver, Gold, Platinum and Diamond to Master, and its look changes with each rank.
 - **Right-click anything.** Rename, settings, stop and delete for bees and groups.
 
 ## Install

@@ -555,6 +555,13 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq(args({ noMcp: true, permission: 'ask' }).filter(x => x === '--mcp-config').length, 1)
   assert.ok(args({ noMcp: true, permission: 'ask' }).includes('--strict-mcp-config') && !args({ permission: 'full' }).includes('--strict-mcp-config'))
 }
+{ // ranks
+  const c = require('./common.js')
+  eq([0, 4, 5, 19, 20, 50, 120, 300, 9999].map(x => c.rankOf(x).name), ['Bronze', 'Bronze', 'Silver', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Master'])
+  eq([c.rankOf(undefined).i, c.rankOf(-3).xp, c.rankOf(7).need, c.rankOf(7).next, c.rankOf(400).next, c.rankOf(400).pct], [0, 0, 13, 'Gold', '', 1])
+  const plain = c.beeSvg('#abc'), gold = c.beeSvg('#abc', 'happy', 44, false, '', '', 2)
+  assert.ok(plain.includes('fill="#3A2E22"/></g>') && gold.includes('#E2A93A') && gold !== plain && c.beeSvg('#abc', 'happy', 44, false, '', '', 99) === plain)
+}
 { // upgrade
   const up = require('./update.js')
   eq([up.newer('v1.2.0', '1.1.9'), up.newer('1.10.0', '1.9.3'), up.newer('1.1.0', '1.1.0'), up.newer('v1.0.0', '1.1.0'), up.newer('2.0', '1.9.9')], [true, true, false, false, true])

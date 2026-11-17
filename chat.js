@@ -74,7 +74,7 @@ function setLive(p) {
   const stick = nearBottom()
   thinking = !!(p && p.thinking)
   if (p && p.text) {
-    if (!liveNode) { liveNode = el('step a live', `${lastRole === 'assistant' ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md"></div>`); tl.appendChild(liveNode) }
+    if (!liveNode) { liveNode = el('step a live', `${lastRole === 'assistant' ? '' : `<span class="mark">${beeFace(A, 18)}</span>`}<div class="md"></div>`); tl.appendChild(liveNode) }
     liveNode.querySelector('.md').innerHTML = renderMd(p.text, baseDir(), S.home)
   } else if (liveNode && !thinking) { liveNode.remove(); liveNode = null }
   updWorking()
@@ -107,7 +107,7 @@ function addEntry(e, live) {
     }
     case 'assistant': {
       const html = renderMd(e.text, baseDir(), S.home)
-      node = el('step a' + sub, `${lastRole === 'assistant' || sub ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md">${html}</div>`)
+      node = el('step a' + sub, `${lastRole === 'assistant' || sub ? '' : `<span class="mark">${beeFace(A, 18)}</span>`}<div class="md">${html}</div>`)
       const g = galleryOf(e.text, html, e.t)
       if (g) node.appendChild(g)
       markPaths(node)
@@ -171,8 +171,9 @@ function updWorking() {
 // ───────── Header ─────────
 function renderHead() {
   document.title = `${A.name} · ${A.task}`
-  const key = [A.color, A.status].join()
+  const key = [A.color, A.status, rankOf(A.xp).i].join()
   if ($('#h-bee')._k !== key) { $('#h-bee')._k = key; $('#h-bee').innerHTML = beeOf(A, 26) }
+  if ($('#h-rank')) $('#h-rank').innerHTML = rankChip(A)
   $('#h-name').textContent = A.name
   $('#h-task').textContent = '· ' + A.task; $('#h-task').title = 'Browse files'
   $('#h-n').textContent = A.changes && A.changes.files ? A.changes.files : ''
@@ -602,7 +603,7 @@ async function boot() {
   if (tab0 !== 'chat' && TABS.includes(tab0)) setTab(tab0)
   const log = await hive.call('log', ID)
   if (Array.isArray(log) && log.length) log.forEach(e => addEntry(e, false))
-  else tl.innerHTML = `<div id="empty">${beeSvg(A.color, 'happy', 56, false, 'idle')}<b class="round">${esc(A.name)}</b> is ready</div>`
+  else tl.innerHTML = `<div id="empty">${beeFace(A, 56, 'happy', 'idle')}<b class="round">${esc(A.name)}</b> is ready</div>`
   renderAll(); renderView(); toBottom(); input.focus()
   let side = '1'
   try { side = localStorage.getItem('hive-side') || '1' } catch {}

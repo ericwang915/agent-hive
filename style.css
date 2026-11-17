@@ -541,3 +541,8 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .setup-mod .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0; border-top: 1px solid var(--line) }
 .setup-mod .grp .g { width: 170px; flex: none; font-size: 12.5px; color: var(--mute) }
 .setup-mod .chip { font: 12px var(--mono); background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px }
+
+.nmrow { display: flex; align-items: center; gap: 7px; min-width: 0 }
+.rank { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 17px; padding: 0 7px 0 5px; border-radius: 999px; font: 700 10.5px/1 var(--sans, inherit); letter-spacing: .02em; color: var(--rc); background: color-mix(in srgb, var(--rc) 13%, var(--card)); border: 1px solid color-mix(in srgb, var(--rc) 40%, var(--line)) }
+.rank i { width: 7px; height: 7px; transform: rotate(45deg); border-radius: 1.5px; background: var(--rc) }
+.mini .rank { padding: 0 5px; font-size: 0; gap: 0 }

@@ -3,6 +3,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, powerSaveBlocker, screen } = require('electron')
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http'), crypto = require('crypto')
 const { spawn, execFile, execFileSync } = require('child_process')
+const { rankOf } = require('./common')
 const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files')
 const { upIds } = Team, { git, tryGit, repoInfo, headOf, slotKey, ymd } = core
 const NIGHT = garden.NIGHT
@@ -62,6 +63,7 @@ function load() {
     night[k] = { time, lastKey: slotKey({ mode: 'daily', time }, now) || '', lastAt: Date.now() - 86400000, ...cur }
   }
   state.settings.night = night
+  for (const a of state.agents) if (typeof a.xp !== 'number') a.xp = readLog(a.id).filter(e => e.role === 'run' && e.code === 0 && !e.interrupted).length      // bees from before ranks: count the rounds in their logs
   // Groups
   state.feed = (state.feed || []).filter(f => f.kind !== 'done' || /file|Finished/.test(f.text))      // older versions logged every finished reply
   state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, batches: {}, seen: r.seen || {}, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
@@ -313,6 +315,12 @@ function run(a, prompt, why = 'manual', meta = {}) {
       // Activity keeps what is worth knowing later: changed files, and runs nobody was watching. A plain reply in a chat or a group is not news
       const talk = ['chat', 'room'].includes((a.ctx || {}).why), text = [n ? `Changed ${n} file${n === 1 ? '' : 's'}` : 'Done', fmtDur(ms), cost].filter(Boolean).join(' · '), alert = !steps.some(s => s.run || s.log)
       const silent = (a.ctx || {}).silent
+      if (!silent) {                                     // every finished round counts towards the bee's rank
+        const was = rankOf(a.xp).i
+        a.xp = (a.xp || 0) + 1
+        const r = rankOf(a.xp)
+        if (r.i > was) { log(a, { role: 'system', text: `Promoted to ${r.name}` }); event(a, `Promoted to ${r.name} after ${a.xp} rounds`, 'level', true) }
+      }
       if ((a.ctx || {}).why === 'chat' && !silent) chatHandoff(a, reply)
       if (n || !talk) event(a, text, 'done', alert)
       else if (alert && !silent) notify(a, a.name, text)

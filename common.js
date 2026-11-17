@@ -11,9 +11,37 @@ const STATUS = {
 const pill = (status, dotOnly) => `<span class="pill st-${status}${dotOnly ? ' dot-only' : ''}" title="${STATUS[status] || ''}"><i></i>${dotOnly ? '' : STATUS[status] || status}</span>`
 const moodOf = status => (status === 'sleeping' || status === 'paused' ? 'sleep' : status === 'error' ? 'sad' : 'happy')
 
+// Ranks: a bee climbs one rung at a time by finishing rounds, and its drawing changes with the rank
+const RANKS = [
+  { id: 'bronze', name: 'Bronze', at: 0, c: '#B9783F' },
+  { id: 'silver', name: 'Silver', at: 5, c: '#8E9BAA' },
+  { id: 'gold', name: 'Gold', at: 20, c: '#D99A1F' },
+  { id: 'platinum', name: 'Platinum', at: 50, c: '#3FA79C' },
+  { id: 'diamond', name: 'Diamond', at: 120, c: '#3F8FE6' },
+  { id: 'master', name: 'Master', at: 300, c: '#9A5BDD' },
+]
+function rankOf(xp) {
+  xp = Math.max(0, Math.floor(+xp || 0))
+  let i = 0
+  while (i + 1 < RANKS.length && xp >= RANKS[i + 1].at) i++
+  const r = RANKS[i], nx = RANKS[i + 1]
+  return { i, id: r.id, name: r.name, c: r.c, xp, next: nx ? nx.name : '', need: nx ? nx.at - xp : 0, pct: nx ? (xp - r.at) / (nx.at - r.at) : 1 }
+}
+const spark = (x, y, k, fill) => `<path transform="translate(${x} ${y}) scale(${k})" d="M0-4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="${fill}"/>`
+// What each rank wears: wing and antenna colours, and something drawn on top
+const RANK_LOOK = [
+  {},
+  { tip: '#8E9BAA', wing: ['#fff', '#B4C0CC'], on: '<path d="M20 31.4l-3.6-2.1v4.2zM20 31.4l3.6-2.1v4.2z" fill="#AEB9C6" stroke="#6F7C8B" stroke-width=".7" stroke-linejoin="round"/><circle cx="20" cy="31.4" r="1.1" fill="#6F7C8B"/>' },
+  { tip: '#E2A93A', wing: ['#FFF6DC', '#E2B95A'], on: '<path d="M20 28.3l1 2.2 2.4.3-1.8 1.6.5 2.4-2.1-1.2-2.1 1.2.5-2.4-1.8-1.6 2.4-.3z" fill="#F4C445" stroke="#B9741A" stroke-width=".7" stroke-linejoin="round"/>' },
+  { tip: '#3FA79C', wing: ['#DDF5F1', '#5FB8B0'], on: '<path d="M9 16.4q11-5 22 0" stroke="#3FA79C" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="13.9" r="1.9" fill="#BFF3EC" stroke="#2A857B" stroke-width=".7"/>' },
+  { tip: '#3F8FE6', wing: ['#D9E9FF', '#5AA2EE'], on: '<path d="M20 10.6l3 3.4-3 4-3-4z" fill="#8CCBFF" stroke="#2F7FD6" stroke-width=".8" stroke-linejoin="round"/><path d="M17 14h6" stroke="#fff" stroke-opacity=".8" stroke-width=".7"/>' + spark(34, 26, .55, '#5AA2EE') + spark(5, 27, .4, '#5AA2EE') },
+  { tip: '#9A5BDD', wing: ['#EBDDFB', '#A56BE0'], on: '<ellipse cx="20" cy="7.6" rx="7.4" ry="2.1" stroke="#F0A93B" stroke-width="1.5"/><path d="M20 11l2.6 3-2.6 3.6-2.6-3.6z" fill="#C79BF2" stroke="#7B3FC4" stroke-width=".8" stroke-linejoin="round"/>' + spark(35, 25, .6, '#F0A93B') + spark(4.5, 26, .45, '#A56BE0') + spark(33, 4, .4, '#A56BE0') },
+]
+
 // Bee: two antennae, rounded-rect body, a faint belly stripe, two eyes, two blush spots, a smile
 // anim = status name, picks the animation: running flaps + sways, idle floats gently, paused breathes slowly, sleeping shows z's, error shivers, setup wobbles, stopped is still and grey
-function beeSvg(color, mood = 'happy', size = 44, crown = false, anim = '', extra = '') {
+function beeSvg(color, mood = 'happy', size = 44, crown = false, anim = '', extra = '', rank = 0) {
+  const look = RANK_LOOK[rank] || {}, wf = look.wing ? look.wing[0] : '#fff', ws = look.wing ? look.wing[1] : '#CFE3F2', tip = look.tip || '#3A2E22'
   const eyes = mood === 'sleep'
     ? '<path d="M12.6 21.5h4.4M23 21.5h4.4" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>'
     : mood === 'grin' ? '<path d="M12.6 21.6q2.2-2.6 4.4 0M23 21.6q2.2-2.6 4.4 0" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>'
@@ -22,17 +50,17 @@ function beeSvg(color, mood = 'happy', size = 44, crown = false, anim = '', extr
   const mouth = mood === 'sad' ? 'M17 28.2q3-2.8 6 0' : mood === 'wow' ? 'M20 25.2a1.7 2 0 1 0 .01 0' : mood === 'flat' ? 'M17.2 27h5.6' : mood === 'grin' ? 'M16 25.4q4 4.6 8 0' : 'M17 26q3 3 6 0'
   return `<svg class="bee${anim ? ' a-' + anim : ''}" width="${size}" height="${size}" viewBox="0 0 40 40" fill="none" aria-hidden="true">
 <g class="bee-all">
-<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#fff" fill-opacity=".82" stroke="#CFE3F2" stroke-width=".9"/>
-<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#fff" fill-opacity=".82" stroke="#CFE3F2" stroke-width=".9"/>
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="${wf}" fill-opacity=".82" stroke="${ws}" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="${wf}" fill-opacity=".82" stroke="${ws}" stroke-width=".9"/>
 <g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
-<circle cx="9" cy="5.8" r="1.7" fill="#3A2E22"/><circle cx="31" cy="5.8" r="1.7" fill="#3A2E22"/></g>
+<circle cx="9" cy="5.8" r="1.7" fill="${tip}"/><circle cx="31" cy="5.8" r="1.7" fill="${tip}"/></g>
 <rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="${esc(color)}"/>
 <path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
 ${eyes}
 <circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
 <path d="${mouth}" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
 ${crown ? '<path d="M13.5 12.5l-1.2-6.2 4.3 3 3.4-4.6 3.4 4.6 4.3-3-1.2 6.2z" fill="#F0A93B" stroke="#B9741A" stroke-width=".9" stroke-linejoin="round"/>' : ''}
-${extra}
+${look.on || ''}${extra}
 </g>
 <g class="zzz" fill="#7C83C9" font-family="Nunito, sans-serif" font-weight="800"><text class="z1" x="30" y="9" font-size="7">z</text><text class="z2" x="34.5" y="4.5" font-size="5">z</text></g>
 </svg>`
@@ -55,7 +83,14 @@ const STICKER = {
 const stickerSvg = (name, color, size = 84) => (STICKER[name] ? beeSvg(color || '#F6C86B', STICKER[name][1], size, false, '', STICKER[name][2]) : '')
 const queenSvg = (size = 44, mood = 'happy', anim = '') => beeSvg('#F6C86B', mood, size, true, anim)
 // The bee drawing for a bee's current status
-const beeOf = (a, size = 44) => beeSvg(a.color, moodOf(a.status), size, false, a.status)
+const beeOf = (a, size = 44) => beeSvg(a.color, moodOf(a.status), size, false, a.status, '', rankOf(a.xp).i)
+// The same bee with a fixed expression, for avatars in conversations
+const beeFace = (a, size = 28, mood = 'happy', anim = '') => beeSvg(a.color, mood, size, false, anim, '', rankOf(a.xp).i)
+// The rank next to a bee's name
+function rankChip(a) {
+  const r = rankOf(a.xp)
+  return `<span class="rank" style="--rc:${r.c}" title="${r.name} · ${r.xp} round${r.xp === 1 ? '' : 's'} finished${r.next ? ` · ${r.need} more to ${r.next}` : ''}"><i></i>${r.name}</span>`
+}
 
 const ic = (d, extra = '') => `<svg class="ic" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`
 const ICON = {
@@ -202,4 +237,4 @@ async function call(ch, ...args) {
 const animT = () => `--t:${Math.round(performance.now())}`
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, STATUS, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }
+  module.exports = { esc, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }
