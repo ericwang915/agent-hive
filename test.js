@@ -535,6 +535,18 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
 }
 
 fs.rmSync(tmp, { recursive: true, force: true })
+{ // token savers
+  const B = { engine: 'claude', sessionId: 's', context: { used: 120000, window: 200000 }, lastEndAt: 1000 }
+  assert.ok(/60% full \(120k tokens\)/.test(core.compactWhy(B, { compactAt: 50 }, 2000)))
+  eq(core.compactWhy(B, { compactAt: 70 }, 2000), '')
+  assert.ok(/idle for 2 h/.test(core.compactWhy(B, { compactAt: 0 }, 1000 + 2 * 3600000)))
+  eq([core.compactWhy(B, { compactAt: 0, compactCold: false }, 1e10), core.compactWhy({ ...B, context: { used: 50000, window: 1e6 } }, { compactAt: 50 }, 1e10)], ['', ''])
+  eq([core.compactWhy({ ...B, engine: 'codex' }, { compactAt: 50 }), core.compactWhy({ ...B, sessionId: '' }, { compactAt: 50 }), core.compactWhy({ ...B, context: undefined }, { compactAt: 50 })], ['', '', ''])
+  const args = x => core.command({ engine: 'claude', workspace: '/tmp', ...x }, 'hi', { mcp: '{"x":1}' }).args
+  assert.ok(args({ noMcp: true, permission: 'full' }).join(' ').endsWith('--strict-mcp-config --mcp-config {"mcpServers":{}}'))
+  eq(args({ noMcp: true, permission: 'ask' }).filter(x => x === '--mcp-config').length, 1)
+  assert.ok(args({ noMcp: true, permission: 'ask' }).includes('--strict-mcp-config') && !args({ permission: 'full' }).includes('--strict-mcp-config'))
+}
 { // upgrade
   const up = require('./update.js')
   eq([up.newer('v1.2.0', '1.1.9'), up.newer('1.10.0', '1.9.3'), up.newer('1.1.0', '1.1.0'), up.newer('v1.0.0', '1.1.0'), up.newer('2.0', '1.9.9')], [true, true, false, false, true])

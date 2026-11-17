@@ -239,6 +239,8 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .badge { display: inline-flex; align-items: center; gap: 4px; height: 21px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; background: var(--soft); border: 1px solid var(--line); color: var(--ink2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis }
 button.badge:hover { border-color: var(--line2); background: var(--line) }
 .badge .add { color: var(--green-ink) } .badge .del { color: var(--red-ink) }
+.badge.hot { background: color-mix(in srgb, var(--red-ink) 9%, var(--card)); border-color: color-mix(in srgb, var(--red-ink) 35%, var(--line)); color: var(--red-ink); font-weight: 600 }
+.dash-ctl select { height: 28px }
 .badge.approve { background: var(--clay); border-color: var(--clay); color: #fff; font-weight: 600 }
 .badge.approve i { width: 6px; height: 6px; border-radius: 50%; background: #fff }
 .badge.rel { background: var(--team); border-color: var(--team-line); color: var(--team-ink) }
@@ -524,3 +526,6 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
   #toast { background: #E8E6E1; color: #1F1E1D }
   #toast.err { background: #7A2E28; color: #fff }
 }
+#v-dash .page-head { flex-wrap: wrap; row-gap: 10px }
+#v-dash .page-head > .grow { flex: 1 0 auto }
+#d-compact { width: 56px !important }

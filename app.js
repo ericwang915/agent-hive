@@ -122,6 +122,9 @@ function badgesHtml(a, short) {
   if (c && c.files) b.push(`<button class="badge" data-act="chat" data-id="${a.id}" data-tab="changes" title="View changes">${c.files}${short ? '' : c.files === 1 ? ' file' : ' files'} <span class="add">+${c.add}</span> <span class="del">−${c.del}</span></button>`)
   if (a.isolate && a.branch) b.push(`<span class="badge" title="Own branch ${esc(a.branch)}">${ICON.branch}${short ? '' : esc(a.branch)}</span>`)
   if (cost) b.push(`<span class="badge" title="Today's spend">${cost}</span>`)
+  const cx = a.context, pct = cx && cx.used && cx.window ? Math.round(cx.used / cx.window * 100) : 0, big = cx && cx.used >= 100000
+  if (pct >= 30 || big) b.push(`<button class="badge${pct >= 50 || big ? ' hot' : ''}" data-act="chat" data-id="${a.id}" title="This session holds ${fmtTok(cx.used)}. Every round re-reads it; /compact or /new in the chat makes it small again">${short ? '' : 'Context '}${pct ? pct + '%' : fmtTok(cx.used)}</button>`)
+  if (a.lastCost >= 1) b.push(`<span class="badge hot" title="What the last round cost">${short ? '' : 'Last round '}${fmtUsd(a.lastCost)}</span>`)
   return b.join('')
 }
 // Main button: run / pause / resume
@@ -206,13 +209,13 @@ function openHatch(pre = {}) {
   F = a ? {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
     sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}) },
-    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false,
+    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp,
     after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
     mode: 'create', name: '', task: '', taskTouched: false, wsCustom: '', gitUrl: '', gitBranch: '',
     color: S.colors.find(c => !usedColors.has(c)) || S.colors[S.agents.length % S.colors.length], engine: firstInstalled(), model: '', template: '', prompt: '',
     sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1 },
-    sleepResume: true, permission: 'full', isolate: false, startNow: true,
+    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false,
     after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false }, engineTouched: false,
   }
   if (!a) {
@@ -392,6 +395,8 @@ function updBeh() {
   if (!el) return
   const relay = F.mode === 'edit' ? F.inRelay : !!F.afterWs
   el.innerHTML = `<label class="check"><input type="checkbox" data-change="f-sleep" ${F.sleepResume ? 'checked' : ''}><span>Pause on lid close, resume on open</span></label>
+  <label class="check"><input type="checkbox" data-change="f-fresh" ${F.freshSchedule ? 'checked' : ''}><span>Scheduled runs start a new session<span class="faint"> · keeps the cost of each run flat; memory and skills still carry over</span></span></label>
+  ${F.engine === 'claude' ? `<label class="check"><input type="checkbox" data-change="f-nomcp" ${F.noMcp ? 'checked' : ''}><span>Built-in tools only<span class="faint"> · leaves out the MCP servers from your Claude Code setup; fewer tokens every round</span></span></label>` : ''}
   <div><div class="row"><span class="mute" style="font-size:12px">Permissions</span><div class="seg">${Object.entries(PERM).map(([k, v]) => `<button type="button" class="${F.permission === k ? 'on' : ''}" data-act="f-perm" data-k="${k}">${v[0]}</button>`).join('')}</div></div>
     <div class="hint">${PERM[F.permission][1]}</div>${(F.permission === 'ask' || F.permission === 'plan') && F.engine !== 'claude' ? '<div class="hint warn">Only works with Claude Code; this engine runs as Auto-edit</div>' : ''}</div>
   ${relay ? '' : `<label class="check"><input type="checkbox" data-change="f-isolate" ${F.isolate ? 'checked' : ''}><span>Own branch<span class="faint"> · changes stay on its branch until you merge${F.mode === 'edit' ? '; switching starts a new session' : ''}</span></span></label>`}
@@ -402,7 +407,7 @@ async function submitForm() {
   const s = F.sched, relay = F.mode === 'create' && F.after.ids.length
   const cfg = {
     name: F.name.trim(), task: (relay ? F.afterTask : F.task).trim(), workspace: relay ? '' : F.wsCustom, color: F.color, engine: F.engine, model: F.model.trim(), template: F.template,
-    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow,
+    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp,
     schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom },
     git: relay || F.mode === 'edit' ? null : { url: F.gitUrl.trim(), branch: F.gitBranch.trim() },
     after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop } : null,
@@ -453,6 +458,8 @@ const CHANGE = {
   },
   'f-loop': el => { F.after.loop = el.checked },
   'f-sleep': el => { F.sleepResume = el.checked },
+  'f-fresh': el => { F.freshSchedule = el.checked },
+  'f-nomcp': el => { F.noMcp = el.checked },
   'f-isolate': el => { F.isolate = el.checked },
   'f-start': el => { F.startNow = el.checked },
 }
@@ -462,10 +469,17 @@ function buildDash() {
   $('#v-dash').innerHTML = `
   <div class="page-head"><div class="grow"><h1 class="round">Dashboard</h1></div>
     <div class="dash-ctl"><input type="date" id="d-date"> Budget $<input type="number" id="d-budget" min="0" step="1" placeholder="No limit"> Report <input type="time" id="d-time">
+    <span title="A Claude Code bee whose session is fuller than this is compacted before its next round. 0 turns it off">Compact at <input type="number" id="d-compact" min="0" max="95" step="5">%</span>
+    <label class="check" style="align-items:center" title="A session over 100k tokens that sat idle for an hour has lost its prompt cache; compact it before the next round instead of re-reading all of it"><input type="checkbox" id="d-cold">and when idle</label>
+    <span title="Model for the daily report, Dreamer and Gardener">Chores <select id="d-chore"><option value="">Default</option><option value="haiku">haiku</option><option value="sonnet">sonnet</option><option value="opus">opus</option></select></span>
     <button class="btn primary" data-act="queen-report" id="d-go">Generate report</button></div></div>
   <div id="dash-body"></div>`
   $('#d-date').addEventListener('change', e => { dashDate = e.target.value || dayKey(); loadDash() })
   $('#d-budget').addEventListener('change', async e => { const r = await call('settings', { budget: +e.target.value || 0 }); if (r) { S.settings = r; renderDash() } })
+  const set = async patch => { const r = await call('settings', patch); if (r) S.settings = r }
+  $('#d-compact').addEventListener('change', e => set({ compactAt: +e.target.value || 0 }))
+  $('#d-cold').addEventListener('change', e => set({ compactCold: e.target.checked }))
+  $('#d-chore').addEventListener('change', e => set({ choreModel: e.target.value }))
   $('#d-time').addEventListener('change', async e => { const r = await call('settings', { reportTime: e.target.value }); if (r) { S.settings = r; renderHive() } })
 }
 async function loadDash() {
@@ -473,6 +487,8 @@ async function loadDash() {
   $('#d-date').value = dashDate; $('#d-date').max = dayKey()
   if (document.activeElement !== $('#d-budget')) $('#d-budget').value = S.settings.budget || ''
   $('#d-time').value = S.settings.reportTime || '18:00'
+  if (document.activeElement !== $('#d-compact')) $('#d-compact').value = S.settings.compactAt || 0
+  $('#d-cold').checked = S.settings.compactCold !== false; $('#d-chore').value = S.settings.choreModel || ''
   const r = await call('stats', dashDate)
   if (r) { dashData = r; renderDash() }
 }

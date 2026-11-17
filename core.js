@@ -25,6 +25,8 @@ const ENGINES = {
         : a.permission === 'plan' ? ['--permission-mode', 'plan']
         : ['--permission-mode', 'acceptEdits',
           ...(a.permission === 'ask' && ctx.mcp ? ['--mcp-config', ctx.mcp, '--permission-prompt-tool', 'mcp__hive__approve'] : [])]),
+      // built-in tools only: leave out the MCP servers from the user's own Claude Code setup (their tool lists ride along on every round)
+      ...(a.noMcp ? ['--strict-mcp-config', ...(a.permission === 'ask' && ctx.mcp ? [] : ['--mcp-config', '{"mcpServers":{}}'])] : []),
       ...(a.sessionId ? ['--resume', a.sessionId] : [])],
   },
   codex: {
@@ -126,6 +128,19 @@ const outEntry = (v, tid) => ({ role: 'out', tid, text: resultText(v).slice(0, 4
 function resultText(c) {
   if (Array.isArray(c)) return c.map(x => (x && typeof x === 'object' ? (x.type === 'text' ? x.text || '' : x.type === 'image' ? '[image]' : str(x)) : str(x))).join('\n')
   return str(c)
+}
+
+// Should this session be compacted before its next round? → the reason shown to the user, or ''.
+// st: {compactAt (percent, 0 = off), compactCold}. A big session that sat idle has lost its prompt cache, so the next round re-reads all of it at full price
+const BIG = 100000, COLD_MS = 3600000
+function compactWhy(a, st = {}, now = Date.now()) {
+  const c = a.context
+  if (a.engine !== 'claude' || !a.sessionId || !c || !c.used) return ''
+  const pct = c.window ? c.used / c.window * 100 : 0
+  if (st.compactAt > 0 && pct >= st.compactAt) return `Context is ${Math.round(pct)}% full (${kTok(c.used)} tokens): compacting first`
+  const idle = now - (a.lastEndAt || a.lastRunAt || now)
+  if (st.compactCold !== false && c.used >= BIG && idle > COLD_MS) return `This session holds ${kTok(c.used)} tokens and sat idle for ${Math.round(idle / 3600000)} h: compacting first so the round does not re-read all of it`
+  return ''
 }
 
 // How full the context is, from Claude Code's stream: {used} after each model call or compaction, {window} from the result
@@ -413,7 +428,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = { HEADLESS_OFF, BEE_SYS,
-  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,
