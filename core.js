@@ -12,10 +12,12 @@ const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').repl
 
 // ───────── Engines ─────────
 const m = (flag, a) => (a.model ? [flag, a.model] : [])
+// Tools Claude Code lists but cannot run without its own UI; left on, bees try them and get an error
+const HEADLESS_OFF = 'Artifact'
 const ENGINES = {
   claude: {
     label: 'Claude Code', cmd: 'claude', models: ['opus', 'sonnet', 'haiku', 'fable'],
-    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', ...m('--model', a),
+    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--disallowedTools', HEADLESS_OFF, ...m('--model', a),
       ...(a.permission === 'full' ? ['--dangerously-skip-permissions']
         : ['--permission-mode', 'acceptEdits',
           ...(a.permission === 'ask' && ctx.mcp ? ['--mcp-config', ctx.mcp, '--permission-prompt-tool', 'mcp__hive__approve'] : [])]),

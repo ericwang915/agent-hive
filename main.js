@@ -719,7 +719,7 @@ function queenRun(r, prompt) {
   const dir = path.join(DIR, 'queen', r.id)
   fs.mkdirSync(dir, { recursive: true })
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(r.model ? ['--model', r.model] : []), '--append-system-prompt', qt.SYS,
-    '--mcp-config', cfg, '--strict-mcp-config', '--allowedTools', qt.toolNames().join(','), '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task',
+    '--mcp-config', cfg, '--strict-mcp-config', '--allowedTools', qt.toolNames().join(','), '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task,Artifact',
     ...(r.sessionId ? ['--resume', r.sessionId] : [])]
   const child = spawn('claude', args, { cwd: dir, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
   qprocs.set(r.id, child); r.stopped = false; r.runStart = Date.now()

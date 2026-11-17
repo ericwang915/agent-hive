@@ -60,11 +60,11 @@ const at = s => new Date(s)
 // ───────── Engine command lines ─────────
 {
   const c = (a, ctx) => command({ model: '', permission: 'full', ...a }, 'hi', ctx)
-  eq(c({ engine: 'claude' }), { cmd: 'claude', args: ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'] })
+  eq(c({ engine: 'claude' }), { cmd: 'claude', args: ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--disallowedTools', 'Artifact', '--dangerously-skip-permissions'] })
   eq(c({ engine: 'claude', permission: 'safe', model: 'haiku', sessionId: 's1' }).args,
-    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--model', 'haiku', '--permission-mode', 'acceptEdits', '--resume', 's1'])
+    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--disallowedTools', 'Artifact', '--model', 'haiku', '--permission-mode', 'acceptEdits', '--resume', 's1'])
   eq(c({ engine: 'claude', permission: 'ask' }, { mcp: '{"x":1}' }).args,
-    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--mcp-config', '{"x":1}', '--permission-prompt-tool', 'mcp__hive__approve'])
+    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--disallowedTools', 'Artifact', '--permission-mode', 'acceptEdits', '--mcp-config', '{"x":1}', '--permission-prompt-tool', 'mcp__hive__approve'])
   eq(c({ engine: 'claude', permission: 'ask' }).args.includes('--mcp-config'), false)        // omitted without mcp
   eq(c({ engine: 'claude', permission: 'safe' }, { mcp: '{}' }).args.includes('--mcp-config'), false)
   eq(c({ engine: 'codex' }).args, ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', 'hi'])

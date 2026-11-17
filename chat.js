@@ -17,7 +17,7 @@ const toBottom = () => { pane.scrollTop = pane.scrollHeight }
 const WHY = { queen: () => 'From Queen', room: () => 'From group', schedule: () => 'Scheduled', resume: () => 'Auto-resume', handoff: e => `Relay from ${e.from || 'upstream'}`, feedback: e => `Review from ${e.from || 'Reviewer'}` }
 const IMG_RE = /(?<![\w:/.~-])((?:~\/|\.{0,2}\/)?[\w\-.@\u4e00-\u9fa5]+(?:\/[\w\-.@\u4e00-\u9fa5]+)*\.(?:png|jpe?g|gif|webp|svg))(?![\w/])/gi
 
-function galleryOf(text, html) {
+function galleryOf(text, html, stamp) {
   const seen = new Set(), out = []
   for (const mm of String(text).matchAll(IMG_RE)) {
     const p = resolvePath(mm[1], baseDir(), S.home)
@@ -26,11 +26,11 @@ function galleryOf(text, html) {
     if (out.length >= 8) break
   }
   if (!out.length) return null
-  const g = el('gallery')
+  const g = el('gallery' + (out.length === 1 ? ' one' : ''))
   for (const p of out) {
     const img = document.createElement('img')
-    img.src = fileUrl(p); img.dataset.img = p; img.title = p; img.loading = 'lazy'
-    img.addEventListener('error', () => { img.remove(); if (!g.children.length) g.remove() })      // missing paths leave no empty frame
+    img.src = fileUrl(p) + (stamp ? '?' + stamp : ''); img.dataset.img = p; img.title = p      // the stamp shows a re-made image, not the cached one
+    img.addEventListener('error', () => { img.remove(); g.classList.toggle('one', g.children.length === 1); if (!g.children.length) g.remove() })      // missing paths leave no empty frame
     g.appendChild(img)
   }
   return g
@@ -81,7 +81,7 @@ function addEntry(e, live) {
     case 'assistant': {
       const html = renderMd(e.text, baseDir(), S.home)
       node = el('step a', `${lastRole === 'assistant' ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md">${html}</div>`)
-      const g = galleryOf(e.text, html)
+      const g = galleryOf(e.text, html, e.t)
       if (g) node.appendChild(g)
       markPaths(node)
       break
@@ -104,6 +104,8 @@ function addEntry(e, live) {
           const o = el('out' + (text.split('\n').length > 4 || text.length > 320 ? ' long' : ''), `<span class="k">OUT</span><span class="v">${esc(text)}</span>`)
           t.querySelector('.io').appendChild(o)
         }
+        const g = t.querySelector('.gallery') ? null : galleryOf(t.title + '\n' + text, '', e.t)      // pictures the tool made or read
+        if (g) t.appendChild(g)
       }
       break
     }
@@ -459,7 +461,7 @@ function renderAll() { renderHead(); renderApprovals(); renderFoot(); updWorking
 // Images, long messages, long output
 document.addEventListener('click', e => {
   const img = e.target.closest('img[data-img]')
-  if (img) return void call('openImage', ID, img.dataset.img)
+  if (img) { if (e.metaKey) return void call('revealPath', ID, img.dataset.img); setTab('files'); return void openFile(img.dataset.img).then(renderTree) }
   const fp = e.target.closest('[data-fp]')
   if (fp) {
     if (fp.tagName === 'A') e.preventDefault()

@@ -52,7 +52,9 @@ body { background: var(--c-bg); color: var(--c-text); display: flex; flex-direct
 .u-box.clip { max-height: 132px; overflow: hidden; cursor: pointer; -webkit-mask-image: linear-gradient(#000 60%, transparent) }
 .step.a .md { font-size: 14px }
 .gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px }
-.gallery img { width: 120px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid var(--c-line); cursor: zoom-in; background: var(--c-code) }
+.gallery img { height: 170px; width: auto; max-width: 100%; object-fit: contain; border-radius: 8px; border: 1px solid var(--c-line); cursor: zoom-in; background: var(--c-code) }
+.gallery.one img { height: auto; max-height: 440px }
+.step.tool .gallery { margin-bottom: 4px }
 .t-head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-dim); user-select: text }
 .t-head b { color: var(--c-text); font-weight: 600 }
 .io { margin-top: 5px; border: 1px solid var(--c-line); border-radius: 9px; background: var(--c-box); font: 12px/1.55 var(--mono); overflow: hidden }
