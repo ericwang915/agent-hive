@@ -7,7 +7,8 @@
   "scripts": {
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "test": "node test.js",
-    "dist": "electron-builder --mac --publish never"
+    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "dist:signed": "electron-builder --mac --publish never -c.mac.identity=\"$CSC_NAME\""
   },
   "dependencies": {
     "dompurify": "^3.2.0",
@@ -43,8 +44,7 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "icon.png",
-      "identity": null,
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "target": [
         {
@@ -61,11 +61,14 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
       "sign": false
     },
-    "afterPack": "./scripts/adhoc-sign.js"
+    "afterPack": "./scripts/adhoc-sign.js",
+    "afterSign": "./scripts/notarize.js"
   }
 }
