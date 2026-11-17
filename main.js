@@ -300,6 +300,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
       const cost = fmtCost(use), n = a.changes ? a.changes.files : 0
       // Activity keeps what is worth knowing later: changed files, and runs nobody was watching. A plain reply in a chat or a group is not news
       const talk = ['chat', 'room'].includes((a.ctx || {}).why), text = [n ? `Changed ${n} file${n === 1 ? '' : 's'}` : 'Done', fmtDur(ms), cost].filter(Boolean).join(' · '), alert = !steps.some(s => s.run || s.log)
+      if ((a.ctx || {}).why === 'chat') chatHandoff(a, reply)
       if (n || !talk) event(a, text, 'done', alert)
       else if (alert) notify(a, a.name, text)
       doSteps(steps)
@@ -878,6 +879,23 @@ async function queenTool(roomId, tool, args, onClose) {
   throw new Error('No such tool: ' + tool)
 }
 
+// A bee in its own chat wrote "@Wasabi …": pass it on through a group the two share (shown there, so the exchange stays visible)
+function chatHandoff(a, reply) {
+  const rooms = state.rooms.filter(r => r.members.includes(a.id)), mates = [...new Set(rooms.flatMap(membersOf))].filter(b => b !== a)
+  const st = qt.splitSticker(qt.parseReport(reply, null, 4000).summary), named = qt.handoffs(st.text, state.agents.filter(b => b !== a))
+  if (!named.length) return
+  if (overBudget()) return log(a, { role: 'system', text: 'Today\'s budget is used up, so nothing was passed on' })
+  let shown = new Set()
+  for (const b of named) {
+    const r = rooms.find(x => !x.queen && x.members.includes(b.id)) || rooms.find(x => x.members.includes(b.id))
+    if (!mates.includes(b) || !r || b.status === 'setup') { log(a, { role: 'system', text: `Not passed to ${b.name}: put ${a.name} and ${b.name} in the same group first` }); continue }
+    const before = Date.now()
+    if (!shown.has(r)) { shown.add(r); roomLog(r, { who: a.id, name: a.name, color: a.color, kind: 'result', status: 'DONE', text: st.text, files: a.changes ? a.changes.files : 0, direct: true }) }
+    r.seen[a.id] = Date.now()
+    roomDeliver(r, b, st.text, { targeted: true, from: a.name, hop: 1, before })
+    log(a, { role: 'system', text: `Passed to ${b.name} in group "${r.name}"` })
+  }
+}
 // recent messages in the group, sent to bees as context
 // A bee with a live session has already seen everything up to its last turn, so it only gets what was said since (and never its own replies)
 function roomRecent(r, b, before) {

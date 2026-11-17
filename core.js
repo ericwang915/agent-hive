@@ -13,11 +13,14 @@ const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').repl
 // ───────── Engines ─────────
 const m = (flag, a) => (a.model ? [flag, a.model] : [])
 // Tools Claude Code lists but cannot run without its own UI; left on, bees try them and get an error
-const HEADLESS_OFF = 'Artifact,ExitPlanMode'
+// Also off: Claude Code's own cross-session messaging and scheduling. A bee asked to "tell Wasabi" would otherwise message unrelated Claude sessions on this Mac
+const HEADLESS_OFF = 'Artifact,ArtifactComments,ArtifactData,ExitPlanMode,ListAgents,SendMessage,CronCreate,CronDelete,CronList,ScheduleWakeup'
+// Kept fixed (no names in it), so it never invalidates a session's prompt cache
+const BEE_SYS = 'You are running as a "bee" inside Agent Hive, a desktop app that runs several coding agents side by side. The other bees are separate agents in their own folders; your tools cannot see or reach them. To pass something to another bee, write @Name followed by exactly what you need from it, on a line of its own in your reply: Agent Hive delivers it when the two of you share a group. Schedules are set in the Agent Hive app, not by you.'
 const ENGINES = {
   claude: {
     label: 'Claude Code', cmd: 'claude', models: ['opus', 'sonnet', 'haiku', 'fable'],
-    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', HEADLESS_OFF, ...m('--model', a),
+    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', HEADLESS_OFF, '--append-system-prompt', BEE_SYS, ...m('--model', a),
       ...(a.permission === 'full' ? ['--dangerously-skip-permissions']
         : a.permission === 'plan' ? ['--permission-mode', 'plan']
         : ['--permission-mode', 'acceptEdits',
@@ -409,7 +412,7 @@ function pickName(used = [], rnd = Math.random) {
   for (let i = 2; ; i++) { const n = NAMES[Math.floor(rnd() * NAMES.length)] + i; if (!taken.has(n.toLowerCase())) return n }
 }
 
-module.exports = {
+module.exports = { HEADLESS_OFF, BEE_SYS,
   MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
