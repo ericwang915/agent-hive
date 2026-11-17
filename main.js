@@ -63,6 +63,7 @@ function load() {
   }
   state.settings.night = night
   // Groups
+  state.feed = (state.feed || []).filter(f => f.kind !== 'done' || /file|Finished/.test(f.text))      // older versions logged every finished reply
   state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, batches: {}, seen: r.seen || {}, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
   const old = path.join(LOGS, 'room.jsonl')                // there used to be a single group: migrate it into the first group with Queen
   if (!Array.isArray(s.rooms) && fs.existsSync(old)) {
@@ -297,7 +298,10 @@ function run(a, prompt, why = 'manual', meta = {}) {
       }
       const steps = core.relayPlan(state.agents, a, reply, a.ctx || {})
       const cost = fmtCost(use), n = a.changes ? a.changes.files : 0
-      event(a, ['Done', fmtDur(ms), cost, n ? `${n} file${n === 1 ? '' : 's'} changed` : ''].filter(Boolean).join(' · '), 'done', !steps.some(s => s.run || s.log))
+      // Activity keeps what is worth knowing later: changed files, and runs nobody was watching. A plain reply in a chat or a group is not news
+      const talk = ['chat', 'room'].includes((a.ctx || {}).why), text = [n ? `Changed ${n} file${n === 1 ? '' : 's'}` : 'Done', fmtDur(ms), cost].filter(Boolean).join(' · '), alert = !steps.some(s => s.run || s.log)
+      if (n || !talk) event(a, text, 'done', alert)
+      else if (alert) notify(a, a.name, text)
       doSteps(steps)
     }
     // dispatched by Queen / mentioned in a group: hand the result back to the group (a sleeping bee hands it in after it wakes and finishes)
