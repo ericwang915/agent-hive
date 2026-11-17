@@ -27,7 +27,7 @@ Up to four bees share a folder and pass work down the line. A reviewer can send 
 
 ### Read every step, then review the diff
 
-Each bee has its own chat window with the full conversation: messages, tool calls with their input and output, cost per round. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.
+Each bee has its own chat window with the full conversation: messages, tool calls with their input and output, cost per round. The bee's folder sits in a sidebar on the left, and file paths in the conversation are clickable: they open in a read-only viewer at the line mentioned. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.
 
 ![A bee's chat, then its diff](docs/chat.gif)
 
@@ -89,6 +89,7 @@ No build step and no framework: plain HTML, CSS and JS in the renderer, Electron
 | `team.js` | Relay-team graph helpers, shared by main and renderer |
 | `queen.js` | Queen's tools, dispatch rules and result parsing |
 | `garden.js` | Skills and memory files, Dreamer and Gardener prompts |
+| `files.js` | File browser: listing, reading and locating paths inside a bee's folder |
 | `approve-mcp.js`, `hive-mcp.js` | Small MCP stdio servers that call back into the app |
 | `index.html`, `app.js` | Main window |
 | `chat.html`, `chat.js` | Per-bee chat window |

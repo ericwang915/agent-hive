@@ -452,5 +452,28 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(relayPlan([A0, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'room' }), [])
 }
 
+// File browser
+{
+  const files = require('./files')
+  const root = path.join(tmp, 'fb'), out = path.join(tmp, 'fb-out')
+  fs.mkdirSync(path.join(root, 'src', 'deep'), { recursive: true }); fs.mkdirSync(path.join(root, '.git')); fs.mkdirSync(out)
+  fs.writeFileSync(path.join(root, 'b.txt'), 'one\ntwo\n'); fs.writeFileSync(path.join(root, 'a10.js'), 'x'); fs.writeFileSync(path.join(root, 'a2.js'), 'x')
+  fs.writeFileSync(path.join(root, 'src', 'deep', 'm.js'), 'let a'); fs.writeFileSync(path.join(root, 'blob.bin'), Buffer.from([1, 0, 2])); fs.writeFileSync(path.join(root, 'p.png'), 'x')
+  fs.writeFileSync(path.join(out, 'secret.txt'), 's'); fs.symlinkSync(path.join(out, 'secret.txt'), path.join(root, 'leak.txt'))
+  const R = fs.realpathSync(root)
+  eq(files.list(root, '').items.map(i => i.name), ['src', 'a2.js', 'a10.js', 'b.txt', 'blob.bin', 'leak.txt', 'p.png'])
+  eq(files.list(root, 'src'), { items: [{ name: 'deep', dir: true }], more: 0 })
+  assert.throws(() => files.list(root, '..'), /Not inside/); assert.throws(() => files.list(root, 'nope'), /Not inside/)
+  eq(files.read(root, 'b.txt'), { kind: 'text', abs: path.join(R, 'b.txt'), size: 8, cut: false, text: 'one\ntwo\n' })
+  eq([files.read(root, 'blob.bin').kind, files.read(root, 'p.png').kind], ['binary', 'image'])
+  assert.throws(() => files.read(root, 'leak.txt'), /Not inside/); assert.throws(() => files.read(root, '../fb-out/secret.txt'), /Not inside/); assert.throws(() => files.read(root, 'src'), /folder/)
+  eq(files.locate(root, 'src/deep/m.js:12:3'), { abs: path.join(R, 'src/deep/m.js'), rel: 'src/deep/m.js', dir: false, line: 12 })
+  eq(files.locate(root, './b.txt#L2-L5').line, 2); eq(files.locate(root, 'file://' + path.join(R, 'b.txt')).rel, 'b.txt')
+  eq(files.locate(root, 'src/'), { abs: path.join(R, 'src'), rel: 'src', dir: true, line: 0 }); eq(files.locate(root, '.').rel, '')
+  eq(files.locate(root, '../fb-out/secret.txt').rel, null); eq(files.locate(root, 'leak.txt').rel, null)
+  eq(files.locate(root, '~/secret.txt', out).rel, null); eq(files.readAt(files.locate(root, '~/secret.txt', out).abs).text, 's')
+  eq([files.locate(root, 'missing.js:3'), files.locate(root, ''), files.locate(root, '1.0.0')], [null, null, null])
+}
+
 fs.rmSync(tmp, { recursive: true, force: true })
 console.log('ok')

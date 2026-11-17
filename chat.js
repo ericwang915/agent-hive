@@ -36,6 +36,38 @@ function galleryOf(text, html) {
   return g
 }
 
+// Paths written in the conversation become clickable once the main process confirms something is there
+const PATHISH = /^(?:~\/|\.{0,2}\/)?[\w\-.@+\u4e00-\u9fa5]+(?:\/[\w\-.@+ \u4e00-\u9fa5]+)*\/?(?::\d+(?::\d+)?)?$/
+let fpQueue = [], fpTimer = null
+function markPaths(node) {
+  for (const c of node.querySelectorAll('.md code')) {
+    const t = c.textContent.trim()
+    if (!c.closest('pre') && t.length < 300 && /[/.]/.test(t) && PATHISH.test(t)) c.dataset.fp = t
+  }
+  for (const a of node.querySelectorAll('.md a')) {
+    let h = a.getAttribute('href') || ''
+    if (!h || h.startsWith('#') || (/^[a-z][a-z0-9+.-]*:/i.test(h) && !/^file:/i.test(h))) continue
+    try { h = decodeURIComponent(h) } catch {}
+    a.dataset.fp = h; a.removeAttribute('target')
+  }
+  queuePaths(node)
+}
+function queuePaths(node) {
+  fpQueue.push(...[...node.querySelectorAll('[data-fp]')].filter(n => !n._loc))
+  if (fpQueue.length && !fpTimer) fpTimer = setTimeout(flushPaths, 40)
+}
+async function flushPaths() {
+  const els = fpQueue.splice(0, 400)
+  const r = await hive.call('locate', ID, els.map(n => n.dataset.fp))
+  fpTimer = fpQueue.length ? setTimeout(flushPaths, 40) : null
+  if (!Array.isArray(r)) return
+  els.forEach((n, i) => {
+    if (!r[i]) return
+    n._loc = r[i]; n.classList.add('fp')
+    n.title = `${r[i].rel || r[i].abs}\n${r[i].rel == null && r[i].dir ? 'Click to show in Finder' : 'Click to open · ⌘-click to show in Finder'}`
+  })
+}
+
 function addEntry(e, live) {
   const stick = nearBottom()
   $('#empty') && $('#empty').remove()
@@ -51,6 +83,7 @@ function addEntry(e, live) {
       node = el('step a', `${lastRole === 'assistant' ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md">${html}</div>`)
       const g = galleryOf(e.text, html)
       if (g) node.appendChild(g)
+      markPaths(node)
       break
     }
     case 'tool':
@@ -58,12 +91,14 @@ function addEntry(e, live) {
         <div class="io"><div class="in"><span class="k">IN</span><span class="v">${esc(String(e.desc || '').split('\n')[0].slice(0, 400))}</span></div></div>`)
       node.dataset.tid = e.tid || ''
       node.title = String(e.desc || '').slice(0, 1200)
+      { const fp = e.input && (e.input.file_path || e.input.path); if (typeof fp === 'string' && fp) { node.querySelector('.in .v').dataset.fp = fp; queuePaths(node) } }
       break
     case 'out': {
       const waiting = [...tl.querySelectorAll('.step.tool.wait')]
       const t = waiting.find(n => e.tid && n.dataset.tid === e.tid) || (e.tid ? [...tl.querySelectorAll('.step.tool')].reverse().find(n => n.dataset.tid === e.tid && !n.querySelector('.out')) : null) || waiting[0]
       if (t) {
         t.classList.remove('wait')
+        queuePaths(t)          // a file this tool just created exists now
         const text = String(e.text || '').trimEnd()
         if (text) {
           const o = el('out' + (text.split('\n').length > 4 || text.length > 320 ? ' long' : ''), `<span class="k">OUT</span><span class="v">${esc(text)}</span>`)
@@ -85,7 +120,7 @@ function addEntry(e, live) {
       const tok = e.tin || e.tout ? `${fmtTok(e.tin || 0)} tok in / ${fmtTok(e.tout || 0)} tok out` : ''
       const parts = e.interrupted ? ['Round interrupted', fmtDur(e.ms || 0)] : ['Round done', fmtDur(e.ms || 0), e.usd ? '$' + e.usd.toFixed(e.usd < 0.1 ? 3 : 2) : '', tok, e.code ? `exit ${e.code}` : e.code == null && e.signal ? e.signal : '']
       node = el('runline', `<span>${parts.filter(Boolean).map(esc).join(' · ')}</span><time>${hmTime(e.t)}</time>`)
-      if (live) { loadChanges(true) }
+      if (live) { loadChanges(true); refreshFiles() }
       break
     }
   }
@@ -107,29 +142,31 @@ function renderHead() {
   const key = [A.color, A.status].join()
   if ($('#h-bee')._k !== key) { $('#h-bee')._k = key; $('#h-bee').innerHTML = beeOf(A, 26) }
   $('#h-name').textContent = A.name
-  $('#h-task').textContent = '· ' + A.task
+  $('#h-task').textContent = '· ' + A.task; $('#h-task').title = 'Browse files'
   $('#h-n').textContent = A.changes && A.changes.files ? A.changes.files : ''
   $('#h-pill').innerHTML = pill(A.status)
   const b = (a, icon, title) => `<button class="btn sm icon ghost" data-h="${a}" title="${title}">${ICON[icon]}</button>`
   const html = (A.status === 'running' ? b('pause', 'pause', 'Pause') : '')
     + (A.status === 'paused' || (A.needsSetup && A.status !== 'setup') || (['stopped', 'error', 'sleeping'].includes(A.status) && A.lastRunAt) ? b('continue', 'play', A.needsSetup ? 'Retry clone' : 'Resume') : '')
-    + (['running', 'paused', 'setup'].includes(A.status) ? b('stop', 'stop', 'Stop') : '') + b('reveal', 'finder', 'Show in Finder')
+    + (['running', 'paused', 'setup'].includes(A.status) ? b('stop', 'stop', 'Stop') : '') + b('side', 'folder', 'Files sidebar (⌘B)')
   if ($('#h-btns')._h !== html) { $('#h-btns')._h = html; $('#h-btns').innerHTML = html }
 }
 $('#h-btns').addEventListener('click', e => {
   const h = (e.target.closest('[data-h]') || {}).dataset
   if (!h) return
-  if (h.h === 'reveal') call('reveal', ID)
+  if (h.h === 'side') setSide($('#tree').hidden)
   else if (h.h === 'stop') { if (confirm(`Stop ${A.name}?`)) act('stop') }
   else act(h.h)
 })
 function setTab(t) {
   tab = t
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t))
-  $('#pane-chat').hidden = t !== 'chat'; $('#pane-changes').hidden = t !== 'changes'
+  for (const k of ['chat', 'changes', 'files']) $('#pane-' + k).hidden = t !== k
   if (t === 'changes') loadChanges()
+  else if (t === 'files') setSide(true)
   else $('#input').focus()
 }
+$('#h-task').addEventListener('click', () => setSide(true))
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab) })
 
 // ───────── Changes ─────────
@@ -175,6 +212,99 @@ $('#changes').addEventListener('click', async e => {
   if (k === 'pr') { b.disabled = true; b.textContent = 'Pushing…'; const r = await call('openPr', ID); if (r) toast(r.url ? `Pushed ${r.branch}, opening the PR` : `Pushed ${r.branch}`); return again(true) }
 })
 $('#changes').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'c-msg' && !e.isComposing) $('[data-c="commit"]').click() })
+
+// ───────── Files ─────────
+const F = { kids: new Map(), open: new Set(), sel: '', line: 0, ready: false, cur: null }
+const parentOf = p => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+const fmtSize = n => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB' : (n / 1048576).toFixed(1) + ' MB')
+async function loadDir(rel, quiet) {
+  const r = quiet ? await hive.call('ls', ID, rel) : await call('ls', ID, rel)
+  if (r && r.items) F.kids.set(rel, r)
+  else { F.kids.delete(rel); F.open.delete(rel) }
+  return !!(r && r.items)
+}
+function treeHtml(rel, depth) {
+  const k = F.kids.get(rel)
+  if (!k) return ''
+  const pad = `style="padding-left:${6 + depth * 14}px"`
+  return k.items.map(it => {
+    const p = rel ? rel + '/' + it.name : it.name, open = it.dir && F.open.has(p)
+    return `<div class="tn${p === F.sel ? ' on' : ''}" data-p="${esc(p)}"${it.dir ? ' data-d="1"' : ''} ${pad} title="${esc(p)}"><span class="tw">${it.dir ? (open ? '▾' : '▸') : ''}</span>${it.dir ? ICON.folder : ''}<span class="ell">${esc(it.name)}</span></div>${open ? treeHtml(p, depth + 1) : ''}`
+  }).join('') + (k.more ? `<div class="tn more" ${pad}><span class="tw"></span>${k.more} more not shown</div>` : '')
+}
+function renderTree() {
+  const k = F.kids.get('')
+  $('#tree').innerHTML = `<div class="thead"><span class="grow ell">${esc(A.task)}</span><button class="btn sm icon ghost" data-t="refresh" title="Refresh">${ICON.refresh}</button><button class="btn sm icon ghost" data-t="reveal" title="Show in Finder">${ICON.finder}</button></div>`
+    + (k && !k.items.length ? '<div class="tn more"><span class="tw"></span>Empty folder</div>' : treeHtml('', 0))
+}
+function renderView() {
+  const v = $('#view'), c = F.cur
+  if (!c) { v.innerHTML = '<div class="note">Pick a file to read it</div>'; return }
+  const bar = `<div class="vbar"><span class="grow ell" title="${esc(c.abs)}">${esc(c.rel)}</span><span class="sz">${fmtSize(c.size)}${c.cut ? ' · first 400 KB shown' : ''}</span><button class="btn sm icon ghost" data-v="reveal" title="Show in Finder">${ICON.finder}</button></div>`
+  if (c.kind === 'image') v.innerHTML = `${bar}<div class="vbody"><div class="vimg"><img src="${esc(fileUrl(c.abs))}" alt=""></div></div>`
+  else if (c.kind === 'binary') v.innerHTML = `${bar}<div class="vbody"><div class="note">Binary file, not shown</div></div>`
+  else {
+    const n = c.text.split('\n').length - (c.text.endsWith('\n') ? 1 : 0) || 1
+    const hl = F.line > 0 && F.line <= n ? `<div class="hl" style="top:${10 + (F.line - 1) * 19}px"></div>` : ''
+    v.innerHTML = `${bar}<div class="vbody"><div class="code">${hl}<div class="ln">${Array.from({ length: n }, (_, i) => i + 1).join('\n')}</div><pre>${esc(c.text)}</pre></div></div>`
+    if (hl) v.querySelector('.vbody').scrollTop = Math.max(0, (F.line - 6) * 19)
+  }
+}
+async function openFile(rel, line, quiet) {
+  const r = quiet ? await hive.call('readFile', ID, rel) : await call('readFile', ID, rel)
+  if (!r || r.error) { if (quiet) { if (F.sel === rel) F.sel = ''; F.cur = null; renderView() } return }
+  const top = quiet && $('#view .vbody') ? $('#view .vbody').scrollTop : 0
+  F.sel = rel; F.line = line || 0; F.cur = { ...r, rel }
+  renderView()
+  if (quiet && $('#view .vbody')) $('#view .vbody').scrollTop = top
+}
+async function openFiles() {
+  if (F.ready) return
+  F.ready = true
+  await loadDir('')
+  renderTree()
+}
+// The folder tree sits to the left of every tab
+function setSide(on) {
+  $('#tree').hidden = !on
+  try { localStorage.setItem('hive-side', on ? '1' : '0') } catch {}
+  if (on) openFiles()
+}
+// Jump to a file or folder: open its parents, select it, scroll it into view
+async function showPath(rel, dir, line) {
+  if (dir) setSide(true)
+  else setTab('files')
+  if (!F.kids.has('')) await loadDir('')
+  const chain = []
+  for (let p = dir ? rel : parentOf(rel); p; p = parentOf(p)) chain.unshift(p)
+  for (const p of chain) { if (!F.kids.has(p) && !(await loadDir(p))) break; F.open.add(p) }
+  if (dir) F.sel = rel
+  else await openFile(rel, line)
+  renderTree()
+  const on = $('#tree .tn.on')
+  if (on) on.scrollIntoView({ block: 'nearest' })
+}
+// After a round: re-read the open folders and the open file
+async function refreshFiles() {
+  if (!F.ready) return
+  await loadDir('', true)
+  for (const p of [...F.open].sort()) await loadDir(p, true)
+  if (F.cur) { const keep = F.sel; await openFile(F.cur.rel, F.line, true); if (F.cur) F.sel = keep }
+  renderTree()
+}
+$('#tree').addEventListener('click', async e => {
+  const t = e.target.closest('[data-t]')
+  if (t) return t.dataset.t === 'reveal' ? call('reveal', ID) : refreshFiles()
+  const n = e.target.closest('.tn[data-p]')
+  if (!n) return
+  const p = n.dataset.p
+  if (e.metaKey) return call('revealPath', ID, p)
+  if (!n.dataset.d) { setTab('files'); await openFile(p); return renderTree() }
+  if (F.open.has(p)) F.open.delete(p)
+  else if (F.kids.has(p) || await loadDir(p)) F.open.add(p)
+  renderTree()
+})
+$('#view').addEventListener('click', e => { if (e.target.closest('[data-v="reveal"]') && F.cur) call('revealPath', ID, F.cur.rel) })
 
 // ───────── Approvals ─────────
 function renderApprovals() {
@@ -241,6 +371,7 @@ const SLASH = [
   ['/new', 'New session', () => act('newSession')],
   ['/stop', 'Stop', () => act('stop')],
   ['/diff', 'View changes', () => setTab('changes')],
+  ['/files', 'Browse files', () => setTab('files')],
   ['/attach', 'Attach file', pickFiles],
   ['/term', 'Open terminal', () => call('terminal', ID)],
 ]
@@ -329,6 +460,15 @@ function renderAll() { renderHead(); renderApprovals(); renderFoot(); updWorking
 document.addEventListener('click', e => {
   const img = e.target.closest('img[data-img]')
   if (img) return void call('openImage', ID, img.dataset.img)
+  const fp = e.target.closest('[data-fp]')
+  if (fp) {
+    if (fp.tagName === 'A') e.preventDefault()
+    const l = fp._loc
+    if (!l || !getSelection().isCollapsed) return
+    if (e.metaKey || (l.rel == null && l.dir)) return void call('revealPath', ID, fp.dataset.fp)
+    if (l.rel == null) { setTab('files'); return void openFile(l.abs, l.line).then(renderTree) }      // outside the folder: read it, nothing to select in the tree
+    return void showPath(l.rel, l.dir, l.line)
+  }
   const u = e.target.closest('.u-box.clip')
   if (u) return u.classList.remove('clip')
   const o = e.target.closest('.out.long:not(.open)')
@@ -337,6 +477,8 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.metaKey && e.key === '1') { e.preventDefault(); setTab('chat') }
   if (e.metaKey && e.key === '2') { e.preventDefault(); setTab('changes') }
+  if (e.metaKey && e.key === '3') { e.preventDefault(); setTab('files') }
+  if (e.metaKey && e.key === 'b') { e.preventDefault(); setSide($('#tree').hidden) }
 })
 
 // ───────── Boot ─────────
@@ -344,11 +486,15 @@ async function boot() {
   S = await hive.call('init')
   A = S.agents.find(a => a.id === ID)
   if (!A) { document.body.innerHTML = '<div class="note" style="padding:80px;text-align:center">This bee is gone</div>'; return }
-  if (new URLSearchParams(location.search).get('tab') === 'changes') setTab('changes')
+  const TABS = ['chat', 'changes', 'files'], tab0 = new URLSearchParams(location.search).get('tab')
+  if (tab0 !== 'chat' && TABS.includes(tab0)) setTab(tab0)
   const log = await hive.call('log', ID)
   if (Array.isArray(log) && log.length) log.forEach(e => addEntry(e, false))
   else tl.innerHTML = `<div id="empty">${beeSvg(A.color, 'happy', 56, false, 'idle')}<b class="round">${esc(A.name)}</b> is ready</div>`
-  renderAll(); toBottom(); input.focus()
+  renderAll(); renderView(); toBottom(); input.focus()
+  let side = '1'
+  try { side = localStorage.getItem('hive-side') || '1' } catch {}
+  if (side === '1' && innerWidth >= 760) { $('#tree').hidden = false; openFiles() }
   hive.on('agents', list => {
     const me = list.find(a => a.id === ID)
     if (!me) return window.close()
@@ -358,6 +504,6 @@ async function boot() {
     if (tab === 'changes' && was !== A.status && changesData) renderChanges()
   })
   hive.on('entry', ({ id, entry }) => { if (id === ID) addEntry(entry, true) })
-  hive.on('tab', t => setTab(t === 'changes' ? 'changes' : 'chat'))
+  hive.on('tab', t => setTab(TABS.includes(t) ? t : 'chat'))
 }
 boot()

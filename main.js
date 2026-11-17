@@ -3,7 +3,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, powerSaveBlocker, screen } = require('electron')
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http'), crypto = require('crypto')
 const { spawn, execFile, execFileSync } = require('child_process')
-const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen')
+const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files')
 const { upIds } = Team, { git, tryGit, repoInfo, headOf, slotKey, ymd } = core
 const NIGHT = garden.NIGHT
 
@@ -1114,7 +1114,7 @@ function openChat(id, tab) {
     x: clamp(mb.x + 28 * k, wa.x, wa.x + wa.width - width), y: clamp(mb.y + 28 * k, wa.y, wa.y + wa.height - height),
   })
   guard(w)
-  w.loadFile(path.join(__dirname, 'chat.html'), { query: tab === 'changes' ? { id, tab } : { id } })
+  w.loadFile(path.join(__dirname, 'chat.html'), { query: tab ? { id, tab } : { id } })
   chats.set(id, w)
   w.on('closed', () => { if (chats.get(id) === w) chats.delete(id) })
 }
@@ -1183,12 +1183,26 @@ function ipc() {
     return { path: f, name: path.basename(f) }
   })
   handle('feed', () => state.feed)
-  handle('openChat', (id, tab) => openChat(id, tab === 'changes' ? 'changes' : ''))
+  handle('openChat', (id, tab) => openChat(id, tab === 'changes' || tab === 'files' ? tab : ''))
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: fs.existsSync(wsRoot()) ? wsRoot() : HOME })
     return r.canceled ? '' : r.filePaths[0]
   })
   handle('reveal', id => { shell.openPath(dirOf(need(id))) })
+  // File browser: the folder the bee's session runs in
+  const filesRoot = a => (a.sessionCwd && fs.existsSync(a.sessionCwd) ? a.sessionCwd : dirOf(a))
+  handle('ls', (id, rel) => files.list(filesRoot(need(id)), rel))
+  handle('readFile', (id, p) => {          // the folder tree stays inside the bee's folder; a path named in the conversation may point anywhere
+    const l = files.locate(filesRoot(need(id)), p, HOME)
+    if (!l) throw new Error('Nothing at that path')
+    return files.readAt(l.abs)
+  })
+  handle('locate', (id, list) => { const root = filesRoot(need(id)); return (Array.isArray(list) ? list.slice(0, 400) : []).map(p => files.locate(root, p, HOME)) })
+  handle('revealPath', (id, p) => {
+    const l = files.locate(filesRoot(need(id)), p, HOME)
+    if (!l) throw new Error('Nothing at that path')
+    shell.showItemInFolder(l.abs)
+  })
   handle('openImage', (id, p) => {
     const a = need(id); p = String(p || '').replace(/^file:\/\//, '')
     try { p = decodeURIComponent(p) } catch {}
