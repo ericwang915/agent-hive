@@ -40,6 +40,7 @@ const beeOf = (a, size = 44) => beeSvg(a.color, moodOf(a.status), size, false, a
 
 const ic = (d, extra = '') => `<svg class="ic" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`
 const ICON = {
+  more: ic('<circle cx="3.5" cy="8" r="1.25" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor" stroke="none"/>'),
   play: ic('<path d="M5 3.2v9.6L12.5 8z" fill="currentColor" stroke="none"/>'),
   pause: ic('<path d="M5.5 3.5v9M10.5 3.5v9" stroke-width="2"/>'),
   stop: ic('<rect x="4" y="4" width="8" height="8" rx="1.6" fill="currentColor" stroke="none"/>'),

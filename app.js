@@ -86,7 +86,7 @@ function renderHive() {
   if (!used.some(([k]) => k === sub)) sub = 'all'
   setHtml($('#chips2'), filter === 'sched' && used.length ? [['all', 'All scheduled'], ...used].map(([k, label]) => `<button class="chip${sub === k ? ' on' : ''}" data-act="sub" data-k="${k}">${label}<span class="n">${k === 'all' ? n('sched') : A.filter(a => schedKind(a.schedule) === k).length}</span></button>`).join('') : '')
 
-  const grid = $('#grid'), cols = Math.max(1, Math.floor((grid.clientWidth + 16) / (268 + 16))), colW = (grid.clientWidth - (cols - 1) * 16) / cols
+  const grid = $('#grid'), cols = Math.max(1, Math.floor((grid.clientWidth + GAP) / (300 + GAP))), colW = (grid.clientWidth - (cols - 1) * GAP) / cols
   let list = A.filter(FILTERS.find(x => x[0] === filter)[2]).filter(matches), html = ''
   if (filter === 'sched') {
     if (sub !== 'all') list = list.filter(a => schedKind(a.schedule) === sub)
@@ -106,6 +106,7 @@ function renderHive() {
   setHtml(grid, html)
 }
 
+const GAP = 18          // grid gap, keep in sync with .grid in style.css
 const subline = a => [eng(a.engine).label, a.model, a.queue && a.queue.length ? `${a.queue.length} queued` : ''].filter(Boolean).join(' · ')
 const tailHtml = a => `<button class="tail" data-act="chat" data-id="${a.id}" title="Open chat">${a.tail && a.tail.length ? a.tail.map(l => `<div>${esc(l)}</div>`).join('') : '<div class="empty">No output yet</div>'}</button>`
 function schedMeta(a) {
@@ -135,7 +136,8 @@ function mainBtn(a, mini) {
   if (['running', 'paused', 'setup'].includes(a.status) || (a.queue && a.queue.length)) out += `<button class="btn sm icon ghost" data-act="stop" data-id="${a.id}" title="Stop">${ICON.stop}</button>`
   return out
 }
-const iconBtns = a => `<button class="btn sm icon ghost" data-act="edit" data-id="${a.id}" title="Settings">${ICON.gear}</button><button class="btn sm icon ghost danger" data-act="delete" data-id="${a.id}" title="Delete">${ICON.trash}</button>`
+// Settings, delete and the rest live in the "more" menu (same as right-click)
+const iconBtns = a => `<button class="btn sm icon ghost" data-act="more" data-id="${a.id}" title="More">${ICON.more}</button>`
 
 function cardHtml(a) {
   const g = a.git ? `<div class="gitline">${ICON.branch}<span class="ell">${esc(a.git.url.replace(/^.*[:/]([^/:]+\/[^/]+?)(\.git)?$/, '$1'))}${a.git.branch ? '@' + esc(a.git.branch) : ''}</span></div>` : ''
@@ -143,7 +145,8 @@ function cardHtml(a) {
   <div class="card-head">${beeOf(a, 44)}<div class="grow"><div class="nm round ell">${esc(a.name)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a)}</div>
-  <div class="meta"><span class="task ell" style="flex:none;max-width:45%">${esc(a.task)}</span><span class="path ell" title="${esc(a.workspace)}">${esc(tilde(a.workspace, S.home))}</span><span class="sched">${esc(schedMeta(a))}</span></div>
+  <div class="meta"><span class="task ell">${esc(a.task)}</span><span class="sched">${esc(schedMeta(a))}</span></div>
+  <div class="path ell" title="${esc(a.workspace)}">${esc(tilde(a.workspace, S.home))}</div>
   ${g}
   <div class="card-actions">${mainBtn(a)}<span class="sp"></span>
     ${a.isolate ? '' : `<button class="btn sm ghost" data-act="relay" data-id="${a.id}" title="Hatch a bee that picks up after this one">+ Relay</button>`}
@@ -173,8 +176,8 @@ function miniHtml(a, tight) {
 // Team box: 2 bees span 2 cells, 3 or more span 3 (capped at the column count); one column per layer
 function teamHtml(team, cols, colW) {
   const layers = Team.layersOf(S.agents, team[0].id), span = Math.min(cols, team.length === 2 ? 2 : 3)
-  const W = span * colW + (span - 1) * 16 - 26, n = Math.max(1, Math.min(layers.length, Math.floor((W + 26) / (150 + 26))))
-  const stacked = n < layers.length, w = (W - (n - 1) * 26) / n, tight = w < 230 || n >= 4, dag = layers.some(l => l.length > 1)
+  const W = span * colW + (span - 1) * GAP - 30, n = Math.max(1, Math.min(layers.length, Math.floor((W + 28) / (220 + 28))))
+  const stacked = n < layers.length, w = (W - (n - 1) * 28) / n, tight = w < 250, dag = layers.some(l => l.length > 1)
   const chain = layers.map(l => l.map(m => `<span class="m"><span class="dot" style="background:${esc(m.color)}"></span>${esc(m.name)}</span>`).join('<span class="sep">∥</span>')).join('<span class="sep">→</span>')
   const busy = team.some(m => ['running', 'paused'].includes(m.status) || (m.queue && m.queue.length))
   const last = layers[layers.length - 1]
@@ -638,6 +641,7 @@ const ACT = {
   'mem-cancel': () => { memEdit = null; renderGarden() },
   'mem-save': async el => { if (await call('saveMemory', el.dataset.k, $('#mem-text').value)) { memEdit = null; toast('Saved'); loadGarden() } },
   pal: el => palRun(+el.dataset.i),
+  more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   'room-toggle': () => toggleRoom(),
   'room-open': el => (R.open && R.cur === el.dataset.id ? closeRoom() : openRoom(el.dataset.id)),
   'queen-room': () => openQueenRoom(),
@@ -986,7 +990,7 @@ document.addEventListener('contextmenu', e => {
   if (bee) return beeMenu(e, bee.dataset.bee)
   closeCtx()
 })
-document.addEventListener('click', closeCtx)
+document.addEventListener('click', e => { if (!e.target.closest('[data-act="more"]')) closeCtx() })
 window.addEventListener('blur', closeCtx)
 document.addEventListener('scroll', closeCtx, true)
 document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && R.cur) renameRoom(R.cur) })
