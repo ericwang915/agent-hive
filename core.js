@@ -37,6 +37,8 @@ const ENGINES = {
         : a.permission === 'plan' ? ['--permission-mode', 'plan']
         : ['--permission-mode', 'acceptEdits',
           ...(a.permission === 'ask' && ctx.mcp ? ['--mcp-config', ctx.mcp, '--permission-prompt-tool', 'mcp__hive__approve'] : [])]),
+      // no skills: Claude Code's skills and slash commands are left out. Not for a command such as /compact, which this flag would also switch off
+      ...(a.noSkills && !String(p).startsWith('/') ? ['--disable-slash-commands'] : []),
       // built-in tools only: leave out the MCP servers from the user's own Claude Code setup (their tool lists ride along on every round)
       ...(a.noMcp ? ['--strict-mcp-config', ...(a.permission === 'ask' && ctx.mcp ? [] : ['--mcp-config', '{"mcpServers":{}}'])] : []),
       ...(a.sessionId ? ['--resume', a.sessionId] : [])],

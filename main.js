@@ -1101,7 +1101,7 @@ function parseSettings(c) {
     name, engine: c.engine, model, template, prompt,
     color: COLORS.includes(c.color) ? c.color : COLORS[0],
     permission: PERMS.includes(c.permission) ? c.permission : 'full',
-    sleepResume: c.sleepResume !== false, isolate: !!c.isolate, freshSchedule: c.freshSchedule !== false, noMcp: !!c.noMcp,
+    sleepResume: c.sleepResume !== false, isolate: !!c.isolate, freshSchedule: c.freshSchedule !== false, noMcp: !!c.noMcp, noSkills: !!c.noSkills,
     mcpOff: (Array.isArray(c.mcpOff) ? c.mcpOff : []).filter(n => typeof n === 'string' && n.length <= 120).slice(0, 200),
     schedule: parseSchedule(c.schedule, prompt),
   }

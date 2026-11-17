@@ -209,13 +209,13 @@ function openHatch(pre = {}) {
   F = a ? {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
     sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}) },
-    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [],
+    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [], noSkills: !!a.noSkills,
     after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
     mode: 'create', name: '', task: '', taskTouched: false, wsCustom: '', gitUrl: '', gitBranch: '',
     color: S.colors.find(c => !usedColors.has(c)) || S.colors[S.agents.length % S.colors.length], engine: firstInstalled(), model: '', template: '', prompt: '',
     sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1 },
-    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [],
+    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [], noSkills: false,
     after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false }, engineTouched: false,
   }
   if (!a) {
@@ -411,7 +411,7 @@ function updBeh() {
   const relay = F.mode === 'edit' ? F.inRelay : !!F.afterWs
   el.innerHTML = `<label class="check"><input type="checkbox" data-change="f-sleep" ${F.sleepResume ? 'checked' : ''}><span>Pause on lid close, resume on open</span></label>
   <label class="check"><input type="checkbox" data-change="f-fresh" ${F.freshSchedule ? 'checked' : ''}><span>Scheduled runs start a new session<span class="faint"> · keeps the cost of each run flat; memory and skills still carry over</span></span></label>
-  ${F.engine === 'claude' ? mcpHtml() : ''}
+  ${F.engine === 'claude' ? `<label class="check"><input type="checkbox" data-change="f-noskills" ${F.noSkills ? 'checked' : ''}><span>No Claude Code skills<span class="faint"> · this bee cannot use any of the skills listed on the Skills page under "From Claude Code"</span></span></label>` + mcpHtml() : ''}
   <div><div class="row"><span class="mute" style="font-size:12px">Permissions</span><div class="seg">${Object.entries(PERM).map(([k, v]) => `<button type="button" class="${F.permission === k ? 'on' : ''}" data-act="f-perm" data-k="${k}">${v[0]}</button>`).join('')}</div></div>
     <div class="hint">${PERM[F.permission][1]}</div>${(F.permission === 'ask' || F.permission === 'plan') && F.engine !== 'claude' ? '<div class="hint warn">Only works with Claude Code; this engine runs as Auto-edit</div>' : ''}</div>
   ${relay ? '' : `<label class="check"><input type="checkbox" data-change="f-isolate" ${F.isolate ? 'checked' : ''}><span>Own branch<span class="faint"> · changes stay on its branch until you merge${F.mode === 'edit' ? '; switching starts a new session' : ''}</span></span></label>`}
@@ -422,7 +422,7 @@ async function submitForm() {
   const s = F.sched, relay = F.mode === 'create' && F.after.ids.length
   const cfg = {
     name: F.name.trim(), task: (relay ? F.afterTask : F.task).trim(), workspace: relay ? '' : F.wsCustom, color: F.color, engine: F.engine, model: F.model.trim(), template: F.template,
-    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff,
+    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff, noSkills: F.noSkills,
     schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom },
     git: relay || F.mode === 'edit' ? null : { url: F.gitUrl.trim(), branch: F.gitBranch.trim() },
     after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop } : null,
@@ -474,6 +474,7 @@ const CHANGE = {
   'f-loop': el => { F.after.loop = el.checked },
   'f-sleep': el => { F.sleepResume = el.checked },
   'f-fresh': el => { F.freshSchedule = el.checked },
+  'f-noskills': el => { F.noSkills = el.checked },
   'f-mcp': el => { const n = el.dataset.n, off = new Set(F.noMcp && CS ? CS.servers.map(s => s.name) : F.mcpOff); el.checked ? off.delete(n) : off.add(n); setMcpOff([...off]) },
   'f-isolate': el => { F.isolate = el.checked },
   'f-start': el => { F.startNow = el.checked },
@@ -560,7 +561,7 @@ function setupHtml() {
   return `<div class="setup-sec"><div class="row"><h2 class="round grow">From Claude Code</h2><button class="btn sm ghost" data-act="setup-refresh">${ICON.refresh}Refresh</button></div>
   <div class="mute" style="margin:-4px 0 10px">Every Claude Code bee starts with these, on top of the hive's skills above. Choose a bee's MCP servers in its settings.</div>
   <div class="setup-mod"><div class="hd">MCP servers <span class="faint">${CS.servers.length}</span></div>${CS.servers.length ? `<div class="setup-rows">${CS.servers.map(s => `<div class="r"><span class="nm ell">${esc(s.label)}</span><span class="faint ell">${esc(s.source)}</span><span class="faint">${s.tools ? s.tools + ' tools' : MCP_ST[s.status] || '—'}</span><span class="faint">${bees ? `${usedBy(s)} of ${bees} bee${bees === 1 ? '' : 's'}` : ''}</span></div>`).join('')}</div>` : '<div class="faint">None</div>'}</div>
-  <div class="setup-mod"><div class="hd">Skills <span class="faint">${CS.skills.length}</span></div>${Object.entries(groups).map(([g, list]) => `<div class="grp"><span class="g">${esc(g)}</span>${list.map(n => `<span class="chip">${esc(n)}</span>`).join('')}</div>`).join('') || '<div class="faint">None</div>'}</div></div>`
+  <div class="setup-mod"><div class="hd">Skills <span class="faint">${CS.skills.length}${bees ? ` · used by ${S.agents.filter(a => a.engine === 'claude' && !a.noSkills).length} of ${bees} bee${bees === 1 ? '' : 's'}; switch them off per bee in its settings` : ''}</span></div>${Object.entries(groups).map(([g, list]) => `<div class="grp"><span class="g">${esc(g)}</span>${list.map(n => `<span class="chip">${esc(n)}</span>`).join('')}</div>`).join('') || '<div class="faint">None</div>'}</div></div>`
 }
 function renderGarden() {
   if (!G) return

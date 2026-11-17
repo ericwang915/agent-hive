@@ -549,6 +549,8 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq(core.parseInit({ type: 'system', subtype: 'init', tools: ['Read', 'mcp__audiee__a', 'mcp__audiee__b', 'mcp__claude_ai_Gmail__send'], skills: ['z', 'eng:debug'], mcp_servers: [{ name: 'audiee', status: 'connected', source: 'user' }, { name: 'claude.ai Gmail', status: 'needs-auth', source: 'claudeai' }, { name: 'plugin:eng:slack', status: 'failed', source: 'plugin' }] }),
     { servers: [{ name: 'audiee', label: 'audiee', source: 'user', status: 'connected', tools: 2 }, { name: 'claude.ai Gmail', label: 'Gmail', source: 'claude.ai', status: 'needs-auth', tools: 1 }, { name: 'plugin:eng:slack', label: 'slack', source: 'plugin eng', status: 'failed', tools: 0 }], skills: ['eng:debug', 'z'] })
   eq(core.parseInit({ type: 'assistant' }), null)
+  assert.ok(args({ noSkills: true }).includes('--disable-slash-commands') && !args({}).includes('--disable-slash-commands'))
+  assert.ok(!core.command({ engine: 'claude', workspace: '/tmp', noSkills: true }, '/compact keep the plan').args.includes('--disable-slash-commands'))
   assert.ok(args({ noMcp: true, permission: 'full' }).join(' ').endsWith('--strict-mcp-config --mcp-config {"mcpServers":{}}'))
   eq(args({ noMcp: true, permission: 'ask' }).filter(x => x === '--mcp-config').length, 1)
   assert.ok(args({ noMcp: true, permission: 'ask' }).includes('--strict-mcp-config') && !args({ permission: 'full' }).includes('--strict-mcp-config'))
