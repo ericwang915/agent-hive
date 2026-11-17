@@ -19,7 +19,7 @@ Pull bees into a group and tell Queen what you want. She picks the right bees, d
 
 ![Queen dispatches two bees and reports back](docs/queen.gif)
 
-A group works without Queen too. `@mention` a bee and it starts right away. Leave the name out and a small, cheap model picks the bee the message is for, so the others stay asleep; a bee with nothing to add stays quiet. Stickers work both ways.
+A group works without Queen too. `@mention` a bee and it starts right away. Leave the name out and a small, cheap model picks the bee the message is for, so the others stay asleep; a bee with nothing to add stays quiet. Stickers work both ways. A bee can hand part of the job to another by `@mentioning` it, for at most three hops.
 
 ### Chain bees into a relay team
 
@@ -46,6 +46,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 - **Spend.** Cost and tokens per round, and a daily budget that holds back automatic runs once it is used up.
 - **Memory and skills.** Overnight, *Dreamer* tidies long-term memory and *Gardener* turns the day's conversations into reusable skills. New sessions start with both.
 - **Dashboard.** A 24-hour activity timeline, spend, and Queen's daily report.
+- **Upgrades.** When a newer release is out, an Upgrade button appears in the sidebar. It downloads the release, checks that it is signed by the same developer, swaps the app and restarts.
 - **Right-click anything.** Rename, settings, stop and delete for bees and groups.
 
 ## Install
@@ -90,6 +91,7 @@ No build step and no framework: plain HTML, CSS and JS in the renderer, Electron
 | `team.js` | Relay-team graph helpers, shared by main and renderer |
 | `queen.js` | Queen's tools, dispatch rules and result parsing |
 | `garden.js` | Skills and memory files, Dreamer and Gardener prompts |
+| `update.js` | Upgrade: finding, downloading, verifying and installing a newer release |
 | `files.js` | File browser: listing, reading and locating paths inside a bee's folder |
 | `approve-mcp.js`, `hive-mcp.js` | Small MCP stdio servers that call back into the app |
 | `index.html`, `app.js` | Main window |

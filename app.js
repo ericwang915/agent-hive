@@ -642,6 +642,7 @@ const ACT = {
   'mem-save': async el => { if (await call('saveMemory', el.dataset.k, $('#mem-text').value)) { memEdit = null; toast('Saved'); loadGarden() } },
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
+  upgrade: () => doUpgrade(),
   'room-toggle': () => toggleRoom(),
   'room-open': el => (R.open && R.cur === el.dataset.id ? closeRoom() : openRoom(el.dataset.id)),
   'queen-room': () => openQueenRoom(),
@@ -703,6 +704,21 @@ document.addEventListener('keydown', e => {
 })
 
 // ───────── Groups: with or without Queen ─────────
+// ───────── Upgrade ─────────
+function renderUpdate() {
+  const u = S.update, el = $('#upd')
+  el.hidden = !u
+  if (!u) return
+  const busy = u.state !== 'available'
+  setHtml(el, `<button class="upd-btn" data-act="upgrade"${busy ? ' disabled' : ''} title="${esc(`You have ${u.current}.${u.notes ? '\n\n' + u.notes.slice(0, 400) : ''}`)}">${ICON.send}<span class="grow">${u.state === 'downloading' ? 'Downloading…' : u.state === 'installing' ? 'Restarting…' : `Upgrade to ${esc(u.version)}`}</span></button>`)
+}
+async function doUpgrade() {
+  const u = S.update
+  if (!u || u.state !== 'available') return
+  const n = S.agents.filter(a => a.status === 'running').length
+  if (u.inPlace && !confirm(`Upgrade Agent Hive from ${u.current} to ${u.version}?\n\nThe app restarts when the download is done.${n ? ` ${n} running bee${n === 1 ? '' : 's'} will pause and pick up where ${n === 1 ? 'it' : 'they'} left off.` : ''}`)) return
+  await call('upgrade')
+}
 let R = { rooms: [], cur: null, open: false, entries: {}, unread: {} }
 let GF = null                                             // new / edit group form
 const RLABEL = { DONE: 'Done', BLOCKED: 'Blocked', NEED_INPUT: 'Needs your call', ERROR: 'Error', STOPPED: 'Stopped', INTERRUPTED: 'Interrupted' }
@@ -830,7 +846,7 @@ function renderRoomMeta() {
   setHtml($('#room-bee'), roomIcon(r, 34))
   $('#room-name').textContent = r.name
   $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}`
-  $('#room-stop').hidden = !running && !pend.length && !busy.length
+  $('#room-stop').hidden = !running && !pend.length && !busy.length && !r.routing
   $('#room-newbtn').hidden = !r.queen
   $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message the group, @ to mention'
   const think = $('#room-think')
@@ -1004,6 +1020,8 @@ document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && 
 async function bootRoom() {
   buildRoom()
   R.rooms = S.rooms || []
+  hive.on('update', u => { S.update = u; renderUpdate() })
+  renderUpdate()
   hive.on('room-entry', addRoomEntry)
   hive.on('rooms', list => {
     R.rooms = list

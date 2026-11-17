@@ -63,7 +63,7 @@ function load() {
   }
   state.settings.night = night
   // Groups
-  state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
+  state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, batches: {}, seen: r.seen || {}, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
   const old = path.join(LOGS, 'room.jsonl')                // there used to be a single group: migrate it into the first group with Queen
   if (!Array.isArray(s.rooms) && fs.existsSync(old)) {
     const r = { id: crypto.randomUUID(), name: 'Queen & bees', main: true, members: state.agents.map(a => a.id), queen: true, model: st.queenModel || '', sessionId: (s.queen || {}).sessionId || '', createdAt: Date.now(), queue: [], asks: [], mission: qt.newMission() }
@@ -228,14 +228,14 @@ function fail(a, text) { log(a, { role: 'error', text }); a.status = 'error'; ev
 function run(a, prompt, why = 'manual', meta = {}) {
   if (!alive(a) || !prompt) return
   if (procs.has(a.id) || a.status === 'setup' || folderBusy(a))
-    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, at: Date.now() })
+    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, at: Date.now() })
   if (GATED[why] && overBudget()) {
     const text = `Today's budget $${state.settings.budget} is used up, so the ${GATED[why]} did not run. Manual messages still work.`
     log(a, { role: 'error', text }); event(a, text, 'budget', true)
     if (why === 'queen') { a.ctx = { why, room: meta.room }; teamResult(a, text, 'ERROR') }
     return
   }
-  if (why !== 'resume') a.ctx = { why, round: meta.round || 0, room: meta.room, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
+  if (why !== 'resume') a.ctx = { why, round: meta.round || 0, room: meta.room, hop: meta.hop || 0, batch: meta.batch, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
   log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show: the conversation shows only what the user wrote, not the attached group context
   if (!fs.existsSync(a.workspace)) return fail(a, `Workspace does not exist: ${a.workspace}`)
   let cwd, c
@@ -327,7 +327,7 @@ const actions = {
     if (!p) return
     const why = opts.room ? 'room' : text && !opts.relay ? 'chat' : 'manual'      // typing in the conversation defaults to chat and does not trigger a relay
     const proc = procs.get(a.id)
-    if (proc && opts.room) return enqueue(a, { prompt: p, why, from: 'Group', room: opts.room, show: opts.show, at: Date.now() })      // a group mention does not interrupt a running bee
+    if (proc && opts.room) return enqueue(a, { prompt: p, why, from: opts.from || 'Group', room: opts.room, show: opts.show, hop: opts.hop, batch: opts.batch, at: Date.now() })      // a group mention does not interrupt a running bee
     if (proc) {
       if (!text) return
       a.queue = a.queue || []
@@ -336,7 +336,7 @@ const actions = {
       log(a, { role: 'system', text: 'Interrupted. Handling your new message now' })
       return kill(a)
     }
-    run(a, p, why, opts.room ? { from: 'Group', room: opts.room, show: opts.show } : {})
+    run(a, p, why, opts.room ? { from: opts.from || 'Group', room: opts.room, show: opts.show, hop: opts.hop, batch: opts.batch } : {})
   },
   chatRelay(a, _t, opts = {}) { a.chatRelay = !!opts.on },
   newSession(a) { delete a.sessionId; delete a.sessionCwd; delete a.context; log(a, { role: 'system', text: 'The next run will start a new session' }) },
@@ -712,7 +712,7 @@ function roomsPush() {
   if (roomsTimer) return
   roomsTimer = setTimeout(() => { roomsTimer = null; send('rooms', state.rooms.map(roomPublic)) }, 30)
 }
-const newRoom = o => ({ id: crypto.randomUUID(), name: 'Group', members: [], queen: false, model: '', sessionId: '', createdAt: Date.now(), ...o, queue: [], asks: [], mission: qt.newMission() })
+const newRoom = o => ({ id: crypto.randomUUID(), name: 'Group', members: [], queen: false, model: '', sessionId: '', createdAt: Date.now(), ...o, queue: [], asks: [], routing: 0, batches: {}, seen: {}, mission: qt.newMission() })
 
 function queenRun(r, prompt) {
   const m = r.mission
@@ -769,14 +769,29 @@ function queenWake(r) {
 function teamResult(a, reply, forced) {
   const why = a.ctx && a.ctx.why
   if (why !== 'queen' && why !== 'room') return
-  const r = roomById(a.ctx.room)
-  a.ctx = { ...a.ctx, why: 'chat' }                      // hand in only once
+  const r = roomById(a.ctx.room), hop = a.ctx.hop || 0, at = Date.now()
+  const batch = r && a.ctx.batch && r.batches[a.ctx.batch]
+  a.ctx = { ...a.ctx, why: 'chat', batch: undefined }    // hand in only once
   if (!r) return
-  if (why === 'room' && !forced && qt.isPass(reply)) return roomsPush()      // nothing to say: stay quiet in the group
+  const pass = why === 'room' && !forced && qt.isPass(reply)
+  if (batch && --batch.left <= 0) {                      // a message for everyone and nobody had anything to add: say so instead of leaving the user waiting
+    delete r.batches[batch.id]
+    if (pass && !batch.said) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: 'No bee had anything to add' })
+  }
+  if (pass) return roomsPush()                           // nothing to say: stay quiet in the group
+  if (batch) batch.said++
   const m = r.mission, rep = qt.parseReport(reply, forced, why === 'room' ? 4000 : 900), files = a.changes ? a.changes.files : 0
   const st = why === 'room' ? qt.splitSticker(rep.summary) : { text: rep.summary, sticker: '' }
   roomLog(r, { who: a.id, name: a.name, color: a.color, kind: 'result', status: rep.status, text: st.text, sticker: st.sticker || undefined, files, direct: why === 'room' })
-  if (why === 'room') { if (r.queen) m.notes.push(`The user spoke to ${a.name} directly in the group. Its reply (${qt.LABEL[rep.status]}): ${rep.summary.slice(0, 400)}`) }
+  if (why === 'room') {
+    if (r.queen) m.notes.push(`The user spoke to ${a.name} directly in the group. Its reply (${qt.LABEL[rep.status]}): ${rep.summary.slice(0, 400)}`)
+    else if (!forced) {                                  // no Queen: a bee hands work to another by @mentioning it, a few hops at most
+      const to = qt.handoffs(st.text, membersOf(r).filter(b => b !== a && b.status !== 'setup'))
+      if (to.length && hop >= qt.LIMITS.hops) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: `Stopped after ${hop} hand-offs between bees. Send a message to continue` })
+      else if (to.length && overBudget()) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: 'Today\'s budget is used up, so the hand-off did not run' })
+      else for (const b of to) roomDeliver(r, b, st.text, { targeted: true, from: a.name, hop: hop + 1, before: at })
+    }
+  }
   else if (m.pending[a.id]) {
     const p = m.pending[a.id]
     delete m.pending[a.id]
@@ -860,7 +875,21 @@ async function queenTool(roomId, tool, args, onClose) {
 }
 
 // recent messages in the group, sent to bees as context
-const roomRecent = r => readRoom(r, 12).filter(e => e.kind === 'say' || e.kind === 'result').slice(-8).map(e => ({ name: e.who === 'user' ? 'User' : e.name, text: [e.text, e.sticker && `[sticker:${e.sticker}]`].filter(Boolean).join(' ') }))
+// A bee with a live session has already seen everything up to its last turn, so it only gets what was said since (and never its own replies)
+function roomRecent(r, b, before) {
+  const since = b && b.sessionId ? r.seen[b.id] || 0 : 0
+  return readRoom(r, 40).filter(e => (e.kind === 'say' || e.kind === 'result') && e.t > since && e.t < before && !(b && e.who === b.id)).slice(-8)
+    .map(e => ({ name: e.who === 'user' ? 'User' : e.name, text: [e.text, e.sticker && `[sticker:${e.sticker}]`].filter(Boolean).join(' ') }))
+}
+// Hand one group message to one bee. o: targeted, from (a bee's name), hop, batch, before (when the message was said)
+function roomDeliver(r, b, text, o = {}) {
+  const unseen = !!(b.sessionId && r.seen[b.id]), recent = roomRecent(r, b, o.before || Date.now())
+  r.seen[b.id] = Date.now()
+  if (procs.has(b.id) || (b.queue || []).length) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: `${b.name} is busy and will get to this next` })
+  if (o.from) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: `${o.from} → ${b.name}` })
+  const others = r.queen ? [] : membersOf(r).filter(x => x !== b).map(x => ({ name: x.name, folder: x.task }))
+  actions.run(b, qt.groupPrompt(r.name, recent, text, o.targeted, { from: o.from, others, unseen }), { room: r.id, show: text, from: o.from, hop: o.hop, batch: o.batch })
+}
 
 // Who an unaddressed group message is for, decided by a cheap model (Claude Haiku, else Codex mini). null = could not tell
 const ROUTE_MODEL = { claude: 'haiku', codex: 'gpt-5.1-codex-mini' }
@@ -886,15 +915,20 @@ function roomSend(r, text) {
     if (!mine.length) throw new Error('The group has no bees yet. Add some first')
     if (!bees.length) throw new Error('These bees are still setting up the repo. Wait a moment')
     if (!mm.text) throw new Error('Say what to do after the mention')
-    const recent = roomRecent(r)
+    const before = Date.now(), gen = r.gen || 0
     roomLog(r, { who: 'user', kind: 'say', text, to: mm.bees.length && !mm.all ? bees.map(b => b.name) : undefined })
-    const go = (list, targeted) => { for (const b of list) actions.run(b, qt.groupPrompt(r.name, recent, mm.text, targeted), { room: r.id, show: mm.text }); push() }
+    const go = (list, targeted) => {
+      const batch = !targeted && list.length > 1 ? crypto.randomBytes(4).toString('hex') : undefined
+      if (batch) r.batches[batch] = { id: batch, left: list.length, said: 0 }
+      for (const b of list) roomDeliver(r, b, mm.text, { targeted, batch, before })
+      push()
+    }
     if (mm.bees.length || bees.length < 2) go(bees, mm.bees.length > 0 && !mm.all)      // mentioned: run right away
     else {                                                 // nobody mentioned: a cheap model picks who it is for; if that fails, everyone gets it and may stay quiet
       r.routing = (r.routing || 0) + 1; roomsPush()
-      routeTo(r, bees, recent, mm.text).then(pick => {
+      routeTo(r, bees, roomRecent(r, null, before), mm.text).then(pick => {
         r.routing--; roomsPush()
-        if (!state.rooms.includes(r)) return
+        if (!state.rooms.includes(r) || (r.gen || 0) !== gen) return      // deleted or stopped meanwhile
         const list = (pick || bees).filter(b => state.agents.includes(b))
         if (pick && pick.length < bees.length) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: `For ${pick.map(b => b.name).join(', ')}` })
         go(list, !!pick && pick.length < bees.length)
@@ -911,7 +945,7 @@ function roomSend(r, text) {
 }
 function roomStop(r) {
   const ids = new Set([...Object.keys(r.mission.pending), ...state.agents.filter(a => a.ctx && a.ctx.room === r.id && ['queen', 'room'].includes(a.ctx.why) && (procs.has(a.id) || (a.queue || []).some(q => q.room === r.id))).map(a => a.id)])
-  r.queue = []; r.stopped = true
+  r.queue = []; r.stopped = true; r.gen = (r.gen || 0) + 1; r.batches = {}
   r.mission = qt.newMission()                             // clear first, so the stopped bees do not wake Queen again
   const child = qprocs.get(r.id)
   if (child) { try { process.kill(-child.pid, 'SIGTERM') } catch {} }
@@ -1117,6 +1151,34 @@ function loadCursorModels() {
   })
 }
 
+// ───────── Upgrade ─────────
+const upd = require('./update')
+let newRel = null                                       // the newer release, if any: {version, tag, notes, url, state: available | downloading | installing}
+const curVersion = () => process.env.HIVE_FAKE_VERSION || app.getVersion()
+const updatePublic = () => newRel && { version: newRel.version, notes: newRel.notes, url: newRel.url, state: newRel.state, current: curVersion(), inPlace: app.isPackaged && !!upd.bundleOf(process.execPath) }
+async function checkUpdate() {
+  if (newRel && newRel.state !== 'available') return updatePublic()
+  const rel = await upd.latest()
+  newRel = rel && upd.newer(rel.version, curVersion()) ? { ...rel, state: 'available' } : null
+  send('update', updatePublic())
+  return updatePublic()
+}
+// Packaged and replaceable: download, check the signature, swap the bundle and restart. Otherwise open the release page
+async function upgrade() {
+  if (!newRel) throw new Error('Agent Hive is already up to date')
+  if (newRel.state !== 'available') return
+  const dest = app.isPackaged ? upd.bundleOf(process.execPath) : ''
+  if (!dest) { shell.openExternal(newRel.url); return { opened: true } }
+  newRel.state = 'downloading'; send('update', updatePublic())
+  try {
+    const fresh = await upd.fetchRelease(newRel, { team: await upd.teamOf(dest) })
+    newRel.state = 'installing'; send('update', updatePublic())
+    upd.swap(process.pid, fresh, dest)
+    setTimeout(() => app.quit(), 300)                    // before-quit puts the running bees to sleep; they pick up after the restart
+    return { restarting: true }
+  } catch (e) { newRel.state = 'available'; send('update', updatePublic()); throw new Error(`Upgrade failed: ${e.message}`) }
+}
+
 // ───────── Windows ─────────
 const webPreferences = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
 function guard(w) {          // external links open in the browser; no navigation inside the window
@@ -1156,7 +1218,10 @@ const need = id => { const a = byId(id); if (!a) throw new Error('This bee no lo
 const IMG = /\.(png|jpe?g|gif|webp|svg|bmp|heic|tiff?)$/i
 
 function ipc() {
+  handle('checkUpdate', () => checkUpdate())
+  handle('upgrade', () => upgrade())
   handle('init', () => ({
+    update: updatePublic(),
     agents: state.agents, engines: enginesInfo(), settings: state.settings, max: MAX, home: HOME, names: core.NAMES, colors: COLORS,
     presets: core.PRESETS, maxRounds: core.MAX_ROUNDS, teamMax: core.TEAM_MAX, feed: state.feed, spend: (rollSpend(), state.spend), night: NIGHT, queenBusy, rooms: state.rooms.map(roomPublic),
   }))
@@ -1308,6 +1373,8 @@ else {
     ipc()
     loadCursorModels()
     showMain()
+    const look = () => checkUpdate().catch(() => {})
+    setTimeout(look, 4000); setInterval(look, 6 * 3600000)
     for (const a of state.agents) {      // runs left unfinished last time count as sleeping; unfinished clones start over
       a.approvals = []
       if (a.status === 'running' || a.status === 'paused') a.status = 'sleeping'
