@@ -13,11 +13,13 @@ const moodOf = status => (status === 'sleeping' || status === 'paused' ? 'sleep'
 
 // Bee: two antennae, rounded-rect body, a faint belly stripe, two eyes, two blush spots, a smile
 // anim = status name, picks the animation: running flaps + sways, idle floats gently, paused breathes slowly, sleeping shows z's, error shivers, setup wobbles, stopped is still and grey
-function beeSvg(color, mood = 'happy', size = 44, crown = false, anim = '') {
+function beeSvg(color, mood = 'happy', size = 44, crown = false, anim = '', extra = '') {
   const eyes = mood === 'sleep'
     ? '<path d="M12.6 21.5h4.4M23 21.5h4.4" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>'
+    : mood === 'grin' ? '<path d="M12.6 21.6q2.2-2.6 4.4 0M23 21.6q2.2-2.6 4.4 0" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>'
+    : mood === 'love' ? HEART_EYES
     : '<circle cx="14.8" cy="21" r="2" fill="#3A2E22"/><circle cx="25.2" cy="21" r="2" fill="#3A2E22"/><circle cx="15.5" cy="20.3" r=".6" fill="#fff"/><circle cx="25.9" cy="20.3" r=".6" fill="#fff"/>'
-  const mouth = mood === 'sad' ? 'M17 28.2q3-2.8 6 0' : 'M17 26q3 3 6 0'
+  const mouth = mood === 'sad' ? 'M17 28.2q3-2.8 6 0' : mood === 'wow' ? 'M20 25.2a1.7 2 0 1 0 .01 0' : mood === 'flat' ? 'M17.2 27h5.6' : mood === 'grin' ? 'M16 25.4q4 4.6 8 0' : 'M17 26q3 3 6 0'
   return `<svg class="bee${anim ? ' a-' + anim : ''}" width="${size}" height="${size}" viewBox="0 0 40 40" fill="none" aria-hidden="true">
 <g class="bee-all">
 <ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#fff" fill-opacity=".82" stroke="#CFE3F2" stroke-width=".9"/>
@@ -30,10 +32,27 @@ ${eyes}
 <circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
 <path d="${mouth}" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
 ${crown ? '<path d="M13.5 12.5l-1.2-6.2 4.3 3 3.4-4.6 3.4 4.6 4.3-3-1.2 6.2z" fill="#F0A93B" stroke="#B9741A" stroke-width=".9" stroke-linejoin="round"/>' : ''}
+${extra}
 </g>
 <g class="zzz" fill="#7C83C9" font-family="Nunito, sans-serif" font-weight="800"><text class="z1" x="30" y="9" font-size="7">z</text><text class="z2" x="34.5" y="4.5" font-size="5">z</text></g>
 </svg>`
 }
+const heart = (x, y, k) => `<path transform="translate(${x} ${y}) scale(${k})" d="M0 3C-5-1-2.6-4.6 0-2 2.6-4.6 5-1 0 3z" fill="#E5484D"/>`
+const HEART_EYES = heart(14.8, 21.4, .62) + heart(25.2, 21.4, .62)
+const badge = (fill, d) => `<circle cx="32" cy="31" r="6.6" fill="${fill}" stroke="#fff" stroke-width="1.4"/>${d}`
+const bold = (x, y, size, fill, t) => `<text x="${x}" y="${y}" font-size="${size}" font-family="Nunito, sans-serif" font-weight="800" fill="${fill}" text-anchor="middle">${t}</text>`
+// Group-chat stickers: name → [label, mood, what is drawn on top of the bee]. The names are also in queen.js (STICKERS)
+const STICKER = {
+  ok: ['OK', 'happy', badge('#3FA66B', '<path d="M28.9 31.2l2.2 2.2 4-4.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>')],
+  thanks: ['Thanks', 'love', heart(33, 8, 1) + heart(6, 5, .6)],
+  nice: ['Nice', 'grin', '<path d="M33 2l1.3 3.4 3.4 1.3-3.4 1.3L33 11.4l-1.3-3.4-3.4-1.3 3.4-1.3zM5.5 1.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" fill="#F0A93B"/>'],
+  hmm: ['Hmm', 'flat', bold(33.5, 11, 13, '#7C83C9', '?')],
+  oops: ['Oops', 'sad', '<path d="M31.5 12.5c1.9 2.6 2.8 4 2.8 5.2a2.8 2.8 0 0 1-5.6 0c0-1.2.9-2.6 2.8-5.2z" fill="#7EC4EA"/>'],
+  wow: ['Wow', 'wow', bold(34, 11.5, 13, '#E5484D', '!')],
+  party: ['Party', 'grin', '<path d="M14.5 12.4L20 1.2l5.5 11.2z" fill="#B8A4E8" stroke="#8E76CF" stroke-width=".8" stroke-linejoin="round"/><circle cx="20" cy="1.6" r="1.6" fill="#F0A93B"/><circle cx="3.5" cy="7" r="1.1" fill="#E5484D"/><circle cx="36" cy="5" r="1.1" fill="#3FA66B"/><circle cx="37" cy="24" r="1" fill="#F0A93B"/><circle cx="2.8" cy="26" r="1" fill="#7EC4EA"/>'],
+  zzz: ['Zzz', 'sleep', bold(31, 9.5, 8, '#7C83C9', 'z') + bold(36, 4.8, 6, '#7C83C9', 'z')],
+}
+const stickerSvg = (name, color, size = 84) => (STICKER[name] ? beeSvg(color || '#F6C86B', STICKER[name][1], size, false, '', STICKER[name][2]) : '')
 const queenSvg = (size = 44, mood = 'happy', anim = '') => beeSvg('#F6C86B', mood, size, true, anim)
 // The bee drawing for a bee's current status
 const beeOf = (a, size = 44) => beeSvg(a.color, moodOf(a.status), size, false, a.status)
@@ -60,6 +79,7 @@ const ICON = {
   brain: ic('<path d="M6.2 2.6A2.1 2.1 0 0 0 4 4.7a2.2 2.2 0 0 0-1.5 2.9A2.3 2.3 0 0 0 3 11a2.2 2.2 0 0 0 3.2 2.2c.9-.3 1.8-1 1.8-2.2V4.4c0-1-.8-1.8-1.8-1.8zM9.8 2.6A2.1 2.1 0 0 1 12 4.7a2.2 2.2 0 0 1 1.5 2.9A2.3 2.3 0 0 1 13 11a2.2 2.2 0 0 1-3.2 2.2c-.9-.3-1.8-1-1.8-2.2"/>'),
   refresh: ic('<path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.8v2.6h-2.6"/>'),
   terminal: ic('<rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M4.8 6.5L6.8 8l-2 1.5M8.4 10h2.8"/>'),
+  smile: ic('<circle cx="8" cy="8" r="6.2"/><path d="M5.6 9.6q2.4 2.4 4.8 0"/><circle cx="6" cy="6.6" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.6" r=".8" fill="currentColor" stroke="none"/>'),
   send: ic('<path d="M8 12.8V3.4M4 7.2l4-4 4 4" stroke-width="1.8"/>'),
   link: ic('<path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.7.7M9.2 6.8a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.7-.7"/>'),
   merge: ic('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="8" r="1.5"/><path d="M4.5 5v6M4.5 5c0 3 3 3 5.5 3"/>'),
@@ -182,4 +202,4 @@ async function call(ch, ...args) {
 const animT = () => `--t:${Math.round(performance.now())}`
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, STATUS, beeSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }
+  module.exports = { esc, STATUS, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }

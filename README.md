@@ -19,7 +19,7 @@ Pull bees into a group and tell Queen what you want. She picks the right bees, d
 
 ![Queen dispatches two bees and reports back](docs/queen.gif)
 
-A group works without Queen too: your message goes to every member, or to the one you `@mention`.
+A group works without Queen too. `@mention` a bee and it starts right away. Leave the name out and a small, cheap model picks the bee the message is for, so the others stay asleep; a bee with nothing to add stays quiet. Stickers work both ways.
 
 ### Chain bees into a relay team
 

@@ -63,7 +63,7 @@ function load() {
   }
   state.settings.night = night
   // Groups
-  state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
+  state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
   const old = path.join(LOGS, 'room.jsonl')                // there used to be a single group: migrate it into the first group with Queen
   if (!Array.isArray(s.rooms) && fs.existsSync(old)) {
     const r = { id: crypto.randomUUID(), name: 'Queen & bees', main: true, members: state.agents.map(a => a.id), queen: true, model: st.queenModel || '', sessionId: (s.queen || {}).sessionId || '', createdAt: Date.now(), queue: [], asks: [], mission: qt.newMission() }
@@ -607,12 +607,13 @@ function denyAll(a) {
 }
 
 // ───────── Queen ─────────
-function once(prompt) {
+// opts.model: a specific model; opts.bare: skip the user's MCP servers so it starts fast; opts.timeout in ms
+function once(prompt, opts = {}) {
   return new Promise((resolve, reject) => {
     if (!core.onPath('claude')) return reject(new Error('Queen needs the claude command installed on this machine'))
-    const child = spawn('claude', ['-p', prompt, '--output-format', 'json'], { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
+    const child = spawn('claude', ['-p', prompt, '--output-format', 'json', ...(opts.model ? ['--model', opts.model] : []), ...(opts.bare ? ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'] : [])], { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
     let out = '', err = ''
-    const timer = setTimeout(() => child.kill('SIGTERM'), 15 * 60000)
+    const timer = setTimeout(() => child.kill('SIGTERM'), opts.timeout || 15 * 60000)
     child.stdout.on('data', d => (out += d)); child.stderr.on('data', d => (err += d))
     child.on('error', e => { clearTimeout(timer); reject(e) })
     child.on('close', code => {
@@ -689,7 +690,7 @@ const roomBee = r => ({ id: 'room:' + r.id, name: r.name, color: '#F6C86B' })
 function roomLog(r, e) {
   e.t = Date.now()
   try { fs.appendFileSync(roomFile(r), JSON.stringify(e) + '\n') } catch {}
-  if (e.kind !== 'system') { r.lastAt = e.t; r.last = `${e.who === 'user' ? 'You' : e.name}: ${first(String(e.text || '').replace(/[*`#]/g, ''), 60)}` }
+  if (e.kind !== 'system') { r.lastAt = e.t; r.last = `${e.who === 'user' ? 'You' : e.name}: ${first(String(e.text || '').replace(/[*`#]/g, ''), 60) || (e.sticker ? '[sticker]' : '')}` }
   send('room-entry', { room: r.id, entry: e })
   roomsPush()
 }
@@ -702,7 +703,7 @@ function readRoom(r, n = 400) {
 }
 const roomPublic = r => ({
   id: r.id, name: r.name, members: r.members, queen: !!r.queen, main: !!r.main, model: r.model || '', last: r.last || '', lastAt: r.lastAt || r.createdAt,
-  status: qprocs.has(r.id) ? 'running' : 'idle', runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
+  status: qprocs.has(r.id) ? 'running' : 'idle', routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
   pending: Object.entries(r.mission.pending).map(([id, p]) => ({ id, ...p })), installed: core.onPath('claude'),
 })
 let roomsTimer = null
@@ -771,8 +772,10 @@ function teamResult(a, reply, forced) {
   const r = roomById(a.ctx.room)
   a.ctx = { ...a.ctx, why: 'chat' }                      // hand in only once
   if (!r) return
+  if (why === 'room' && !forced && qt.isPass(reply)) return roomsPush()      // nothing to say: stay quiet in the group
   const m = r.mission, rep = qt.parseReport(reply, forced, why === 'room' ? 4000 : 900), files = a.changes ? a.changes.files : 0
-  roomLog(r, { who: a.id, name: a.name, color: a.color, kind: 'result', status: rep.status, text: rep.summary, files, direct: why === 'room' })
+  const st = why === 'room' ? qt.splitSticker(rep.summary) : { text: rep.summary, sticker: '' }
+  roomLog(r, { who: a.id, name: a.name, color: a.color, kind: 'result', status: rep.status, text: st.text, sticker: st.sticker || undefined, files, direct: why === 'room' })
   if (why === 'room') { if (r.queen) m.notes.push(`The user spoke to ${a.name} directly in the group. Its reply (${qt.LABEL[rep.status]}): ${rep.summary.slice(0, 400)}`) }
   else if (m.pending[a.id]) {
     const p = m.pending[a.id]
@@ -857,11 +860,23 @@ async function queenTool(roomId, tool, args, onClose) {
 }
 
 // recent messages in the group, sent to bees as context
-const roomRecent = r => readRoom(r, 12).filter(e => e.kind === 'say' || e.kind === 'result').slice(-8).map(e => ({ name: e.who === 'user' ? 'User' : e.name, text: e.text }))
+const roomRecent = r => readRoom(r, 12).filter(e => e.kind === 'say' || e.kind === 'result').slice(-8).map(e => ({ name: e.who === 'user' ? 'User' : e.name, text: [e.text, e.sticker && `[sticker:${e.sticker}]`].filter(Boolean).join(' ') }))
 
+// Who an unaddressed group message is for, decided by a cheap model (Claude Haiku, else Codex mini). null = could not tell
+const ROUTE_MODEL = { claude: 'haiku', codex: 'gpt-5.1-codex-mini' }
+async function routeTo(r, bees, recent, text) {
+  const prompt = qt.routePrompt(r.name, bees.map(b => ({ name: b.name, folder: b.task, about: b.prompt || (b.tail || []).join(' / ') })), recent, text)
+  try {
+    if (core.onPath('claude')) return qt.parseRoute(await once(prompt, { model: ROUTE_MODEL.claude, bare: true, timeout: 45000 }), bees)
+    if (core.onPath('codex')) return qt.parseRoute(await new Promise((res, rej) => execFile('codex', ['exec', '--skip-git-repo-check', '-s', 'read-only', '-m', ROUTE_MODEL.codex, prompt], { cwd: DIR, timeout: 45000, maxBuffer: 4 << 20, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } }, (e, out) => (e ? rej(e) : res(out)))), bees)
+  } catch {}
+  return null
+}
 function roomSend(r, text) {
   text = String(text || '').trim().slice(0, 50000)
   if (!text) return
+  const only = qt.splitSticker(text)
+  if (only.sticker && !only.text) return roomLog(r, { who: 'user', kind: 'say', text: '', sticker: only.sticker })      // a sticker on its own is just a reaction: no bee is woken for it
   const m = r.mission, mine = membersOf(r), mm = qt.parseMentions(text, mine)
   const outsider = mm.unknown.map(n => state.agents.find(a => a.name.toLowerCase() === n.toLowerCase())).find(Boolean)
   if (outsider) throw new Error(`${outsider.name} is not in this group. Add it in the group settings first`)
@@ -873,7 +888,18 @@ function roomSend(r, text) {
     if (!mm.text) throw new Error('Say what to do after the mention')
     const recent = roomRecent(r)
     roomLog(r, { who: 'user', kind: 'say', text, to: mm.bees.length && !mm.all ? bees.map(b => b.name) : undefined })
-    for (const b of bees) actions.run(b, qt.groupPrompt(r.name, recent, mm.text, mm.bees.length > 0 && !mm.all), { room: r.id, show: mm.text })
+    const go = (list, targeted) => { for (const b of list) actions.run(b, qt.groupPrompt(r.name, recent, mm.text, targeted), { room: r.id, show: mm.text }); push() }
+    if (mm.bees.length || bees.length < 2) go(bees, mm.bees.length > 0 && !mm.all)      // mentioned: run right away
+    else {                                                 // nobody mentioned: a cheap model picks who it is for; if that fails, everyone gets it and may stay quiet
+      r.routing = (r.routing || 0) + 1; roomsPush()
+      routeTo(r, bees, recent, mm.text).then(pick => {
+        r.routing--; roomsPush()
+        if (!state.rooms.includes(r)) return
+        const list = (pick || bees).filter(b => state.agents.includes(b))
+        if (pick && pick.length < bees.length) roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: `For ${pick.map(b => b.name).join(', ')}` })
+        go(list, !!pick && pick.length < bees.length)
+      })
+    }
     if (r.queen) m.notes.push(`The user said directly to ${bees.map(b => b.name).join(', ')} in the group: ${mm.text.slice(0, 500)}`)
     return push()
   }

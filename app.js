@@ -654,6 +654,8 @@ const ACT = {
   'room-ask': el => call('roomDecide', el.dataset.id, !!el.dataset.ok),
   'room-approve': el => call('decide', el.dataset.bee, el.dataset.id, !!el.dataset.ok, !!el.dataset.always),
   'room-at': el => pickAt(+el.dataset.i),
+  'room-stickers': () => { $('#room-stickers').hidden = !$('#room-stickers').hidden },
+  'room-sticker': el => { $('#room-stickers').hidden = true; call('roomSend', R.cur, `[sticker:${el.dataset.id}]`); $('#room-input').focus() },
 }
 
 document.addEventListener('click', e => {
@@ -734,7 +736,7 @@ function buildRoom() {
   <div class="room-bees" id="room-bees"></div>
   <div class="room-tl" id="room-tl"></div>
   <div id="room-cards"></div>
-  <div class="room-compose"><div id="room-at" hidden></div><textarea id="room-input" rows="1" spellcheck="false"></textarea><button id="room-send" title="Send">${ICON.send}</button></div>`
+  <div class="room-compose"><div id="room-at" hidden></div><div id="room-stickers" hidden>${Object.keys(STICKER).map(n => `<button data-act="room-sticker" data-id="${n}" title="${STICKER[n][0]}">${stickerSvg(n, '', 52)}</button>`).join('')}</div><textarea id="room-input" rows="1" spellcheck="false"></textarea><button id="room-stick" data-act="room-stickers" title="Stickers">${ICON.smile}</button><button id="room-send" title="Send">${ICON.send}</button></div>`
   const input = $('#room-input')
   const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(160, input.scrollHeight) + 'px'; $('#room-send').disabled = !input.value.trim() }
   input.addEventListener('input', () => { grow(); updAt() })
@@ -749,6 +751,7 @@ function buildRoom() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRoom() }
   })
   $('#room-send').addEventListener('click', sendRoom)
+  input.addEventListener('focus', () => { $('#room-stickers').hidden = true })
   grow()
 }
 async function sendRoom() {
@@ -785,12 +788,15 @@ function roomEntryHtml(e) {
   const txt = esc(e.text || '')
   if (e.kind === 'system') return `<div class="rm-sys">${txt}</div>`
   if (e.kind === 'error') return `<div class="rm-sys err">${txt}</div>`
+  if (e.who === 'user' && e.sticker && !e.text) return `<div class="rm me"><div class="sticker" title="${esc(STICKER[e.sticker] ? STICKER[e.sticker][0] : '')}">${stickerSvg(e.sticker)}</div><time>${hm(e.t)}</time></div>`
   if (e.who === 'user') return `<div class="rm me">${e.to && e.to.length ? `<span class="to">→ ${esc(e.to.join(', '))}</span>` : ''}<div class="bubble">${txt}</div><time>${hm(e.t)}</time></div>`
   if (e.kind === 'dispatch') return `<div class="rm"><span class="av"></span><button class="rm-card dispatch col" data-act="chat" data-id="${esc(e.to)}" title="Open ${esc(e.toName)}'s chat"><div class="hd">Queen <span class="arrow">→</span><span class="dot" style="background:${esc(e.toColor)}"></span>${esc(e.toName)}${e.ask ? '<span class="tagx">Ask</span>' : ''}<span class="grow"></span><time>${hm(e.t)}</time></div><div class="tx">${txt}</div></button></div>`
   if (e.kind === 'result') {
     const tag = e.direct && e.status === 'DONE' ? '' : `<span class="tagx s-${esc(e.status)}">${RLABEL[e.status] || esc(e.status)}</span>`
     const body = e.direct ? `<div class="md">${renderMd(e.text || '')}</div>` : `<div class="tx">${txt}</div>`
-    return `<div class="rm"><span class="av">${beeSvg(e.color || '#ccc', e.status === 'ERROR' ? 'sad' : 'happy', 28)}</span><div class="rm-card result col${e.direct ? ' direct' : ''}${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" title="Open ${esc(e.name)}'s full chat" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button>${tag}${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'}</span>` : ''}<span class="grow"></span><time>${hm(e.t)}</time></div>${body}</div></div>`
+    const stick = e.sticker ? `<div class="sticker" title="${esc(STICKER[e.sticker] ? STICKER[e.sticker][0] : '')}">${stickerSvg(e.sticker, e.color)}</div>` : ''
+    if (stick && !e.text) return `<div class="rm"><span class="av">${beeSvg(e.color || '#ccc', 'happy', 28)}</span><div class="col"><div class="nm"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button><time>${hm(e.t)}</time></div>${stick}</div></div>`
+    return `<div class="rm"><span class="av">${beeSvg(e.color || '#ccc', e.status === 'ERROR' ? 'sad' : 'happy', 28)}</span><div class="rm-card result col${e.direct ? ' direct' : ''}${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" title="Open ${esc(e.name)}'s full chat" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button>${tag}${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'}</span>` : ''}<span class="grow"></span><time>${hm(e.t)}</time></div>${body}${stick}</div></div>`
   }
   return `<div class="rm"><span class="av">${queenSvg(28)}</span><div class="col"><div class="nm">Queen<time>${hm(e.t)}</time></div><div class="md">${renderMd(e.text || '')}</div></div></div>`
 }
@@ -800,7 +806,7 @@ function renderRoom(scroll) {
   const list = R.entries[r.id] || [], stick = scroll || tl.scrollHeight - tl.scrollTop - tl.clientHeight < 140
   const empty = r.queen
     ? `${queenSvg(60)}Tell Queen what to do; she picks the bees. <code>@name</code> to mention, <code>@all</code> for everyone.`
-    : `${roomIcon(r, 60)}Messages go to every bee in the group. <code>@name</code> sends to just that one.`
+    : `${roomIcon(r, 60)}Just talk: the message goes to the bee it concerns. <code>@name</code> sends straight to that one, <code>@all</code> to everyone.`
   tl.innerHTML = (list.length ? list.map(roomEntryHtml).join('') : `<div class="room-empty">${empty}</div>`) + '<div id="room-think" class="rm-think" hidden></div>'
   if (stick) tl.scrollTop = tl.scrollHeight
   renderRoomMeta()
@@ -826,10 +832,10 @@ function renderRoomMeta() {
   $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}`
   $('#room-stop').hidden = !running && !pend.length && !busy.length
   $('#room-newbtn').hidden = !r.queen
-  $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message everyone, @ to mention'
+  $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message the group, @ to mention'
   const think = $('#room-think')
   if (think) {
-    const text = running ? 'Queen is thinking…' : busy.length ? `${busy.map(a => a.name).join(', ')} working…` : ''
+    const text = running ? 'Queen is thinking…' : r.routing ? 'Picking who this is for…' : busy.length ? `${busy.map(a => a.name).join(', ')} working…` : ''
     const was = think.hidden
     think.hidden = !text; think.textContent = text
     if (was && text) { const tl = $('#room-tl'); tl.scrollTop = tl.scrollHeight }
