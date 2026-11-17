@@ -32,8 +32,5 @@ if pgrep -f "$DEST/$APP/Contents/MacOS/" >/dev/null 2>&1; then
 fi
 rm -rf "$DEST/$APP"
 mv "$TMP/out/$APP" "$DEST/$APP"
-# The app is not notarized; clear the quarantine flag so macOS will open it.
-xattr -dr com.apple.quarantine "$DEST/$APP" 2>/dev/null || true
-
 echo "Installed: $DEST/$APP"
 open "$DEST/$APP"

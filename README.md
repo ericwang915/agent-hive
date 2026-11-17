@@ -49,19 +49,19 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 
 ## Install
 
-> **Not released yet.** The app is still being polished. Until the first release, run it from source:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
+```
+
+This downloads the latest release for your Mac (Apple silicon or Intel), puts `Agent Hive.app` in `/Applications` and opens it. You can also download the `.dmg` from the [releases page](https://github.com/ericwang915/agent-hive/releases). The app is signed and notarized by Apple.
+
+To run from source instead:
 
 ```bash
 git clone https://github.com/ericwang915/agent-hive.git
 cd agent-hive
 npm install
 npm start
-```
-
-Once a release is out, this one-liner will download the app for your Mac (Apple silicon or Intel) and put it in `/Applications`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
 ```
 
 ### Requirements
@@ -95,8 +95,9 @@ No build step and no framework: plain HTML, CSS and JS in the renderer, Electron
 | `test.js` | Unit tests for everything that does not need Electron |
 
 ```bash
-npm test         # unit tests
-npm run dist     # build the .zip and .dmg into dist/
+npm test             # unit tests
+npm run dist         # build an ad-hoc signed .zip and .dmg into dist/
+npm run dist:signed  # the same, signed and notarized (needs CSC_NAME and NOTARYTOOL_PROFILE)
 ```
 
 ## Contributing
