@@ -1,0 +1,456 @@
+// Unit tests: node test.js → ok
+'use strict'
+const assert = require('assert'), fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process')
+const core = require('./core'), Team = require('./team'), garden = require('./garden'), common = require('./common')
+const { slotKey, command, makeParser, usageOf, relayPlan } = core
+const eq = assert.deepStrictEqual
+let A0
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hive-test-')))
+const at = s => new Date(s)
+
+// ───────── slotKey ─────────
+{
+  const daily = { mode: 'daily', time: '09:00' }
+  eq(slotKey(daily, at('2026-11-17T08:59')), null)
+  eq(slotKey(daily, at('2026-11-17T09:00')), '2026-11-17 09:00')
+  eq(slotKey(daily, at('2026-11-17T22:30')), '2026-11-17 09:00')           // later the same day is still the same key (missed runs catch up)
+  eq(slotKey({ mode: 'weekdays', time: '09:00' }, at('2026-11-21T10:00')), null)   // Saturday
+  eq(slotKey({ mode: 'weekdays', time: '09:00' }, at('2026-11-20T10:00')), '2026-11-20 09:00')
+  const weekly = { mode: 'weekly', time: '09:00', days: [3] }
+  eq(slotKey(weekly, at('2026-11-17T10:00')), null)                        // Tuesday
+  eq(slotKey(weekly, at('2026-11-18T10:00')), '2026-11-18 09:00')          // Wednesday
+  const monthly = { mode: 'monthly', time: '09:00', dom: 31 }
+  eq(slotKey(monthly, at('2026-11-30T10:00')), '2026-11-30 09:00')         // November has no 31st → last day
+  eq(slotKey(monthly, at('2026-12-30T10:00')), null)
+  eq(slotKey(monthly, at('2026-12-31T10:00')), '2026-12-31 09:00')
+  const iv = { mode: 'interval', every: 30 }
+  eq(slotKey(iv, at('2026-11-17T10:01')), slotKey(iv, at('2026-11-17T10:29')))
+  assert.notStrictEqual(slotKey(iv, at('2026-11-17T10:29')), slotKey(iv, at('2026-11-17T10:31')))
+  const adhoc = { mode: 'adhoc', at: '2026-11-17T15:00' }
+  eq(slotKey(adhoc, at('2026-11-17T14:59')), null)
+  eq(slotKey(adhoc, at('2026-11-17T15:00')), 'adhoc 2026-11-17T15:00')
+  eq(slotKey(adhoc, at('2026-11-19T08:00')), 'adhoc 2026-11-17T15:00')
+  eq(slotKey({ mode: 'manual' }, new Date()), null)
+}
+
+// ───────── nextRun / whenText agree with slotKey ─────────
+{
+  const now = at('2026-11-17T10:00')          // Tuesday
+  const w = s => common.whenText(common.nextRun(s, now), now)
+  eq(w({ mode: 'daily', time: '09:00' }), 'Tomorrow 09:00')
+  eq(w({ mode: 'daily', time: '18:00' }), 'Today 18:00')
+  eq(w({ mode: 'weekly', time: '09:00', days: [3] }), 'Tomorrow 09:00')
+  eq(w({ mode: 'weekly', time: '09:00', days: [5] }), 'Fri 09:00')
+  eq(common.whenText(common.nextRun({ mode: 'weekly', time: '09:00', days: [3] }, at('2026-11-19T10:00')), at('2026-11-19T10:00')), 'Wed 09:00')
+  eq(w({ mode: 'monthly', time: '09:00', dom: 31 }), '11-30 09:00')
+  eq(w({ mode: 'weekdays', time: '09:00' }), 'Tomorrow 09:00')
+  eq(common.nextRun({ mode: 'adhoc', at: '2026-11-01T09:00' }, now), null)
+  eq(common.nextRun({ mode: 'manual' }, now), null)
+  eq(common.nextRun({ mode: 'adhoc', at: '2026-11-17T12:00' }, now).getHours(), 12)
+  for (const s of [{ mode: 'daily', time: '09:00' }, { mode: 'weekly', time: '07:30', days: [0, 4] }, { mode: 'monthly', time: '23:10', dom: 30 }, { mode: 'weekdays', time: '12:00' }]) {
+    const n = common.nextRun(s, now)
+    assert.ok(slotKey(s, n), 'slotKey should fire at the nextRun time')
+    eq(slotKey(s, new Date(n.getTime() - 60000)) === slotKey(s, n), false)
+  }
+  eq(common.nextRun({ mode: 'interval', every: 30 }, now).getTime(), at('2026-11-17T10:30').getTime())
+  eq(common.schedText({ mode: 'weekly', time: '09:00', days: [1, 2, 3, 4, 5] }), 'Weekdays 09:00')
+  eq(common.schedText({ mode: 'weekly', time: '09:00', days: [0, 1] }), 'Weekly Mo Su 09:00')
+}
+
+// ───────── Engine command lines ─────────
+{
+  const c = (a, ctx) => command({ model: '', permission: 'full', ...a }, 'hi', ctx)
+  eq(c({ engine: 'claude' }), { cmd: 'claude', args: ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'] })
+  eq(c({ engine: 'claude', permission: 'safe', model: 'haiku', sessionId: 's1' }).args,
+    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--model', 'haiku', '--permission-mode', 'acceptEdits', '--resume', 's1'])
+  eq(c({ engine: 'claude', permission: 'ask' }, { mcp: '{"x":1}' }).args,
+    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--mcp-config', '{"x":1}', '--permission-prompt-tool', 'mcp__hive__approve'])
+  eq(c({ engine: 'claude', permission: 'ask' }).args.includes('--mcp-config'), false)        // omitted without mcp
+  eq(c({ engine: 'claude', permission: 'safe' }, { mcp: '{}' }).args.includes('--mcp-config'), false)
+  eq(c({ engine: 'codex' }).args, ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', 'hi'])
+  eq(c({ engine: 'codex', permission: 'safe', model: 'gpt-5.2', sessionId: 't1' }).args, ['exec', '--json', '--skip-git-repo-check', '-m', 'gpt-5.2', '-s', 'workspace-write', 'resume', 't1', 'hi'])
+  eq(c({ engine: 'gemini' }).args, ['-p', 'hi', '-o', 'stream-json', '--skip-trust', '--yolo'])
+  eq(c({ engine: 'gemini', permission: 'ask', model: 'gemini-2.5-pro', sessionId: 'x' }).args, ['-p', 'hi', '-o', 'stream-json', '--skip-trust', '-m', 'gemini-2.5-pro', '--approval-mode=auto_edit', '--resume', 'latest'])
+  eq(c({ engine: 'cursor-agent' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--force'])
+  eq(c({ engine: 'cursor-agent', permission: 'safe', model: 'gpt-5', sessionId: 'c1' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--model', 'gpt-5', '--resume', 'c1'])
+  eq(c({ engine: 'grok' }), { cmd: 'grok', args: ['-p', 'hi'] })
+  eq(c({ engine: 'antigravity' }), { cmd: 'antigravity', args: ['chat', 'hi'] })
+  // templates never go through a shell: the prompt is passed verbatim as one argument
+  const evil = 'a b; rm -rf / $(x) `y` "z"'
+  eq(command({ engine: 'custom', template: 'node fake.js --say {prompt} --end' }, evil), { cmd: 'node', args: ['fake.js', '--say', evil, '--end'] })
+  eq(command({ engine: 'custom', template: 'mycli run' }, evil), { cmd: 'mycli', args: ['run', evil] })
+  eq(command({ engine: 'custom', template: 'x --p={prompt}' }, 'q').args, ['--p=q'])
+  assert.throws(() => command({ engine: 'custom', template: '  ' }, 'x'))
+  assert.throws(() => command({ engine: 'nope' }, 'x'))
+  eq([core.validModel(''), core.validModel('claude-opus-4[1m]'), core.validModel('a/b:c'), core.validModel('-x'), core.validModel('a b'), core.validModel('a;b')], [true, true, true, false, false, false])
+}
+
+// ───────── Parser ─────────
+{
+  const parse = lines => { const out = [], sess = [], use = []; const p = makeParser(e => out.push(e), s => sess.push(s), u => use.push(u)); p.feed(lines.map(l => (typeof l === 'string' ? l : JSON.stringify(l))).join('\n') + '\n'); p.end(); return { out, sess, use } }
+  // Claude / Cursor
+  let r = parse([
+    { type: 'system', subtype: 'init', session_id: 'S1' },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'Let me look' }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls -la' } }, { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/a/b.js' } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't2', content: [{ type: 'text', text: 'file body' }] }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'a\nb' }] } },
+    { type: 'weird', foo: 1 },
+    'plain text line',
+    { type: 'result', is_error: false, result: 'done', total_cost_usd: 0.0123, usage: { input_tokens: 10, cache_read_input_tokens: 100, cache_creation_input_tokens: 5, output_tokens: 7 } },
+  ])
+  eq(r.sess[0], 'S1')
+  eq(r.out.map(e => e.role), ['assistant', 'tool', 'tool', 'out', 'out', 'assistant'])
+  eq([r.out[1].text, r.out[1].tid, r.out[2].text], ['Bash(ls -la)', 't1', 'Read(/a/b.js)'])
+  eq([r.out[3].tid, r.out[3].text, r.out[4].tid, r.out[4].text], ['t2', 'file body', 't1', 'a\nb'])      // parallel calls are paired by tid
+  eq(r.out[5].text, 'plain text line')
+  eq(r.use, [{ tin: 115, tout: 7, usd: 0.0123 }])
+  r = parse([{ type: 'result', is_error: true, result: 'boom' }])
+  eq(r.out, [{ role: 'error', text: 'boom' }])
+  // Gemini: deltas accumulate
+  r = parse([
+    { type: 'init', session_id: 'G1' },
+    { type: 'message', role: 'user', content: 'hi' },
+    { type: 'message', role: 'assistant', delta: true, content: 'Hel' },
+    { type: 'message', role: 'assistant', delta: true, content: 'lo' },
+    { type: 'tool_use', tool_name: 'read_file', parameters: { path: 'x.txt' }, tool_id: 'g1' },
+    { type: 'tool_result', output: 'content', tool_id: 'g1' },
+    { type: 'message', role: 'assistant', delta: true, content: 'Done' },
+    { type: 'result', stats: { input_tokens: 3, output_tokens: 4 } },
+  ])
+  eq(r.sess, ['G1'])
+  eq(r.out.map(e => [e.role, e.text]), [['assistant', 'Hello'], ['tool', 'read_file(x.txt)'], ['out', 'content'], ['assistant', 'Done']])
+  eq(r.use, [{ tin: 3, tout: 4, usd: 0 }])
+  // Codex
+  r = parse([
+    { type: 'thread.started', thread_id: 'T1' },
+    { type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'npm test', aggregated_output: 'ok' } },
+    { type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: 'a.js' }] } },
+    { type: 'item.completed', item: { id: 'i3', type: 'agent_message', text: 'Fixed' } },
+    { type: 'turn.completed', usage: { input_tokens: 5, cached_input_tokens: 20, output_tokens: 2 } },
+    { type: 'turn.failed', error: { message: 'rate limit' } },
+    { type: 'error', message: 'bad' },
+  ])
+  eq(r.sess, ['T1'])
+  eq(r.out.map(e => [e.role, e.text]), [['tool', 'Bash(npm test)'], ['out', 'ok'], ['tool', 'Edit(a.js)'], ['assistant', 'Fixed'], ['error', 'rate limit'], ['error', 'bad']])
+  eq(r.use, [{ tin: 25, tout: 2, usd: 0 }])
+  // fed in chunks; overlong output is truncated
+  const out = []; const p = makeParser(e => out.push(e))
+  const big = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'z', content: 'x'.repeat(9000) }] } })
+  p.feed(big.slice(0, 50)); p.feed(big.slice(50) + '\n'); p.end()
+  eq(out[0].text.length, 4000)
+  eq(usageOf({ type: 'assistant' }), null)
+  // plain-text CLIs: consecutive lines become one entry
+  r = parse(['First line', '', '| a | b |', '|---|---|', { type: 'error', message: 'x' }, 'After'])
+  eq(r.out.map(e => [e.role, e.text]), [['assistant', 'First line\n\n| a | b |\n|---|---|'], ['error', 'x'], ['assistant', 'After']])
+}
+
+// ───────── team ─────────
+const A = { id: 'A', name: 'Writer', status: 'idle' }
+const B = { id: 'B', name: 'Reviewer', status: 'idle', after: { ids: ['A'], prompt: core.PRESETS.review.prompt, loop: true } }
+const C = { id: 'C', name: 'Tester', status: 'idle', after: { ids: ['B'], prompt: core.PRESETS.test.prompt } }
+const X = { id: 'X', name: 'Loner', status: 'idle' }
+{
+  const chain = [X, C, B, A]
+  eq(Team.teamOf(chain, 'B').map(a => a.id), ['A', 'B', 'C'])
+  eq(Team.teamOf(chain, 'X').map(a => a.id), ['X'])
+  eq(Team.layersOf(chain, 'C').map(l => l.map(a => a.id)), [['A'], ['B'], ['C']])
+  eq([Team.isParallel(chain, 'B'), Team.isLead(chain, A), Team.isLead(chain, B), Team.isLead(chain, X)], [false, true, false, false])
+  const dag = [{ id: 'a' }, { id: 'b', after: { ids: ['a'] } }, { id: 'c', after: { id: 'a' } }, { id: 'd', after: { ids: ['b', 'c'] } }]   // c uses legacy after.id
+  eq(Team.layersOf(dag, 'd').map(l => l.map(a => a.id)), [['a'], ['b', 'c'], ['d']])
+  eq([Team.isParallel(dag, 'b'), Team.isParallel(dag, 'c'), Team.isParallel(dag, 'a'), Team.isParallel(dag, 'd')], [true, true, false, false])
+  eq(Team.leadOf(dag, 'd').id, 'a')
+  const loop = [{ id: 'p', after: { ids: ['q'] } }, { id: 'q', after: { ids: ['p'] } }]     // a cycle must not loop forever
+  eq(Team.teamOf(loop, 'p').length, 2)
+}
+
+// ───────── relayPlan ─────────
+{
+  const chain = [A, B, C]
+  // linear: lead finishes → Reviewer
+  let s = relayPlan(chain, A, 'written', { why: 'manual', round: 0, flow: 'f1' })
+  eq(s.length, 2)
+  eq(s[0], { inbox: 'B', value: null })
+  eq([s[1].run, s[1].why, s[1].round, s[1].flow, s[1].from], ['B', 'handoff', 0, 'f1', 'Writer'])
+  assert.ok(s[1].prompt.includes('Writer just finished a round of work') && s[1].prompt.includes('written') && s[1].prompt.includes('VERDICT: APPROVE'))
+  // chats do not trigger; downstream side chats do not trigger
+  eq(relayPlan(chain, A, 'x', { why: 'chat' }), [])
+  eq(relayPlan(chain, B, 'VERDICT: APPROVE', { why: 'manual' }), [])
+  eq(relayPlan(chain, B, 'VERDICT: APPROVE', { why: 'chat' }), [])
+  // loop: CHANGES goes back to the lead, round+1
+  s = relayPlan(chain, B, 'has a bug\nVERDICT: CHANGES', { why: 'handoff', round: 0, flow: 'f1' })
+  eq(s.length, 1)
+  eq([s[0].run, s[0].why, s[0].round, s[0].flow, s[0].from], ['A', 'feedback', 1, 'f1', 'Reviewer'])
+  assert.ok(s[0].prompt.startsWith('Review feedback from Reviewer:'))
+  // lead revises (feedback) → back to Reviewer, round kept
+  s = relayPlan(chain, A, 'revised', { why: 'feedback', round: 1, flow: 'f1' })
+  eq([s[1].run, s[1].round], ['B', 1])
+  // stop after 3 rounds
+  s = relayPlan(chain, B, 'VERDICT: CHANGES', { why: 'handoff', round: 2, flow: 'f1' })
+  eq(s, [{ log: 'B', text: '3 rounds without approval, stopped for you to take a look' }])
+  // lead is stopped
+  s = relayPlan([{ ...A, status: 'stopped' }, B, C], B, 'VERDICT: CHANGES', { why: 'handoff', round: 0 })
+  eq([s.length, !!s[0].log], [1, true])
+  // no VERDICT stops the relay
+  eq(relayPlan(chain, B, 'looks fine', { why: 'handoff', round: 0 }), [{ log: 'B', text: 'No VERDICT given, relay stopped here' }])
+  // APPROVE continues; the last VERDICT wins, bold is tolerated
+  s = relayPlan(chain, B, 'VERDICT: CHANGES (last round)\n…\nVERDICT: **APPROVE**', { why: 'handoff', round: 1, flow: 'f1' })
+  eq(s[0], { log: 'B', text: 'Approved (round 2)' })
+  eq([s[2].run, s[2].why, s[2].round], ['C', 'handoff', 1])
+  assert.ok(!s[2].prompt.includes('VERDICT: APPROVE (looks good)'))      // Tester is not a loop
+  // end of chain
+  eq(relayPlan(chain, C, 'all passed', { why: 'handoff', round: 1 }), [{ log: 'C', text: 'Chain finished' }])
+  // downstream paused → skipped
+  s = relayPlan([A, { ...B, status: 'paused' }, C], A, 'x', { why: 'manual' })
+  eq([s.length, s[0].log], [1, 'B'])
+  eq(core.verdictOf('verdict: approve'), 'APPROVE')
+  eq(core.verdictOf('nothing'), null)
+
+  // A → (P ∥ Q) → D merges
+  const P = { id: 'P', name: 'P', status: 'idle', after: { ids: ['A'], prompt: 'Do {reply}' } }
+  const Q = { id: 'Q', name: 'Q', status: 'idle', after: { ids: ['A'], prompt: 'Do {reply}' } }
+  const D = { id: 'D', name: 'D', status: 'idle', after: { ids: ['P', 'Q'], prompt: core.PRESETS.merge.prompt } }
+  const dag = [A, P, Q, D]
+  s = relayPlan(dag, A, 'task', { why: 'manual', flow: 'f2' })
+  eq(s.filter(x => x.run).map(x => x.run), ['P', 'Q'])
+  s = relayPlan(dag, P, 'P answer', { why: 'handoff', round: 0, flow: 'f2' })
+  eq(s.length, 2)
+  eq(s[0].inbox, 'D'); eq(Object.keys(s[0].value.got), ['P'])
+  eq(s[1], { log: 'D', quiet: true, text: "Got P's result, still waiting for Q" })
+  const D2 = { ...D, inbox: s[0].value }
+  s = relayPlan([A, P, Q, D2], Q, 'Q answer', { why: 'handoff', round: 0, flow: 'f2' })
+  eq(s[0], { inbox: 'D', value: null })
+  eq([s[1].run, s[1].from], ['D', 'P, Q'])
+  assert.ok(s[1].prompt.includes("### P's result\n\nP answer") && s[1].prompt.includes("### Q's result\n\nQ answer") && s[1].prompt.startsWith('P, Q have all finished'))
+  // stale: the inbox already holds a higher round of the same flow → the late old result is dropped
+  const D3 = { ...D, inbox: { flow: 'f2', round: 2, got: { P: { name: 'P', reply: 'new' } } } }
+  eq(relayPlan([A, P, Q, D3], Q, 'old', { why: 'handoff', round: 1, flow: 'f2' }), [])
+  // different flow: the old inbox is void, collect afresh
+  s = relayPlan([A, P, Q, D3], Q, 'new round', { why: 'handoff', round: 0, flow: 'f9' })
+  eq([s[0].value.flow, Object.keys(s[0].value.got)], ['f9', ['Q']])
+  // deleted upstreams are no longer awaited
+  s = relayPlan([A, Q, D], Q, 'only', { why: 'handoff', round: 0, flow: 'f2' })
+  eq(s[1].run, 'D')
+  // relayPrompt: the result is included even without {reply}; long replies keep only the tail
+  assert.ok(core.relayPrompt({ prompt: 'Check it' }, 'W', 'RESULT').includes('RESULT'))
+  eq(core.relayPrompt({ prompt: '{reply}' }, 'W', 'a'.repeat(20000)).length, 16000)
+}
+
+// ───────── git: snapshot / syncWorktree / worktreeDiff ─────────
+const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+{
+  const repo = path.join(tmp, 'repo'), idx = path.join(tmp, 'idx', 'index-a')
+  fs.mkdirSync(repo)
+  g(repo, 'init', '-q', '-b', 'main')
+  // a repo with no commits can be snapshotted too
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n')
+  const s0 = core.snapshot(repo, idx)
+  eq(g(repo, 'show', `${s0}:a.txt`), 'one')
+  eq(g(repo, 'status', '--porcelain'), '?? a.txt')                         // real index untouched
+  g(repo, 'add', '-A'); g(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init')
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n')
+  fs.mkdirSync(path.join(repo, 'sub')); fs.writeFileSync(path.join(repo, 'sub', 'new.txt'), 'untracked\n')
+  const before = g(repo, 'status', '--porcelain'), head = g(repo, 'rev-parse', 'HEAD')
+  const snap = core.snapshot(path.join(repo, 'sub'), idx)                  // called from a subfolder, still the whole repo
+  eq(g(repo, 'show', `${snap}:a.txt`), 'two')
+  eq(g(repo, 'show', `${snap}:sub/new.txt`), 'untracked')                  // includes untracked files
+  eq(g(repo, 'rev-parse', `${snap}^`), head)
+  eq(g(repo, 'status', '--porcelain'), before)
+  eq(g(repo, 'rev-parse', 'HEAD'), head)
+  eq(g(repo, 'log', '-1', '--format=%an', snap), 'Agent Hive')
+  eq(core.repoInfo(path.join(repo, 'sub')), { top: repo, prefix: 'sub' })
+  eq(core.repoInfo(tmp), null)
+
+  const wt = core.wtPath({ id: 'abcd1234', name: 'Mo Chi' }, repo)
+  eq(wt, path.join(tmp, '.hive-worktrees', 'repo-mo-chi-abcd'))
+  core.syncWorktree(repo, wt, snap)
+  eq(fs.readFileSync(path.join(wt, 'sub', 'new.txt'), 'utf8'), 'untracked\n')
+  eq(core.worktreeDiff(wt, snap, idx + '-d'), '')
+  fs.writeFileSync(path.join(wt, 'a.txt'), 'three\n'); fs.writeFileSync(path.join(wt, 'b.txt'), 'bee\n')
+  const d = core.worktreeDiff(wt, snap, idx + '-d')
+  assert.ok(d.includes('a.txt') && d.includes('+three') && d.includes('b.txt') && d.includes('+bee') && /2 files changed/.test(d))
+  eq(core.worktreeDiff(wt, snap, idx + '-d', 20).length, 20)
+  // sync again: back to the new snapshot, extra files removed
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'four\n')
+  const snap2 = core.snapshot(repo, idx)
+  core.syncWorktree(repo, wt, snap2)
+  eq(fs.readFileSync(path.join(wt, 'a.txt'), 'utf8'), 'four\n')
+  eq(fs.existsSync(path.join(wt, 'b.txt')), false)
+  eq(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'four\n')         // main folder untouched
+
+  // gitSteps / gitPlanText
+  const url = 'https://github.com/acme/app.git'
+  eq(core.gitSteps(path.join(tmp, 'nope'), url, 'dev'), { kind: 'clone', cmds: [{ cwd: tmp, args: ['clone', '--branch', 'dev', '--', url, path.join(tmp, 'nope')] }] })
+  const empty = path.join(tmp, 'empty'); fs.mkdirSync(empty)
+  eq(core.gitSteps(empty, url, '').cmds[0].args, ['clone', '--', url, empty])
+  eq(core.gitSteps(repo, url, ''), { kind: 'remote', cmds: [{ cwd: repo, args: ['remote', 'add', 'origin', url] }] })
+  g(repo, 'remote', 'add', 'origin', url)
+  eq(core.gitSteps(repo, 'https://github.com/acme/app', '').kind, 'same')
+  const other = core.gitSteps(repo, 'https://github.com/acme/other.git', '')
+  eq([other.kind, other.cmds], ['error', []])
+  assert.ok(core.gitPlanText(other).includes(url))
+  const plain = path.join(tmp, 'plain'); fs.mkdirSync(plain); fs.writeFileSync(path.join(plain, 'x'), '1')
+  eq(core.gitSteps(plain, url, '').cmds.map(c => c.args), [['init'], ['remote', 'add', 'origin', url]])
+  eq(core.gitSteps(path.join(plain, 'x'), url, '').kind, 'error')
+  assert.ok(core.gitPlanText({ kind: 'clone' }).includes('clone') && core.gitPlanText({ kind: 'init' }).includes('init'))
+}
+{
+  const ok = ['https://github.com/a/b.git', 'git@github.com:a/b.git', 'ssh://git@host/a/b', 'git://host/a', 'file:///tmp/x', '/abs/path', '~/code/x']
+  const bad = ['-oProxyCommand=x', 'a/b', 'ftp://x/y', '', 'https://x y', null]
+  eq(ok.map(core.validGitUrl), ok.map(() => true)); eq(bad.map(core.validGitUrl), bad.map(() => false))
+  eq(['main', 'feat/x-1', 'v1.2'].map(core.validBranch), [true, true, true])
+  eq(['-x', 'a..b', 'a b', ''].map(core.validBranch), [false, false, false, false])
+  eq(core.prUrl('git@github.com:acme/app.git', 'hive/mochi-1117-0930'), 'https://github.com/acme/app/compare/hive/mochi-1117-0930?expand=1')
+  eq(core.prUrl('https://github.com/acme/app', 'fix#1'), 'https://github.com/acme/app/compare/fix%231?expand=1')
+  eq(core.prUrl('https://gitlab.com/grp/sub/app.git', 'hive/x'), 'https://gitlab.com/grp/sub/app/-/merge_requests/new?merge_request[source_branch]=hive/x')
+  eq(core.prUrl('ssh://git@git.example.com:2222/acme/app.git', 'b'), 'https://git.example.com/acme/app/compare/b?expand=1')
+  eq(core.prUrl('/Users/me/repos/app.git', 'x'), null)
+  eq(core.repoLabel('git@github.com:acme/app.git'), 'acme/app')
+  // name pool: unused first, a number appended once all are taken
+  for (let i = 0; i < 20; i++) assert.ok(!['Bumble', 'Honey'].includes(core.pickName(['bumble', 'Honey'])))
+  eq(core.pickName(core.NAMES.slice(1), () => 0.99), core.NAMES[0])
+  const extra = core.pickName(core.NAMES)
+  assert.ok(!core.NAMES.includes(extra) && /\d$/.test(extra))
+  eq(new Set(core.NAMES).size, core.NAMES.length)
+  assert.ok(core.NAMES.length >= 40 && core.NAMES.every(n => n.length <= 24))
+}
+
+// ───────── garden ─────────
+{
+  const root = path.join(tmp, 'hive'), home = path.join(tmp, 'home')
+  eq(garden.preamble(root, { id: 'a1' }), '')
+  // applySkills: drops invalid names and empty bodies
+  const changed = garden.applySkills(root, { skills: [
+    { name: 'release-flow', description: 'Release\nflow', body: '1. Run tests\n2. Tag' },
+    { name: 'Bad Name', description: 'x', body: 'y' }, { name: '../evil', description: 'x', body: 'y' }, { name: 'empty-body', description: 'x', body: '  ' }, null,
+  ] })
+  eq(changed, ['release-flow'])
+  eq(fs.readFileSync(path.join(root, 'skills', 'release-flow', 'SKILL.md'), 'utf8'), '---\nname: release-flow\ndescription: Release flow\n---\n\n1. Run tests\n2. Tag\n')
+  eq(fs.readdirSync(path.join(root, 'skills')), ['release-flow'])
+  eq(garden.applySkills(root, { skills: [{ name: 'release-flow', description: 'Release flow', body: '1. Run tests\n2. Tag' }] }), [])      // unchanged
+  // rewrites keep the old version; the frontmatter name is forced to match the folder name
+  eq(garden.saveSkill(root, 'release-flow', '---\nname: something-else\ndescription: New description\n---\n\nNew body'), true)
+  const sk = garden.listSkills(root, home)
+  eq([sk.length, sk[0].name, sk[0].description, sk[0].body, sk[0].linked], [1, 'release-flow', 'New description', 'New body', false])
+  assert.ok(sk[0].raw.startsWith('---\nname: release-flow\n'))
+  const hist = fs.readdirSync(path.join(root, 'skills', '.history'))
+  eq(hist.length, 1)
+  assert.ok(/^release-flow-.*\.md$/.test(hist[0]) && fs.readFileSync(path.join(root, 'skills', '.history', hist[0]), 'utf8').includes('1. Run tests'))
+  assert.throws(() => garden.saveSkill(root, 'Bad Name', 'x'), /Skill names/)
+  assert.throws(() => garden.saveSkill(root, '../x', 'x'))
+  assert.throws(() => garden.saveSkill(root, 'a', 'x'))
+  eq(garden.applySkills(root, { skills: Array.from({ length: 12 }, (_, i) => ({ name: 'bulk-' + i, description: 'd', body: 'b' })) }).length, 8)   // 8 at most
+  // applyMemory: ignores unknown agents
+  const agents = [{ id: 'a1', name: 'Mochi' }]
+  eq(garden.applyMemory(root, { hive: '- User likes concise code', agents: { a1: '- Use pnpm', ghost: '- should not be written' }, summary: 's' }, agents), ['shared memory', 'Mochi'])
+  eq(fs.existsSync(path.join(root, 'memory', 'agents', 'ghost.md')), false)
+  eq(garden.readMemory(root, 'a1'), '- Use pnpm')
+  eq(garden.applyMemory(root, { hive: '- User likes concise code' }, agents), [])
+  eq(garden.applyMemory(root, { hive: '- New preference' }, agents), ['shared memory'])
+  const mh = fs.readdirSync(path.join(root, 'memory', '.history'))
+  assert.ok(mh.length === 1 && fs.readFileSync(path.join(root, 'memory', '.history', mh[0]), 'utf8').includes('concise'))
+  assert.throws(() => garden.writeMemory(root, '../x', 'y'))
+  // preamble
+  const pre = garden.preamble(root, agents[0])
+  assert.ok(pre.startsWith('<hive-context>') && pre.endsWith('</hive-context>'))
+  assert.ok(pre.includes('## Shared memory\n- New preference') && pre.includes('## Your memory for this project\n- Use pnpm'))
+  assert.ok(pre.includes(`- release-flow: New description (${path.join(root, 'skills', 'release-flow', 'SKILL.md')})`))
+  assert.ok(!garden.preamble(root, { id: 'zz' }).includes('Your memory for this project'))
+  // install to Claude Code
+  eq(garden.linkSkill(root, 'release-flow', true, home), true)
+  eq(fs.realpathSync(path.join(home, '.claude', 'skills', 'hive-release-flow')), path.join(root, 'skills', 'release-flow'))
+  eq(garden.isLinked(root, 'release-flow', home), true)
+  garden.linkSkill(root, 'release-flow', false, home)
+  eq(fs.existsSync(path.join(home, '.claude', 'skills', 'hive-release-flow')), false)
+  fs.mkdirSync(path.join(home, '.claude', 'skills', 'hive-bulk-0'))
+  assert.throws(() => garden.linkSkill(root, 'bulk-0', true, home), /not a link created by Agent Hive/)
+  garden.linkSkill(root, 'bulk-0', false, home)
+  eq(fs.existsSync(path.join(home, '.claude', 'skills', 'hive-bulk-0')), true)      // not our link, left alone
+  garden.linkSkill(root, 'bulk-1', true, home)
+  garden.deleteSkill(root, 'bulk-1', home)
+  eq([fs.existsSync(path.join(root, 'skills', 'bulk-1')), fs.existsSync(path.join(home, '.claude', 'skills', 'hive-bulk-1'))], [false, false])
+  // transcript and JSON extraction
+  const tr = garden.transcript([{ agent: { id: 'a1', name: 'Mochi', task: 'web', engine: 'claude' }, entries: [{ role: 'user', text: 'fix bug' }, { role: 'tool', text: 'Bash(' + 'x'.repeat(500) + ')' }, { role: 'run', text: '' }, { role: 'assistant', text: 'fixed' }] }])
+  assert.ok(tr.startsWith('## Mochi (a1; folder web; claude)\n[user] fix bug\n[tool] Bash(') && tr.endsWith('[assistant] fixed') && !tr.includes('[run]') && tr.length < 400)
+  eq(garden.parseJson('OK:\n```json\n{"skills": [], "summary": "none"}\n```'), { skills: [], summary: 'none' })
+  assert.throws(() => garden.parseJson('nothing'))
+  assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.gardenerPrompt(sk, 'T').includes('- release-flow: New description'))
+}
+
+// ───────── Queen leading the team ─────────
+{
+  const qt = require('./queen')
+  const bee = (id, name, o = {}) => ({ id, name, task: 'web', workspace: '/w/web', engine: 'claude', status: 'idle', ...o })
+  const M = bee('m1aaaaaa', 'Mochi'), P = bee('p1aaaaaa', 'Pip', { task: 'api', workspace: '/w/api' }), K = bee('k1aaaaaa', 'Kiwi'), I = bee('i1aaaaaa', 'Iso', { isolate: true })
+  const A = [M, P, K, I]
+  // finding bees
+  eq(qt.findBee(A, 'mochi').bee, M); eq(qt.findBee(A, '@Pip').bee, P); eq(qt.findBee(A, 'k1aa').bee, K)
+  assert.ok(qt.findBee(A, 'nobody').error.includes('Mochi') && qt.findBee(A, '').error)
+  assert.ok(qt.findBee([M, { ...M, id: 'm2bbbbbb' }], 'Mochi').error.includes('2 bees'))
+  // dispatch rules
+  const ck = (m, b, task, o) => qt.dispatchCheck({ agents: A, mission: m }, b, task, o)
+  let m = qt.newMission()
+  eq(ck(m, M, 'fix login'), null)
+  assert.ok(ck(m, M, '  ').includes('empty'))
+  assert.ok(qt.dispatchCheck({ agents: A, mission: m, overBudget: true }, M, 'x').includes('budget'))
+  assert.ok(qt.dispatchCheck({ agents: A, mission: m, isBusy: () => true }, M, 'x').includes('is busy'))
+  assert.ok(ck(m, { ...M, status: 'running' }, 'x').includes('is busy') && ck(m, { ...M, queue: [{}] }, 'x').includes('is busy') && ck(m, { ...M, status: 'setup' }, 'x').includes('repo'))
+  qt.noteDispatch(m, M, 'fix login', 'task')
+  eq([Object.keys(m.pending), m.turnDispatch.length, m.pending[M.id].kind], [[M.id], 1, 'task'])
+  assert.ok(ck(m, M, 'something else').includes('not handed back'))
+  assert.ok(ck(m, P, ' fix login ').includes('already went to Mochi'))                 // the same task cannot go to everyone
+  eq(ck(m, P, 'fix login', { parallel_reason: 'compare two approaches' }), null)
+  assert.ok(ck(m, K, 'write tests').includes('same folder'))                               // one bee per folder at a time
+  eq(ck(m, I, 'write tests'), null)                                                         // except bees on their own branch
+  eq(ck(m, P, 'check the API'), null)
+  qt.noteDispatch(m, P, 'check the API', 'ask'); qt.noteDispatch(m, I, 'write tests', 'task')
+  assert.ok(ck(m, bee('z1aaaaaa', 'Zed', { workspace: '/w/z' }), 'x').includes('limit 3') && ck(m, bee('z1aaaaaa', 'Zed', { workspace: '/w/z' }), 'x').includes('propose_plan'))
+  m.planOk = true
+  eq(ck(m, bee('z1aaaaaa', 'Zed', { workspace: '/w/z' }), 'x'), null)                  // the limit rises once the user approves a plan
+  m = qt.newMission(); m.counts[M.id + '|fix login'] = 2
+  assert.ok(ck(m, M, 'fix login').includes('2 times'))                                       // loop guard
+  // the prompt a bee receives / report parsing
+  assert.ok(qt.taskPrompt('fix bug', 'task').includes('has a task for you') && qt.taskPrompt('fix bug', 'task').includes('STATUS: DONE'))
+  assert.ok(qt.taskPrompt('which port', 'ask').includes('read-only') && qt.taskPrompt('which port', 'ask').includes('100 words'))
+  eq(qt.parseReport('Fixed.\n\nSTATUS: DONE\nSUMMARY: Fixed the null pointer in login; all tests pass.'), { status: 'DONE', summary: 'Fixed the null pointer in login; all tests pass.' })
+  eq(qt.parseReport('**STATUS: BLOCKED**\n**SUMMARY:** Missing DB password; the user must provide it.').status, 'BLOCKED')
+  eq(qt.parseReport('STATUS: need_input\nSUMMARY: Which of the two options?').status, 'NEED_INPUT')
+  eq(qt.parseReport('Just a plain reply, no format'), { status: 'DONE', summary: 'Just a plain reply, no format' })
+  eq(qt.parseReport('STATUS: DONE\nSUMMARY: ok', 'STOPPED').status, 'STOPPED')
+  eq(qt.parseReport('', 'ERROR'), { status: 'ERROR', summary: 'Error' })
+  assert.ok(qt.parseReport('x'.repeat(3000)).summary.length <= 901)
+  // when to wake Queen: all handed back, or one is not DONE
+  m = qt.newMission(); qt.noteDispatch(m, M, 'a', 'task'); qt.noteDispatch(m, P, 'b', 'task')
+  eq(qt.shouldWake(m), false)
+  delete m.pending[M.id]; m.got.push({ name: 'Mochi', task: 'a', status: 'DONE', summary: 'done', files: 2 })
+  eq(qt.shouldWake(m), false)                                                          // still waiting for Pip, no wake
+  m.got[0].status = 'BLOCKED'; eq(qt.shouldWake(m), true)                              // a blocked one wakes at once
+  m.got[0].status = 'DONE'; delete m.pending[P.id]; m.got.push({ name: 'Pip', task: 'b', status: 'DONE', summary: 'done too' })
+  eq(qt.shouldWake(m), true)
+  m.notes.push('The user told Kiwi directly in the group: check the logs')
+  const w = qt.wakeMessage(m)
+  assert.ok(w.startsWith('(context) The user told Kiwi directly in the group') && w.includes('### Mochi (Done; 2 files with uncommitted changes)\nTask: a\ndone') && w.includes('### Pip (Done)') && w.includes('This batch is all handed back'))
+  qt.noteDispatch(m, K, 'c', 'task'); assert.ok(qt.wakeMessage(m).includes('Still waiting for: Kiwi'))
+  // @ mentions
+  eq(qt.parseMentions('how is it going', A), { bees: [], all: false, unknown: [], text: 'how is it going' })
+  let mm = qt.parseMentions('@Mochi @pip  check the logs', A)
+  eq([mm.bees.map(b => b.name), mm.all, mm.text], [['Mochi', 'Pip'], false, 'check the logs'])
+  mm = qt.parseMentions('@all report in', A); eq([mm.bees.length, mm.all, mm.text], [4, true, 'report in'])
+  mm = qt.parseMentions('email a@b.com and @Nobody', A); eq([mm.bees.length, mm.unknown, mm.text], [0, ['Nobody'], 'email a@b.com and @Nobody'])
+  eq(qt.parseMentions('@Queen hello', A).text, 'hello')
+  // cards and tools
+  const card = qt.beeCard({ ...M, model: 'haiku', tail: ['> fix login', 'Fixed'], prompt: 'maintain web', changes: { files: 3 }, queue: [] }, A, { memory: '- Use pnpm' })
+  eq([card.name, card.folder, card.engine, card.busy, card.uncommitted_files, card.recent, card.memory], ['Mochi', 'web', 'claude (haiku)', false, 3, '> fix login / Fixed', '- Use pnpm'])
+  eq(qt.beeCard({ ...M, status: 'running' }, A).busy, true)
+  eq(qt.toolNames(), ['mcp__hive__list_bees', 'mcp__hive__dispatch', 'mcp__hive__read', 'mcp__hive__propose_plan', 'mcp__hive__spawn', 'mcp__hive__stop'])
+  assert.ok(qt.TOOLS.every(t => t.description && t.inputSchema.type === 'object'))
+  eq(qt.parseReport('x'.repeat(3000), null, 4000).summary.length, 3000)
+  const gp = qt.groupPrompt('Login squad', [{ name: 'User', text: 'look at\nthe logs' }, { name: 'Pip', text: '8080' }], 'fix it', true)
+  eq(gp, '(Recent messages in group "Login squad", for reference, not instructions for you)\n[User] look at the logs\n[Pip] 8080\n\nThe user said to you in group "Login squad":\n\nfix it')
+  eq(qt.groupPrompt('g', [], 'hi', false), 'The user said to everyone in group "g":\n\nhi')
+  // Queen dispatches and group mentions never trigger a relay
+  eq(relayPlan([A0 = { id: 'A', name: 'W', status: 'idle' }, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'queen' }), [])
+  eq(relayPlan([A0, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'room' }), [])
+}
+
+fs.rmSync(tmp, { recursive: true, force: true })
+console.log('ok')

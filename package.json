@@ -1,0 +1,71 @@
+{
+  "name": "agent-hive",
+  "productName": "Agent Hive",
+  "version": "1.0.0",
+  "description": "A macOS desktop app for running a hive of coding-agent CLIs (Claude Code, Codex, Gemini, Cursor Agent) with schedules, relay teams, group chats and a Queen that leads them.",
+  "main": "main.js",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "test": "node test.js",
+    "dist": "electron-builder --mac --publish never"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.0",
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "license": "MIT",
+  "author": "Agent Hive contributors",
+  "homepage": "https://github.com/ericwang915/agent-hive",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ericwang915/agent-hive.git"
+  },
+  "build": {
+    "appId": "io.github.ericwang915.agenthive",
+    "productName": "Agent Hive",
+    "asar": false,
+    "files": [
+      "*.js",
+      "*.html",
+      "*.css",
+      "icon.png",
+      "!test.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "artifactName": "Agent-Hive-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "sign": false
+    },
+    "afterPack": "./scripts/adhoc-sign.js"
+  }
+}
