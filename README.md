@@ -1,77 +1,107 @@
-# Agent Hive
+<p align="center"><img src="icon.png" width="112" alt=""></p>
+<h1 align="center">Agent Hive</h1>
+<p align="center">Run a team of coding agents on your Mac, and see what every one of them is doing.</p>
+<p align="center">
+  <a href="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml"><img src="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml/badge.svg" alt="tests"></a>
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="macOS">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
 
-A macOS desktop app for running a hive of coding agents. Each **bee** is a coding-agent CLI (Claude Code, Codex, Gemini, Cursor Agent, or any command you like) working in its own folder. You hatch bees, give them work, and watch them from one place.
+![A relay team: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
 
-![Agent Hive](docs/screenshot.png)
+Each **bee** is a coding-agent CLI working in its own folder: Claude Code, Codex, Gemini, Cursor Agent, or any command you like. Agent Hive runs them side by side, on a schedule if you want, and lets them hand work to each other. It uses the CLIs and logins you already have. It ships no API keys and stores none.
+
+## What you can do with it
+
+### Let Queen lead a group
+
+Pull bees into a group and tell Queen what you want. She picks the right bees, dispatches the work, waits for the results and sums them up. She only wakes the bees she needs, and she asks before hatching new ones.
+
+![Queen dispatches two bees and reports back](docs/queen.gif)
+
+A group works without Queen too: your message goes to every member, or to the one you `@mention`.
+
+### Chain bees into a relay team
+
+Up to four bees share a folder and pass work down the line. A reviewer can send its findings back to the writer until it approves, for at most three rounds. Bees on the same step run in parallel, each in its own git worktree, and a final bee merges their results. The clip at the top is one such team.
+
+### Read every step, then review the diff
+
+Each bee has its own chat window with the full conversation: messages, tool calls with their input and output, cost per round. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.
+
+![A bee's chat, then its diff](docs/chat.gif)
+
+### Hatch a bee in a few clicks
+
+Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave both empty and just talk to it.
+
+![The hatch dialog](docs/hatch.gif)
+
+### And the rest
+
+- **Schedules.** Once, daily, weekly, monthly, or every N minutes. Runs missed while the Mac slept are caught up the same day.
+- **Sleep-safe.** Running bees stop when the lid closes and pick up where they left off when it opens, or when the app restarts.
+- **Permissions.** Approve each action from the app (Claude Code), auto-accept edits, or allow everything.
+- **Spend.** Cost and tokens per round, and a daily budget that holds back automatic runs once it is used up.
+- **Memory and skills.** Overnight, *Dreamer* tidies long-term memory and *Gardener* turns the day's conversations into reusable skills. New sessions start with both.
+- **Dashboard.** A 24-hour activity timeline, spend, and Queen's daily report.
+- **Right-click anything.** Rename, settings, stop and delete for bees and groups.
 
 ## Install
 
-> **Not released yet.** The app is still being polished, so the installer below has nothing to download. For now, run it from source (see [Development](#development)).
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
-```
-
-This downloads the latest release for your Mac (Apple silicon or Intel), puts `Agent Hive.app` in `/Applications` and opens it. You can also grab the `.dmg` from the [releases page](https://github.com/ericwang915/agent-hive/releases).
-
-The app is not notarized by Apple. The install script clears the quarantine flag for you; if you install from the `.dmg`, right-click the app and choose **Open** the first time.
-
-### Requirements
-
-- macOS 12 or later
-- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini` or `cursor-agent`. Queen, the daily report and the night bees need `claude`.
-- `git`, if you want diffs, commits, branches and PRs. `gh` is optional (used to open PRs).
-
-Agent Hive does not ship or store any API keys. It runs the CLIs you already have, with whatever login they already use.
-
-## What it does
-
-- **Hive** – up to 40 bees, each a card with its recent output. Open any bee in its own chat window; send a message mid-run to interrupt and redirect it.
-- **Schedules** – manual, once, daily, weekly, monthly or every N minutes. Runs missed while the Mac was asleep are caught up the same day.
-- **Sleep-safe** – running bees stop when the lid closes and resume when it opens, and after an app restart.
-- **Relay teams** – chain up to four bees in one folder: write → review → fix → test, or fan out in parallel git worktrees and merge the results.
-- **Groups** – chat rooms you pull bees into. With **Queen** in the group, you say what you want and she picks bees, dispatches work, and sums up the results. Without her, your message goes to every member, or just the one you `@mention`.
-- **Changes** – per-bee diff, commit, discard, push and open a PR. A bee can work on its own branch and worktree, then merge back.
-- **Permissions** – ask each time (Claude Code permission prompts appear in the app), auto-accept edits, or allow all.
-- **Spend** – cost and tokens per round, with a daily budget that pauses automatic runs.
-- **Night bees** – *Dreamer* tidies long-term memory and *Gardener* distills reusable skills from the day's conversations. New sessions start with that context.
-- **Dashboard** – activity timeline, spend, and Queen's daily report.
-
-## Safety
-
-Bees run real commands on your machine with the permission level you choose. "Allow all" skips every confirmation, so only use it in folders you trust.
-
-The app listens on `127.0.0.1` on a random port, protected by a per-launch token, so that Claude Code can ask it for permission decisions and Queen can call her tools. Nothing is exposed to the network.
-
-State lives in `~/Library/Application Support/Agent Hive/`. Workspaces, skills and memory live under `~/AgentHive/` by default.
-
-## Development
+> **Not released yet.** The app is still being polished. Until the first release, run it from source:
 
 ```bash
 git clone https://github.com/ericwang915/agent-hive.git
 cd agent-hive
 npm install
-npm start        # run the app
-npm test         # unit tests for the pure logic
-npm run dist     # build the .zip and .dmg into dist/
+npm start
 ```
 
-There is no build step and no framework: plain HTML/CSS/JS in the renderer, Electron in the main process.
+Once a release is out, this one-liner will download the app for your Mac (Apple silicon or Intel) and put it in `/Applications`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
+```
+
+### Requirements
+
+- macOS 12 or later
+- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini` or `cursor-agent`. Queen, the daily report and the night bees need `claude`.
+- `git` for diffs, commits, branches and pull requests. `gh` is optional and used to open pull requests.
+
+## Safety
+
+Bees run real commands on your machine, with the permission level you choose. "Allow all" skips every confirmation, so only use it in folders you trust.
+
+The app listens on `127.0.0.1` on a random port, protected by a per-launch token. Claude Code uses it to ask for permission decisions, and Queen uses it to call her tools. Nothing is exposed to the network.
+
+State lives in `~/Library/Application Support/Agent Hive/`. Workspaces, skills and memory live under `~/AgentHive/` by default.
+
+## How it is built
+
+No build step and no framework: plain HTML, CSS and JS in the renderer, Electron in the main process, two small dependencies for Markdown.
 
 | File | Role |
 |---|---|
-| `main.js` | Main process: state, process management, scheduling, relay execution, git, approvals, groups and Queen, IPC |
-| `core.js` | Pure logic: engines and command lines, schedule keys, output parsers, relay planning, git/worktree helpers |
+| `main.js` | Main process: state, process management, scheduling, relay execution, git, approvals, groups and Queen |
+| `core.js` | Engines and command lines, schedule keys, output parsers, relay planning, git and worktree helpers |
 | `team.js` | Relay-team graph helpers, shared by main and renderer |
-| `queen.js` | Pure logic for groups: Queen's tools, dispatch rules, result parsing |
-| `garden.js` | Skills and memory files, Dreamer/Gardener prompts |
-| `approve-mcp.js`, `hive-mcp.js` | Tiny MCP stdio servers that call back into the app |
+| `queen.js` | Queen's tools, dispatch rules and result parsing |
+| `garden.js` | Skills and memory files, Dreamer and Gardener prompts |
+| `approve-mcp.js`, `hive-mcp.js` | Small MCP stdio servers that call back into the app |
 | `index.html`, `app.js` | Main window |
 | `chat.html`, `chat.js` | Per-bee chat window |
-| `common.js`, `style.css` | Shared helpers and styles |
-| `test.js` | Unit tests |
+| `test.js` | Unit tests for everything that does not need Electron |
 
-Set `HIVE_DATA=/some/dir` to run against a throwaway state directory.
+```bash
+npm test         # unit tests
+npm run dist     # build the .zip and .dmg into dist/
+```
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out and how to add an engine.
 
 ## License
 
