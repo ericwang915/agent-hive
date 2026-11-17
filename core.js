@@ -13,12 +13,13 @@ const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').repl
 // ───────── Engines ─────────
 const m = (flag, a) => (a.model ? [flag, a.model] : [])
 // Tools Claude Code lists but cannot run without its own UI; left on, bees try them and get an error
-const HEADLESS_OFF = 'Artifact'
+const HEADLESS_OFF = 'Artifact,ExitPlanMode'
 const ENGINES = {
   claude: {
     label: 'Claude Code', cmd: 'claude', models: ['opus', 'sonnet', 'haiku', 'fable'],
-    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--disallowedTools', HEADLESS_OFF, ...m('--model', a),
+    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', HEADLESS_OFF, ...m('--model', a),
       ...(a.permission === 'full' ? ['--dangerously-skip-permissions']
+        : a.permission === 'plan' ? ['--permission-mode', 'plan']
         : ['--permission-mode', 'acceptEdits',
           ...(a.permission === 'ask' && ctx.mcp ? ['--mcp-config', ctx.mcp, '--permission-prompt-tool', 'mcp__hive__approve'] : [])]),
       ...(a.sessionId ? ['--resume', a.sessionId] : [])],
@@ -140,8 +141,9 @@ function contextOf(o) {
 }
 const kTok = n => (n >= 1000 ? (n / 1000).toFixed(n < 100000 ? 1 : 0) + 'k' : String(n))
 
-function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = () => {}) {
-  let buf = '', delta = '', plain = []
+// onPartial: the reply as it is being written ({text}), {thinking: true} while the model thinks, null once the full message has arrived
+function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = () => {}, onPartial = () => {}) {
+  let buf = '', delta = '', plain = [], live = ''
   // Plain-text CLIs: consecutive non-JSON lines become one reply (keeps Markdown tables and lists intact)
   const flushPlain = () => { const t = plain.join('\n').trim(); plain = []; if (t) emit({ role: 'assistant', text: t }) }
   const flush = () => { flushPlain(); if (delta.trim()) emit({ role: 'assistant', text: delta }); delta = '' }
@@ -150,6 +152,14 @@ function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = 
     if (l.trim()) try { o = JSON.parse(l) } catch {}
     if (!o || typeof o !== 'object' || Array.isArray(o)) { if (l.trim() || plain.length) plain.push(l); return }
     flushPlain()
+    if (o.type === 'stream_event') {
+      const ev = o.event || {}
+      if (o.parent_tool_use_id) return
+      if (ev.type === 'content_block_start') { const k = (ev.content_block || {}).type; if (k === 'text') live = ''; else if (k === 'thinking') onPartial({ thinking: true }) }
+      else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { live += str(ev.delta.text); onPartial({ text: live }) }
+      return
+    }
+    const sub = o.parent_tool_use_id ? { sub: true } : {}          // from a sub-agent the bee started
     const sid = o.session_id || o.thread_id || o.sessionId
     if (sid && typeof sid === 'string') onSession(sid)
     const u = usageOf(o)
@@ -166,14 +176,15 @@ function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = 
       case 'tool_use': emit(toolEntry(o.tool_name || o.name, o.parameters || o.input, o.tool_id || o.id)); break
       case 'tool_result': emit(outEntry(o.output != null ? o.output : o.error || '', o.tool_id || o.tool_use_id)); break
       case 'assistant':
+        if (!sub.sub) { live = ''; onPartial(null) }
         for (const c of (o.message && Array.isArray(o.message.content) ? o.message.content : [])) {
-          if (c.type === 'text' && c.text && c.text.trim()) emit({ role: 'assistant', text: c.text })
-          else if (c.type === 'tool_use') emit(toolEntry(c.name, c.input, c.id))
+          if (c.type === 'text' && c.text && c.text.trim()) emit({ role: 'assistant', text: c.text, ...sub })
+          else if (c.type === 'tool_use') emit({ ...toolEntry(c.name, c.input, c.id), ...sub })
         }
         break
       case 'user':
         for (const c of (o.message && Array.isArray(o.message.content) ? o.message.content : []))
-          if (c.type === 'tool_result') emit(outEntry(c.content, c.tool_use_id))
+          if (c.type === 'tool_result') emit({ ...outEntry(c.content, c.tool_use_id), ...sub })
         break
       case 'system':
         if (o.subtype === 'status' && o.status === 'compacting') emit({ role: 'system', text: 'Compacting the conversation…' })

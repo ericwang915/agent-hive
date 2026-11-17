@@ -55,6 +55,11 @@ body { background: var(--c-bg); color: var(--c-text); display: flex; flex-direct
 .gallery img { height: 170px; width: auto; max-width: 100%; object-fit: contain; border-radius: 8px; border: 1px solid var(--c-line); cursor: zoom-in; background: var(--c-code) }
 .gallery.one img { height: auto; max-height: 440px }
 .step.tool .gallery { margin-bottom: 4px }
+.step.sub { margin-left: 20px }
+.step.sub > .dot { background: var(--c-faint) }
+.step.a.sub .md { font-size: 13px; color: var(--c-dim) }
+.tdiff { margin-top: 5px; border: 1px solid var(--c-line); border-radius: 9px; background: var(--c-box); max-height: 280px; overflow: auto }
+.tdiff div:first-child { padding-top: 3px } .tdiff div:last-child { padding-bottom: 3px }
 .t-head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-dim); user-select: text }
 .t-head b { color: var(--c-text); font-weight: 600 }
 .io { margin-top: 5px; border: 1px solid var(--c-line); border-radius: 9px; background: var(--c-box); font: 12px/1.55 var(--mono); overflow: hidden }
@@ -144,7 +149,7 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .cbtns .tool:hover:not(:disabled) { background: var(--c-user); color: var(--c-text) }
 .cbtns .tool:disabled { cursor: default }
 #relay-toggle.on { background: var(--c-relay); color: var(--c-relay-ink); font-weight: 600 }
-#ctx.warn { color: var(--c-wait); font-weight: 600 }
+#cmeter.warn { color: var(--c-wait); font-weight: 600 }
 #timer { font-variant-numeric: tabular-nums; color: var(--c-faint) }
 #send { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--c-accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: none }
 #send:disabled { opacity: .35; cursor: default }
@@ -158,6 +163,11 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .menu .mi .ck { margin-left: auto; color: var(--c-ok) }
 .menu input { width: 100%; margin-top: 4px }
 #slash { left: 22px }
+.menu .mi.f code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text) }
+#perm-menu { min-width: 300px }
+#perm-menu .mi { height: auto; padding: 6px 9px; align-items: baseline }
+#perm-menu .mi b { font-weight: 600; min-width: 72px }
+#perm.plan { color: var(--c-relay-ink); font-weight: 600 }
 </style>
 </head>
 <body>
@@ -176,6 +186,7 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
   <div id="approvals"></div>
   <div class="menu" id="slash" hidden></div>
   <div class="menu" id="model-menu" hidden></div>
+  <div class="menu" id="perm-menu" hidden></div>
   <div id="composer">
     <div id="atts"></div>
     <textarea id="input" rows="1" placeholder="Say something… (/ for commands)" spellcheck="false"></textarea>
@@ -184,9 +195,9 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
       <button class="tool" id="relay-toggle" hidden></button>
       <span id="timer"></span>
       <button class="tool" id="model-pill"></button>
-      <button class="tool" id="ctx" hidden></button>
+      <button class="tool" id="cmeter" hidden></button>
       <span class="grow"></span>
-      <span id="perm"></span>
+      <button class="tool" id="perm"></button>
       <button id="send" title="Send">&nbsp;</button>
     </div>
   </div>

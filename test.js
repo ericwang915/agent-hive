@@ -60,11 +60,11 @@ const at = s => new Date(s)
 // ───────── Engine command lines ─────────
 {
   const c = (a, ctx) => command({ model: '', permission: 'full', ...a }, 'hi', ctx)
-  eq(c({ engine: 'claude' }), { cmd: 'claude', args: ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--disallowedTools', 'Artifact', '--dangerously-skip-permissions'] })
+  eq(c({ engine: 'claude' }), { cmd: 'claude', args: ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', 'Artifact,ExitPlanMode', '--dangerously-skip-permissions'] })
   eq(c({ engine: 'claude', permission: 'safe', model: 'haiku', sessionId: 's1' }).args,
-    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--disallowedTools', 'Artifact', '--model', 'haiku', '--permission-mode', 'acceptEdits', '--resume', 's1'])
+    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', 'Artifact,ExitPlanMode', '--model', 'haiku', '--permission-mode', 'acceptEdits', '--resume', 's1'])
   eq(c({ engine: 'claude', permission: 'ask' }, { mcp: '{"x":1}' }).args,
-    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--disallowedTools', 'Artifact', '--permission-mode', 'acceptEdits', '--mcp-config', '{"x":1}', '--permission-prompt-tool', 'mcp__hive__approve'])
+    ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', 'Artifact,ExitPlanMode', '--permission-mode', 'acceptEdits', '--mcp-config', '{"x":1}', '--permission-prompt-tool', 'mcp__hive__approve'])
   eq(c({ engine: 'claude', permission: 'ask' }).args.includes('--mcp-config'), false)        // omitted without mcp
   eq(c({ engine: 'claude', permission: 'safe' }, { mcp: '{}' }).args.includes('--mcp-config'), false)
   eq(c({ engine: 'codex' }).args, ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', 'hi'])
@@ -468,6 +468,27 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(got.map(e => e.text), ['hi', 'Compacting the conversation…', 'Compacted: 31.4k → 11.6k tokens', 'Context was full; compacted: 180k → 20.0k tokens'])
 }
 
+// Streaming replies, sub-agents, plan mode
+{
+  const got = [], parts = []
+  const p = core.makeParser(e => got.push(e), () => {}, () => {}, () => {}, v => parts.push(v))
+  const feed = o => p.feed(JSON.stringify(o) + '\n')
+  const ev = (event, parent) => feed({ type: 'stream_event', event, parent_tool_use_id: parent || null })
+  ev({ type: 'content_block_start', content_block: { type: 'thinking' } })
+  ev({ type: 'content_block_start', content_block: { type: 'text', text: '' } })
+  ev({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hel' } }); ev({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'lo' } })
+  ev({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'ignored' } }, 't1')
+  ev({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{' } })
+  feed({ type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }, { type: 'tool_use', name: 'Agent', id: 't1', input: { description: 'look' } }] } })
+  feed({ type: 'assistant', parent_tool_use_id: 't1', message: { content: [{ type: 'text', text: 'sub says' }, { type: 'tool_use', name: 'Read', id: 't2', input: { file_path: 'a.js' } }] } })
+  feed({ type: 'user', parent_tool_use_id: 't1', message: { content: [{ type: 'tool_result', tool_use_id: 't2', content: 'x' }] } })
+  ev({ type: 'content_block_start', content_block: { type: 'text', text: '' } }); ev({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'Done' } })
+  eq(parts, [{ thinking: true }, { text: 'Hel' }, { text: 'Hello' }, null, { text: 'Done' }])
+  eq(got.map(e => [e.role, e.name || e.text, !!e.sub]), [['assistant', 'Hello', false], ['tool', 'Agent', false], ['assistant', 'sub says', true], ['tool', 'Read', true], ['out', 'x', true]])
+  eq(command({ engine: 'claude', permission: 'plan' }, 'hi').args.slice(-2), ['--permission-mode', 'plan'])
+  eq(command({ engine: 'codex', permission: 'plan' }, 'hi').args.includes('workspace-write'), true)
+}
+
 // File browser
 {
   const files = require('./files')
@@ -489,6 +510,10 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(files.locate(root, '../fb-out/secret.txt').rel, null); eq(files.locate(root, 'leak.txt').rel, null)
   eq(files.locate(root, '~/secret.txt', out).rel, null); eq(files.readAt(files.locate(root, '~/secret.txt', out).abs).text, 's')
   eq([files.locate(root, 'missing.js:3'), files.locate(root, ''), files.locate(root, '1.0.0')], [null, null, null])
+  fs.mkdirSync(path.join(root, 'node_modules', 'm'), { recursive: true }); fs.writeFileSync(path.join(root, 'node_modules', 'm', 'main.js'), 'x')
+  eq(files.search(root, 'm', 10, 1), ['src/deep/m.js'])
+  eq(files.search(root, 'A', 10, 1).slice(0, 2), ['a2.js', 'a10.js'])
+  eq(files.search(root, '', 3, 1), ['src/', 'a2.js', 'b.txt']); eq(files.search(root, 'deep/m', 10, 1), ['src/deep/m.js']); eq(files.search(root, 'zzz', 10, 1), [])
 }
 
 fs.rmSync(tmp, { recursive: true, force: true })

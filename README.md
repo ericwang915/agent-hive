@@ -27,7 +27,7 @@ Up to four bees share a folder and pass work down the line. A reviewer can send 
 
 ### Read every step, then review the diff
 
-Each bee has its own chat window with the full conversation: messages, tool calls with their input and output, cost per round. The bee's folder sits in a sidebar on the left, and file paths in the conversation are clickable: they open in a read-only viewer at the line mentioned. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.
+Each bee has its own chat window with the full conversation. Replies stream in as they are written, edits show as inline diffs, sub-agents are nested, and every round shows its cost. Type `@` to point at a file, `/` for commands, Shift-Tab to switch between Ask, Auto-edit and Plan. The bee's folder sits in a sidebar on the left, and file paths in the conversation are clickable: they open in a read-only viewer at the line mentioned. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.
 
 ![A bee's chat, then its diff](docs/chat.gif)
 
@@ -41,7 +41,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 
 - **Schedules.** Once, daily, weekly, monthly, or every N minutes. Runs missed while the Mac slept are caught up the same day.
 - **Sleep-safe.** Running bees stop when the lid closes and pick up where they left off when it opens, or when the app restarts.
-- **Permissions.** Approve each action from the app (Claude Code), auto-accept edits, or allow everything.
+- **Permissions.** Approve each action from the app (Claude Code), auto-accept edits, allow everything, or plan first and change nothing. Switch at any time from the chat.
 - **Context.** A meter shows how full a Claude Code bee's session is. `/compact` summarises it on the spot, and `/new` starts over.
 - **Spend.** Cost and tokens per round, and a daily budget that holds back automatic runs once it is used up.
 - **Memory and skills.** Overnight, *Dreamer* tidies long-term memory and *Gardener* turns the day's conversations into reusable skills. New sessions start with both.

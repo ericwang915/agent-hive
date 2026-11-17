@@ -385,6 +385,7 @@ const PERM = {
   ask: ['Ask', 'Waits for your OK on every action'],
   safe: ['Auto-edit', 'Edits files without asking; everything else follows the CLI\'s rules'],
   full: ['Allow all', 'Never asks. Only use in folders you trust'],
+  plan: ['Plan', 'Reads and proposes a plan without changing anything'],
 }
 function updBeh() {
   const el = $('#sec-beh')
@@ -392,7 +393,7 @@ function updBeh() {
   const relay = F.mode === 'edit' ? F.inRelay : !!F.afterWs
   el.innerHTML = `<label class="check"><input type="checkbox" data-change="f-sleep" ${F.sleepResume ? 'checked' : ''}><span>Pause on lid close, resume on open</span></label>
   <div><div class="row"><span class="mute" style="font-size:12px">Permissions</span><div class="seg">${Object.entries(PERM).map(([k, v]) => `<button type="button" class="${F.permission === k ? 'on' : ''}" data-act="f-perm" data-k="${k}">${v[0]}</button>`).join('')}</div></div>
-    <div class="hint">${PERM[F.permission][1]}</div>${F.permission === 'ask' && F.engine !== 'claude' ? '<div class="hint warn">Only works with Claude Code; this engine runs as Auto-edit</div>' : ''}</div>
+    <div class="hint">${PERM[F.permission][1]}</div>${(F.permission === 'ask' || F.permission === 'plan') && F.engine !== 'claude' ? '<div class="hint warn">Only works with Claude Code; this engine runs as Auto-edit</div>' : ''}</div>
   ${relay ? '' : `<label class="check"><input type="checkbox" data-change="f-isolate" ${F.isolate ? 'checked' : ''}><span>Own branch<span class="faint"> · changes stay on its branch until you merge${F.mode === 'edit' ? '; switching starts a new session' : ''}</span></span></label>`}
   ${F.mode === 'edit' ? '' : `<label class="check"><input type="checkbox" data-change="f-start" ${F.startNow ? 'checked' : ''}><span>Start right after hatching</span></label>`}`
 }

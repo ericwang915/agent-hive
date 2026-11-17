@@ -68,4 +68,35 @@ function locate(root, raw, home) {
   return got && { ...got, line: got.dir ? 0 : +(mm[1] || mm[2]) }
 }
 
-module.exports = { list, read, readAt, locate, inside, MAX_TEXT, MAX_LIST }
+// @-mention completion: paths under root matching q, best first. The walk is remembered for a few seconds
+const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'target', '.next', '.venv', 'venv', '__pycache__', '.DS_Store'])
+let memo = { root: '', at: 0, paths: [] }
+function walk(root, cap = 8000) {
+  const out = [], todo = ['']
+  while (todo.length && out.length < cap) {
+    const rel = todo.shift()
+    let ents = []
+    try { ents = fs.readdirSync(path.join(root, rel), { withFileTypes: true }) } catch {}
+    for (const d of ents) {
+      if (SKIP.has(d.name)) continue
+      const p = rel ? rel + '/' + d.name : d.name
+      if (d.isDirectory()) { out.push(p + '/'); todo.push(p) } else if (d.isFile()) out.push(p)
+    }
+  }
+  return out
+}
+function search(root, q, max = 10, now = Date.now()) {
+  const r = real(root)
+  if (!r) return []
+  if (memo.root !== r || now - memo.at > 8000) memo = { root: r, at: now, paths: walk(r) }
+  q = String(q || '').toLowerCase()
+  const hits = []
+  for (const p of memo.paths) {
+    const low = p.toLowerCase(), base = low.replace(/\/$/, '').split('/').pop()
+    const s = !q ? 0 : base.startsWith(q) ? 0 : base.includes(q) ? 1 : low.includes(q) ? 2 : -1
+    if (s >= 0) hits.push([s, low.replace(/\/$/, '').split('/').length, p])
+  }
+  return hits.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].length - b[2].length || a[2].localeCompare(b[2])).slice(0, max).map(h => h[2])
+}
+
+module.exports = { search, list, read, readAt, locate, inside, MAX_TEXT, MAX_LIST }

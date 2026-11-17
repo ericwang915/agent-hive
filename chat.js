@@ -68,8 +68,35 @@ async function flushPaths() {
   })
 }
 
+// The reply while it is being written; the finished message replaces it
+let liveNode = null, thinking = false
+function setLive(p) {
+  const stick = nearBottom()
+  thinking = !!(p && p.thinking)
+  if (p && p.text) {
+    if (!liveNode) { liveNode = el('step a live', `${lastRole === 'assistant' ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md"></div>`); tl.appendChild(liveNode) }
+    liveNode.querySelector('.md').innerHTML = renderMd(p.text, baseDir(), S.home)
+  } else if (liveNode && !thinking) { liveNode.remove(); liveNode = null }
+  updWorking()
+  if (stick) toBottom()
+}
+// Edit and Write calls show what changed, like a diff
+const diffLines = (s, sign, cls, max) => {
+  const ls = String(s).replace(/\n$/, '').split('\n')
+  return ls.slice(0, max).map(l => `<div class="${cls}">${sign} ${esc(l)}</div>`).join('') + (ls.length > max ? `<div class="h">… ${ls.length - max} more line${ls.length - max === 1 ? '' : 's'}</div>` : '')
+}
+function editDiff(name, i) {
+  const pair = (o, n) => (o ? diffLines(o, '-', 'm', 30) : '') + (n ? diffLines(n, '+', 'p', 30) : '')
+  const h = typeof i.old_string === 'string' && typeof i.new_string === 'string' ? pair(i.old_string, i.new_string)
+    : Array.isArray(i.edits) ? i.edits.slice(0, 8).map(x => pair(String((x && x.old_string) || ''), String((x && x.new_string) || ''))).join('<div class="h">⋯</div>')
+    : name === 'Write' && typeof i.content === 'string' ? diffLines(i.content, '+', 'p', 24) : ''
+  return h ? `<div class="diff tdiff">${h}</div>` : ''
+}
+
 function addEntry(e, live) {
   const stick = nearBottom()
+  if (live && liveNode) { liveNode.remove(); liveNode = null }
+  const sub = e.sub ? ' sub' : ''
   $('#empty') && $('#empty').remove()
   let node = null
   switch (e.role) {
@@ -80,15 +107,15 @@ function addEntry(e, live) {
     }
     case 'assistant': {
       const html = renderMd(e.text, baseDir(), S.home)
-      node = el('step a', `${lastRole === 'assistant' ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md">${html}</div>`)
+      node = el('step a' + sub, `${lastRole === 'assistant' || sub ? '' : `<span class="mark">${beeSvg(A.color, 'happy', 18)}</span>`}<div class="md">${html}</div>`)
       const g = galleryOf(e.text, html, e.t)
       if (g) node.appendChild(g)
       markPaths(node)
       break
     }
     case 'tool':
-      node = el('step tool wait', `<span class="dot"></span><div class="t-head"><b>${esc(e.name)}</b> ${esc(String(e.input && e.input.description || '').slice(0, 160))}</div>
-        <div class="io"><div class="in"><span class="k">IN</span><span class="v">${esc(String(e.desc || '').split('\n')[0].slice(0, 400))}</span></div></div>`)
+      node = el('step tool wait' + sub, `<span class="dot"></span><div class="t-head"><b>${esc(e.name)}</b> ${esc(String(e.input && e.input.description || '').slice(0, 160))}</div>
+        <div class="io"><div class="in"><span class="k">IN</span><span class="v">${esc(String(e.desc || '').split('\n')[0].slice(0, 400))}</span></div></div>${e.input && typeof e.input === 'object' ? editDiff(e.name, e.input) : ''}`)
       node.dataset.tid = e.tid || ''
       node.title = String(e.desc || '').slice(0, 1200)
       { const fp = e.input && (e.input.file_path || e.input.path); if (typeof fp === 'string' && fp) { node.querySelector('.in .v').dataset.fp = fp; queuePaths(node) } }
@@ -104,6 +131,7 @@ function addEntry(e, live) {
           const o = el('out' + (text.split('\n').length > 4 || text.length > 320 ? ' long' : ''), `<span class="k">OUT</span><span class="v">${esc(text)}</span>`)
           t.querySelector('.io').appendChild(o)
         }
+        if (/^(Edit|MultiEdit|Write)$/.test(t.querySelector('.t-head b').textContent) && t.querySelector('.tdiff') && text.length < 400 && !/error/i.test(text)) { const o = t.querySelector('.out'); if (o) o.remove() }      // the diff already says it
         const g = t.querySelector('.gallery') ? null : galleryOf(t.title + '\n' + text, '', e.t)      // pictures the tool made or read
         if (g) t.appendChild(g)
       }
@@ -127,14 +155,16 @@ function addEntry(e, live) {
     }
   }
   if (node) tl.appendChild(node)
-  if (e.role !== 'out' && e.role !== 'log' && e.role !== 'system') lastRole = e.role
+  if (e.role !== 'out' && e.role !== 'log' && e.role !== 'system' && !e.sub) lastRole = e.role
+  if (e.role === 'user' && !WHY[e.why] && e.text && sent[sent.length - 1] !== e.text) sent.push(e.text)
   if (live) { updWorking(); if (stick || e.role === 'user') toBottom() }
 }
 
 function updWorking() {
-  const on = A.status === 'running' && !tl.querySelector('.step.tool.wait')
+  const on = A.status === 'running' && !tl.querySelector('.step.tool.wait') && !liveNode
   let w = $('#working')
-  if (on && !w) { w = el('', '<span class="dot"></span>Working…'); w.id = 'working'; tl.after(w) }
+  if (on && !w) { w = el('', '<span class="dot"></span><span class="wt"></span>'); w.id = 'working'; tl.after(w) }
+  if (on) w.querySelector('.wt').textContent = thinking ? 'Thinking…' : 'Working…'
   if (!on && w) w.remove()
 }
 
@@ -362,7 +392,7 @@ async function send() {
   if (A.status === 'setup') return toast('Still setting up the repo')
   if (text.startsWith('/') && !text.includes('\n') && runSlash(text)) return
   const full = (text || 'Take a look at these attachments.') + (atts.length ? `\n\nAttachments (read these paths directly):\n${atts.map(a => '- ' + a.path).join('\n')}` : '')
-  input.value = ''; atts = []; renderAtts(); grow(); hideSlash()
+  input.value = ''; atts = []; renderAtts(); grow(); hideSlash(); men = null; histAt = -1
   await act('run', full, { relay: !!(A.chatRelay && isLead()) })
 }
 $('#send').addEventListener('click', () => { if ($('#send').classList.contains('stop')) act('stop'); else send() })
@@ -374,7 +404,7 @@ function compact(note) {
   if (A.status === 'running' || A.status === 'paused') return toast('Wait for this round to finish')
   act('run', ('/compact ' + (note || '')).trim(), { relay: false })
 }
-$('#ctx').addEventListener('click', () => compact(''))
+$('#cmeter').addEventListener('click', () => compact(''))
 
 // Slash commands
 const SLASH = [
@@ -396,9 +426,44 @@ function runSlash(text) {
   return true
 }
 const hideSlash = () => { $('#slash').hidden = true }
+// @ completes a file or folder from the bee's folder
+let men = null, menSeq = 0
+async function updMention() {
+  const pos = input.selectionStart, mm = input.value.slice(0, pos).match(/(?:^|\s)@([^\s@]*)$/), seq = ++menSeq
+  if (!mm) { if (men) { men = null; hideSlash() } return }
+  const items = await hive.call('findFiles', ID, mm[1])
+  if (seq !== menSeq) return
+  if (!Array.isArray(items) || !items.length) { men = null; return hideSlash() }
+  men = { start: pos - mm[1].length - 1, end: pos, items, sel: 0 }
+  renderMention()
+}
+function renderMention() {
+  const m = $('#slash')
+  m.style.left = comp.offsetLeft + 'px'
+  m.innerHTML = men.items.map((p, i) => `<button class="mi f${i === men.sel ? ' on' : ''}" data-f="${i}"><code>${esc(p)}</code></button>`).join('')
+  m.hidden = false
+}
+function pickMention(i) {
+  const p = men.items[i], v = input.value, head = v.slice(0, men.start) + '@' + p + (p.endsWith('/') ? '' : ' ')
+  input.value = head + v.slice(men.end); input.selectionStart = input.selectionEnd = head.length
+  men = null; hideSlash(); grow(); updSend(); input.focus()
+  if (p.endsWith('/')) updMention()          // keep going into the folder
+}
+// ↑ / ↓ on an empty box walk back through what you sent
+const sent = []
+let histAt = -1
+function history(step) {
+  const i = histAt + step
+  if (i < -1 || i >= sent.length) return false
+  histAt = i
+  input.value = i < 0 ? '' : sent[sent.length - 1 - i]
+  grow(); updSend(); input.selectionStart = input.selectionEnd = input.value.length
+  return true
+}
 function updSlash() {
   const v = input.value
-  if (!/^\/\S*$/.test(v)) return hideSlash()
+  if (!/^\/\S*$/.test(v)) { if (!men) hideSlash(); return }
+  men = null
   slashList = SLASH.filter(x => x[0].startsWith(v))
   if (!slashList.length) return hideSlash()
   slashSel = Math.min(slashSel, slashList.length - 1)
@@ -407,17 +472,29 @@ function updSlash() {
   m.innerHTML = slashList.map((x, i) => `<button class="mi${i === slashSel ? ' on' : ''}" data-s="${i}"><code>${x[0]}</code><span>${x[1]}</span></button>`).join('')
   m.hidden = false
 }
-$('#slash').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (b) { runSlash(slashList[+b.dataset.s][0]); input.focus() } })
+$('#slash').addEventListener('click', e => {
+  const f = e.target.closest('[data-f]')
+  if (f && men) return pickMention(+f.dataset.f)
+  const b = e.target.closest('[data-s]'); if (b) { runSlash(slashList[+b.dataset.s][0]); input.focus() }
+})
 
-input.addEventListener('input', () => { grow(); slashSel = 0; updSlash(); updSend() })
+input.addEventListener('input', () => { grow(); slashSel = 0; histAt = -1; updSlash(); updMention(); updSend() })
 input.addEventListener('keydown', e => {
   if (e.isComposing) return
-  if (!$('#slash').hidden) {
+  if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); return cyclePerm() }
+  if (men && !$('#slash').hidden) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); men.sel = (men.sel + 1) % men.items.length; return renderMention() }
+    if (e.key === 'ArrowUp') { e.preventDefault(); men.sel = (men.sel + men.items.length - 1) % men.items.length; return renderMention() }
+    if (e.key === 'Escape') { men = null; return hideSlash() }
+    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); return pickMention(men.sel) }
+  } else if (!$('#slash').hidden) {
     if (e.key === 'ArrowDown' || e.key === 'Tab') { e.preventDefault(); slashSel = (slashSel + 1) % slashList.length; return updSlash() }
     if (e.key === 'ArrowUp') { e.preventDefault(); slashSel = (slashSel + slashList.length - 1) % slashList.length; return updSlash() }
     if (e.key === 'Escape') return hideSlash()
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return void runSlash(slashList[slashSel][0]) }
   }
+  if (e.key === 'ArrowUp' && (!input.value || histAt >= 0) && history(1)) return e.preventDefault()
+  if (e.key === 'ArrowDown' && histAt >= 0 && history(-1)) return e.preventDefault()
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
 })
 
@@ -435,22 +512,40 @@ function toggleModelMenu(open = $('#model-menu').hidden) {
 $('#model-pill').addEventListener('click', e => { e.stopPropagation(); toggleModelMenu() })
 $('#model-menu').addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-m]'); if (b) { setModel(b.dataset.m); toggleModelMenu(false) } })
 $('#model-menu').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'model-custom' && !e.isComposing) { setModel(e.target.value.trim()); toggleModelMenu(false); input.focus() } if (e.key === 'Escape') toggleModelMenu(false) })
-document.addEventListener('click', () => { toggleModelMenu(false) })
+document.addEventListener('click', () => { toggleModelMenu(false); togglePermMenu(false) })
 
 $('#relay-toggle').addEventListener('click', () => act('chatRelay', '', { on: !A.chatRelay }))
 
-const PERM = { ask: 'Ask', safe: 'Auto-edit', full: 'Allow all' }
+const PERM = { plan: 'Plan', ask: 'Ask', safe: 'Auto-edit', full: 'Allow all' }
+const PERM_HINT = { plan: 'Reads and proposes a plan, changes nothing', ask: 'Waits for your OK on every action', safe: 'Edits files without asking', full: 'Never asks' }
+const permNow = () => (A.engine !== 'claude' && (A.permission === 'ask' || A.permission === 'plan') ? 'safe' : A.permission)
+const permChoices = () => (A.engine === 'claude' ? ['plan', 'ask', 'safe', 'full'] : ['safe', 'full'])
+function togglePermMenu(open = $('#perm-menu').hidden) {
+  const m = $('#perm-menu')
+  m.hidden = !open
+  if (!open) return
+  m.style.left = 'auto'; m.style.right = (comp.parentElement.clientWidth - comp.offsetLeft - comp.offsetWidth) + 'px'
+  m.innerHTML = permChoices().map(k => `<button class="mi" data-pm="${k}"><b>${PERM[k]}</b><span>${PERM_HINT[k]}</span>${permNow() === k ? '<span class="ck">✓</span>' : ''}</button>`).join('')
+}
+$('#perm').addEventListener('click', e => { e.stopPropagation(); togglePermMenu() })
+$('#perm-menu').addEventListener('click', e => { const b = e.target.closest('[data-pm]'); if (b) call('setPermission', ID, b.dataset.pm) })
+// Shift-Tab steps through the modes that still ask or plan; Allow all is only reachable from the menu
+function cyclePerm() {
+  if (A.engine !== 'claude') return
+  const ring = ['ask', 'safe', 'plan'], i = ring.indexOf(A.permission)
+  call('setPermission', ID, ring[(i + 1) % ring.length])
+}
 function renderFoot() {
   const e = eng(), lead = isLead(), next = Team.downOf(S.agents, A.id).map(x => x.name).join(', ')
   const pillText = `${e.label}${e.template === null ? ' · ' + (A.model || 'default') + ' ▾' : ''}`
   $('#model-pill').textContent = pillText
   $('#model-pill').disabled = e.template !== null
-  const cx = A.context, cb = $('#ctx'), pct = cx && cx.used && cx.window ? Math.min(100, Math.round(cx.used / cx.window * 100)) : null
+  const cx = A.context, cb = $('#cmeter'), pct = cx && cx.used && cx.window ? Math.min(100, Math.round(cx.used / cx.window * 100)) : null
   cb.hidden = !(cx && cx.used && A.sessionId)
   cb.textContent = pct != null ? `Context ${pct}%` : cx ? `Context ${fmtTok(cx.used)}` : ''
   cb.className = 'tool' + (pct >= 80 ? ' warn' : '')
   cb.title = cx ? `${fmtTok(cx.used || 0)}${cx.window ? ' of ' + fmtTok(cx.window) : ''} in this session. Claude Code compacts on its own when it fills up; click to compact now.` : ''
-  $('#perm').textContent = PERM[A.permission === 'ask' && A.engine !== 'claude' ? 'safe' : A.permission] || ''
+  $('#perm').textContent = (PERM[permNow()] || '') + ' ▾'; $('#perm').className = 'tool' + (permNow() === 'plan' ? ' plan' : ''); $('#perm').title = (PERM_HINT[permNow()] || '') + (A.engine === 'claude' ? ' (Shift-Tab to switch)' : '')
   const rt = $('#relay-toggle')
   rt.hidden = !lead
   rt.className = 'tool' + (A.chatRelay ? ' on' : '')
@@ -521,6 +616,7 @@ async function boot() {
     if (tab === 'changes' && was !== A.status && changesData) renderChanges()
   })
   hive.on('entry', ({ id, entry }) => { if (id === ID) addEntry(entry, true) })
+  hive.on('partial', p => { if (p.id === ID) setLive(p.end ? null : p) })
   hive.on('tab', t => setTab(TABS.includes(t) ? t : 'chat'))
 }
 boot()

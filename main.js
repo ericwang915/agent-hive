@@ -11,7 +11,7 @@ app.setName('Agent Hive')
 if (process.env.HIVE_DATA) app.setPath('userData', path.resolve(process.env.HIVE_DATA))      // use a separate data directory in tests
 const HOME = os.homedir(), MAX = 40
 const COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']
-const PERMS = ['ask', 'safe', 'full'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval']
+const PERMS = ['ask', 'safe', 'full', 'plan'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval']
 const GATED = { schedule: 'scheduled run', handoff: 'relay handoff', feedback: 'review feedback', resume: 'auto-resume', queen: 'task from Queen' }
 // Status lines written by pre-English builds; dropped from the activity feed on load
 const LEGACY_FEED = /\u8dd1\u5b8c\u4e86|\u51fa\u9519|\u7b49\u4f60|\u901a\u8fc7\uff08|\u8fd9\u4e00\u8def|\u7684\u7ed3\u679c|\u5df2\u7ecf\u6765\u56de|\u51c6\u5907\u4ed3\u5e93|\u9884\u7b97|\u6ca1\u6709\u7ed9\u51fa|\u8df3\u8fc7\u4e86|\u5b8c\u4e86 \u00b7|\u5931\u8d25/
@@ -254,12 +254,14 @@ function run(a, prompt, why = 'manual', meta = {}) {
   procs.set(a.id, p)
   a.status = 'running'; a.runStart = a.lastRunAt = Date.now(); a.sessionCwd = cwd; delete a.interrupted
   const said = [], use = { usd: 0, tin: 0, tout: 0 }
+  let partial = null, partialTimer = null          // the reply while it streams, sent to the chat window at most every 70ms
   let lastErr = '', done = false
   const parser = core.makeParser(
-    e => { if (e.role === 'assistant') said.push(e.text); if (e.role === 'error') lastErr = e.text; log(a, e) },
+    e => { if (e.role === 'assistant' && !e.sub) said.push(e.text); if (e.role === 'error') lastErr = e.text; log(a, e) },
     sid => { if (a.sessionId !== sid) { a.sessionId = sid; save() } },
     u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout },
-    cx => { a.context = { ...(a.context || {}), ...cx }; push() })
+    cx => { a.context = { ...(a.context || {}), ...cx }; push() },
+    v => { partial = v; if (!partialTimer) partialTimer = setTimeout(() => { partialTimer = null; send('partial', { id: a.id, ...(partial || { end: true }) }) }, 70) })
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
   let idle = null
   child.stdout.on('data', d => { parser.feed(d); clearTimeout(idle); idle = setTimeout(() => parser.flush(), 500) })
@@ -268,8 +270,9 @@ function run(a, prompt, why = 'manual', meta = {}) {
   const finish = (code, signal, err) => {
     if (done) return
     done = true
-    clearTimeout(idle)
+    clearTimeout(idle); clearTimeout(partialTimer)
     parser.end()
+    send('partial', { id: a.id, end: true })
     procs.delete(a.id)
     if (!alive(a)) return updatePower()
     if (err) { lastErr = err.code === 'ENOENT' ? `Failed to start: ${c.cmd} command not found` : `Failed to start: ${err.message}`; log(a, { role: 'error', text: lastErr }) }
@@ -1141,6 +1144,13 @@ function ipc() {
     if (!core.validModel(model) || model.length > 80) throw new Error('Invalid model name')
     a.model = model; log(a, { role: 'system', text: `Model changed to ${model || 'default'}, effective next run` })
   })
+  handle('setPermission', (id, p) => {
+    const a = need(id)
+    if (!PERMS.includes(p)) throw new Error('Unknown permission mode')
+    if (a.permission === p) return
+    a.permission = p; log(a, { role: 'system', text: `Permissions: ${{ ask: 'Ask', safe: 'Auto-edit', full: 'Allow all', plan: 'Plan' }[p]}${procs.has(a.id) ? ', effective next run' : ''}` }); push()
+  })
+  handle('findFiles', (id, q) => files.search(filesRoot(need(id)), String(q || '').slice(0, 200)))
   handle('gitPlan', (ws, url, branch) => {
     url = String(url || '').trim(); branch = String(branch || '').trim()
     if (!core.validGitUrl(url)) return { kind: 'error', text: 'Invalid git URL' }
