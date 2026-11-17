@@ -124,7 +124,23 @@ function resultText(c) {
   return str(c)
 }
 
-function makeParser(emit, onSession = () => {}, onUsage = () => {}) {
+// How full the context is, from Claude Code's stream: {used} after each model call or compaction, {window} from the result
+function contextOf(o) {
+  if (!o || o.parent_tool_use_id) return null          // a sub-agent's calls have their own context
+  if (o.type === 'assistant' && o.message && o.message.usage) {
+    const u = o.message.usage, used = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
+    return used ? { used } : null
+  }
+  if (o.type === 'system' && o.subtype === 'compact_boundary') { const m = o.compact_metadata || {}; return num(m.post_tokens) ? { used: num(m.post_tokens) } : null }
+  if (o.type === 'result' && o.modelUsage && typeof o.modelUsage === 'object') {
+    const w = Math.max(0, ...Object.values(o.modelUsage).map(m => num(m && m.contextWindow)))
+    return w ? { window: w } : null
+  }
+  return null
+}
+const kTok = n => (n >= 1000 ? (n / 1000).toFixed(n < 100000 ? 1 : 0) + 'k' : String(n))
+
+function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = () => {}) {
   let buf = '', delta = '', plain = []
   // Plain-text CLIs: consecutive non-JSON lines become one reply (keeps Markdown tables and lists intact)
   const flushPlain = () => { const t = plain.join('\n').trim(); plain = []; if (t) emit({ role: 'assistant', text: t }) }
@@ -138,6 +154,8 @@ function makeParser(emit, onSession = () => {}, onUsage = () => {}) {
     if (sid && typeof sid === 'string') onSession(sid)
     const u = usageOf(o)
     if (u) onUsage(u)
+    const cx = contextOf(o)
+    if (cx) onContext(cx)
     // Gemini: accumulate deltas, flush on the first non-delta
     if (o.type === 'message' && o.role === 'assistant' && o.delta) { delta += str(o.content); return }
     flush()
@@ -156,6 +174,13 @@ function makeParser(emit, onSession = () => {}, onUsage = () => {}) {
       case 'user':
         for (const c of (o.message && Array.isArray(o.message.content) ? o.message.content : []))
           if (c.type === 'tool_result') emit(outEntry(c.content, c.tool_use_id))
+        break
+      case 'system':
+        if (o.subtype === 'status' && o.status === 'compacting') emit({ role: 'system', text: 'Compacting the conversation…' })
+        else if (o.subtype === 'compact_boundary') {
+          const m = o.compact_metadata || {}
+          emit({ role: 'system', text: `${m.trigger === 'auto' ? 'Context was full; compacted' : 'Compacted'}${num(m.pre_tokens) && num(m.post_tokens) ? `: ${kTok(num(m.pre_tokens))} → ${kTok(num(m.post_tokens))} tokens` : ''}` })
+        }
         break
       case 'item.completed': {
         const it = o.item || {}, t = it.type || it.item_type
@@ -374,7 +399,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = {
-  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,

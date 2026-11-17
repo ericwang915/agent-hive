@@ -144,6 +144,7 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .cbtns .tool:hover:not(:disabled) { background: var(--c-user); color: var(--c-text) }
 .cbtns .tool:disabled { cursor: default }
 #relay-toggle.on { background: var(--c-relay); color: var(--c-relay-ink); font-weight: 600 }
+#ctx.warn { color: var(--c-wait); font-weight: 600 }
 #timer { font-variant-numeric: tabular-nums; color: var(--c-faint) }
 #send { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--c-accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: none }
 #send:disabled { opacity: .35; cursor: default }
@@ -183,6 +184,7 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
       <button class="tool" id="relay-toggle" hidden></button>
       <span id="timer"></span>
       <button class="tool" id="model-pill"></button>
+      <button class="tool" id="ctx" hidden></button>
       <span class="grow"></span>
       <span id="perm"></span>
       <button id="send" title="Send">&nbsp;</button>

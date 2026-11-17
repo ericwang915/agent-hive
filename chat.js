@@ -119,7 +119,7 @@ function addEntry(e, live) {
     case 'system': node = el('sys', esc(e.text)); break
     case 'run': {
       tl.querySelectorAll('.step.tool.wait').forEach(n => n.classList.remove('wait'))
-      const tok = e.tin || e.tout ? `${fmtTok(e.tin || 0)} tok in / ${fmtTok(e.tout || 0)} tok out` : ''
+      const tok = e.tin || e.tout ? `${fmtTok(e.tin || 0)} in / ${fmtTok(e.tout || 0)} out` : ''
       const parts = e.interrupted ? ['Round interrupted', fmtDur(e.ms || 0)] : ['Round done', fmtDur(e.ms || 0), e.usd ? '$' + e.usd.toFixed(e.usd < 0.1 ? 3 : 2) : '', tok, e.code ? `exit ${e.code}` : e.code == null && e.signal ? e.signal : '']
       node = el('runline', `<span>${parts.filter(Boolean).map(esc).join(' · ')}</span><time>${hmTime(e.t)}</time>`)
       if (live) { loadChanges(true); refreshFiles() }
@@ -367,9 +367,19 @@ async function send() {
 }
 $('#send').addEventListener('click', () => { if ($('#send').classList.contains('stop')) act('stop'); else send() })
 
+// Compaction is Claude Code's own /compact, run on the bee's session
+function compact(note) {
+  if (A.engine !== 'claude') return toast('Only Claude Code bees can compact')
+  if (!A.sessionId) return toast('Nothing to compact yet')
+  if (A.status === 'running' || A.status === 'paused') return toast('Wait for this round to finish')
+  act('run', ('/compact ' + (note || '')).trim(), { relay: false })
+}
+$('#ctx').addEventListener('click', () => compact(''))
+
 // Slash commands
 const SLASH = [
   ['/model', 'Switch model', arg => (arg ? setModel(arg) : toggleModelMenu(true))],
+  ['/compact', 'Summarise the conversation to free up context', arg => compact(arg)],
   ['/new', 'New session', () => act('newSession')],
   ['/stop', 'Stop', () => act('stop')],
   ['/diff', 'View changes', () => setTab('changes')],
@@ -435,6 +445,11 @@ function renderFoot() {
   const pillText = `${e.label}${e.template === null ? ' · ' + (A.model || 'default') + ' ▾' : ''}`
   $('#model-pill').textContent = pillText
   $('#model-pill').disabled = e.template !== null
+  const cx = A.context, cb = $('#ctx'), pct = cx && cx.used && cx.window ? Math.min(100, Math.round(cx.used / cx.window * 100)) : null
+  cb.hidden = !(cx && cx.used && A.sessionId)
+  cb.textContent = pct != null ? `Context ${pct}%` : cx ? `Context ${fmtTok(cx.used)}` : ''
+  cb.className = 'tool' + (pct >= 80 ? ' warn' : '')
+  cb.title = cx ? `${fmtTok(cx.used || 0)}${cx.window ? ' of ' + fmtTok(cx.window) : ''} in this session. Claude Code compacts on its own when it fills up; click to compact now.` : ''
   $('#perm').textContent = PERM[A.permission === 'ask' && A.engine !== 'claude' ? 'safe' : A.permission] || ''
   const rt = $('#relay-toggle')
   rt.hidden = !lead

@@ -240,7 +240,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
   if (!fs.existsSync(a.workspace)) return fail(a, `Workspace does not exist: ${a.workspace}`)
   let cwd, c
   try { cwd = workDir(a, why) } catch (e) { return fail(a, e.message) }
-  if (a.sessionCwd && a.sessionCwd !== cwd) delete a.sessionId        // a session belongs to a directory
+  if (a.sessionCwd && a.sessionCwd !== cwd) { delete a.sessionId; delete a.context }       // a session belongs to a directory
   let full = prompt
   if (!a.sessionId && state.settings.memoryInject) {
     let pre = ''
@@ -258,7 +258,8 @@ function run(a, prompt, why = 'manual', meta = {}) {
   const parser = core.makeParser(
     e => { if (e.role === 'assistant') said.push(e.text); if (e.role === 'error') lastErr = e.text; log(a, e) },
     sid => { if (a.sessionId !== sid) { a.sessionId = sid; save() } },
-    u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout })
+    u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout },
+    cx => { a.context = { ...(a.context || {}), ...cx }; push() })
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
   let idle = null
   child.stdout.on('data', d => { parser.feed(d); clearTimeout(idle); idle = setTimeout(() => parser.flush(), 500) })
@@ -335,7 +336,7 @@ const actions = {
     run(a, p, why, opts.room ? { from: 'Group', room: opts.room, show: opts.show } : {})
   },
   chatRelay(a, _t, opts = {}) { a.chatRelay = !!opts.on },
-  newSession(a) { delete a.sessionId; delete a.sessionCwd; log(a, { role: 'system', text: 'The next run will start a new session' }) },
+  newSession(a) { delete a.sessionId; delete a.sessionCwd; delete a.context; log(a, { role: 'system', text: 'The next run will start a new session' }) },
   pause(a) { if (procs.has(a.id) && a.status === 'running') { sig(a, 'SIGSTOP'); a.status = 'paused'; log(a, { role: 'system', text: 'Paused' }) } },
   continue(a) {
     if (a.needsSetup) return void setupGit(a)
@@ -1061,7 +1062,7 @@ function update(id, c) {
   if (inRelay(a)) s.isolate = false
   if (s.engine !== a.engine || s.isolate !== !!a.isolate) {           // engine changed / own branch toggled: start a new session
     if (procs.has(a.id)) throw new Error('It is still running. Change the engine or own branch after this run ends')
-    delete a.sessionId; delete a.sessionCwd
+    delete a.sessionId; delete a.sessionCwd; delete a.context
   }
   if (!s.isolate && a.isolate) dropWorktree(a)
   const sched = JSON.stringify(s.schedule) !== JSON.stringify(a.schedule)

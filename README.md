@@ -42,6 +42,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 - **Schedules.** Once, daily, weekly, monthly, or every N minutes. Runs missed while the Mac slept are caught up the same day.
 - **Sleep-safe.** Running bees stop when the lid closes and pick up where they left off when it opens, or when the app restarts.
 - **Permissions.** Approve each action from the app (Claude Code), auto-accept edits, or allow everything.
+- **Context.** A meter shows how full a Claude Code bee's session is. `/compact` summarises it on the spot, and `/new` starts over.
 - **Spend.** Cost and tokens per round, and a daily budget that holds back automatic runs once it is used up.
 - **Memory and skills.** Overnight, *Dreamer* tidies long-term memory and *Gardener* turns the day's conversations into reusable skills. New sessions start with both.
 - **Dashboard.** A 24-hour activity timeline, spend, and Queen's daily report.

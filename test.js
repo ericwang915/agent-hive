@@ -452,6 +452,22 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(relayPlan([A0, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'room' }), [])
 }
 
+// Context meter and compaction events
+{
+  const got = [], ctx = []
+  const p = core.makeParser(e => got.push(e), () => {}, () => {}, c => ctx.push(c))
+  const feed = o => p.feed(JSON.stringify(o) + '\n')
+  feed({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }], usage: { input_tokens: 2, cache_read_input_tokens: 11370, cache_creation_input_tokens: 19970, output_tokens: 4 } } })
+  feed({ type: 'assistant', parent_tool_use_id: 't1', message: { content: [], usage: { input_tokens: 999 } } })
+  feed({ type: 'system', subtype: 'status', status: 'compacting' })
+  feed({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 31411, post_tokens: 11617 } })
+  feed({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'auto', pre_tokens: 180000, post_tokens: 20000 } })
+  feed({ type: 'user', message: { role: 'user', content: 'This session is being continued…' } })
+  feed({ type: 'result', usage: {}, modelUsage: { a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } } })
+  eq(ctx, [{ used: 31342 }, { used: 11617 }, { used: 20000 }, { window: 1000000 }])
+  eq(got.map(e => e.text), ['hi', 'Compacting the conversation…', 'Compacted: 31.4k → 11.6k tokens', 'Context was full; compacted: 180k → 20.0k tokens'])
+}
+
 // File browser
 {
   const files = require('./files')
