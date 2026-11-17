@@ -209,13 +209,13 @@ function openHatch(pre = {}) {
   F = a ? {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
     sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}) },
-    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp,
+    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [],
     after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
     mode: 'create', name: '', task: '', taskTouched: false, wsCustom: '', gitUrl: '', gitBranch: '',
     color: S.colors.find(c => !usedColors.has(c)) || S.colors[S.agents.length % S.colors.length], engine: firstInstalled(), model: '', template: '', prompt: '',
     sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1 },
-    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false,
+    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [],
     after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false }, engineTouched: false,
   }
   if (!a) {
@@ -390,13 +390,28 @@ const PERM = {
   full: ['Allow all', 'Never asks. Only use in folders you trust'],
   plan: ['Plan', 'Reads and proposes a plan without changing anything'],
 }
+// The MCP servers from the user's Claude Code setup, ticked = this bee may use it
+let CS = null
+async function loadSetup(force) { const r = await hive.call('claudeSetup', force); if (r && !r.error) CS = r; if ($('#sec-beh')) updBeh(); if (view === 'skills') renderGarden() }
+// every server off = start the session without MCP at all, which saves the most
+function setMcpOff(off) { F.mcpOff = off; F.noMcp = !!CS && CS.servers.length > 0 && CS.servers.every(s => off.includes(s.name)); updBeh() }
+const MCP_ST = { connected: '', 'needs-auth': 'needs sign-in', failed: 'failed', pending: 'connecting' }
+function mcpHtml() {
+  if (!CS) { loadSetup(); return '<div class="mcp-box"><div class="mute" style="font-size:12px">Looking up your MCP servers…</div></div>' }
+  if (!CS.servers.length) return ''
+  const off = name => F.noMcp || F.mcpOff.includes(name), on = CS.servers.filter(s => !off(s.name))
+  return `<div class="mcp-box"><div class="row"><span class="mute grow" style="font-size:12px">MCP servers this bee may use · ${on.length} of ${CS.servers.length}, ${on.reduce((n, s) => n + s.tools, 0)} tools</span>
+    <button type="button" class="btn sm ghost" data-act="f-mcp-all">All</button><button type="button" class="btn sm ghost" data-act="f-mcp-none">None</button><button type="button" class="btn sm ghost" data-act="f-mcp-refresh" title="Look again">${ICON.refresh}</button></div>
+  <div class="mcp-list">${CS.servers.map(s => `<label class="check" title="${esc(s.name)}"><input type="checkbox" data-change="f-mcp" data-n="${esc(s.name)}" ${off(s.name) ? '' : 'checked'}><span class="ell">${esc(s.label)}<span class="faint"> · ${esc(s.source)}${s.tools ? ` · ${s.tools} tool${s.tools === 1 ? '' : 's'}` : ''}${MCP_ST[s.status] ? ' · ' + MCP_ST[s.status] : ''}</span></span></label>`).join('')}</div>
+  <div class="hint">Unticked servers are left out of this bee's sessions, so their tool lists do not ride along on every round.</div></div>`
+}
 function updBeh() {
   const el = $('#sec-beh')
   if (!el) return
   const relay = F.mode === 'edit' ? F.inRelay : !!F.afterWs
   el.innerHTML = `<label class="check"><input type="checkbox" data-change="f-sleep" ${F.sleepResume ? 'checked' : ''}><span>Pause on lid close, resume on open</span></label>
   <label class="check"><input type="checkbox" data-change="f-fresh" ${F.freshSchedule ? 'checked' : ''}><span>Scheduled runs start a new session<span class="faint"> · keeps the cost of each run flat; memory and skills still carry over</span></span></label>
-  ${F.engine === 'claude' ? `<label class="check"><input type="checkbox" data-change="f-nomcp" ${F.noMcp ? 'checked' : ''}><span>Built-in tools only<span class="faint"> · leaves out the MCP servers from your Claude Code setup; fewer tokens every round</span></span></label>` : ''}
+  ${F.engine === 'claude' ? mcpHtml() : ''}
   <div><div class="row"><span class="mute" style="font-size:12px">Permissions</span><div class="seg">${Object.entries(PERM).map(([k, v]) => `<button type="button" class="${F.permission === k ? 'on' : ''}" data-act="f-perm" data-k="${k}">${v[0]}</button>`).join('')}</div></div>
     <div class="hint">${PERM[F.permission][1]}</div>${(F.permission === 'ask' || F.permission === 'plan') && F.engine !== 'claude' ? '<div class="hint warn">Only works with Claude Code; this engine runs as Auto-edit</div>' : ''}</div>
   ${relay ? '' : `<label class="check"><input type="checkbox" data-change="f-isolate" ${F.isolate ? 'checked' : ''}><span>Own branch<span class="faint"> · changes stay on its branch until you merge${F.mode === 'edit' ? '; switching starts a new session' : ''}</span></span></label>`}
@@ -407,7 +422,7 @@ async function submitForm() {
   const s = F.sched, relay = F.mode === 'create' && F.after.ids.length
   const cfg = {
     name: F.name.trim(), task: (relay ? F.afterTask : F.task).trim(), workspace: relay ? '' : F.wsCustom, color: F.color, engine: F.engine, model: F.model.trim(), template: F.template,
-    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp,
+    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff,
     schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom },
     git: relay || F.mode === 'edit' ? null : { url: F.gitUrl.trim(), branch: F.gitBranch.trim() },
     after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop } : null,
@@ -459,7 +474,7 @@ const CHANGE = {
   'f-loop': el => { F.after.loop = el.checked },
   'f-sleep': el => { F.sleepResume = el.checked },
   'f-fresh': el => { F.freshSchedule = el.checked },
-  'f-nomcp': el => { F.noMcp = el.checked },
+  'f-mcp': el => { const n = el.dataset.n, off = new Set(F.noMcp && CS ? CS.servers.map(s => s.name) : F.mcpOff); el.checked ? off.delete(n) : off.add(n); setMcpOff([...off]) },
   'f-isolate': el => { F.isolate = el.checked },
   'f-start': el => { F.startNow = el.checked },
 }
@@ -535,6 +550,18 @@ function nightHtml(k) {
     <div class="last">${l ? `Last ${whenText(new Date(l.t)) || ''} · ${l.agents} bee${l.agents === 1 ? '' : 's'} · ${esc(what)}${l.summary ? `<br>${esc(l.summary)}` : ''}` : duty}</div></div>
   <button class="btn" data-act="night-now" data-k="${k}" ${busy ? 'disabled' : ''}>${busy ? `${m.verb[0].toUpperCase()}${m.verb.slice(1)}…` : 'Run now'}</button></div>`
 }
+// Skills page: what Claude Code itself brings to every Claude bee, apart from the hive's own skills
+function setupHtml() {
+  if (!CS) { loadSetup(); return '<div class="setup-sec"><h2 class="round">From Claude Code</h2><div class="mute">Looking…</div></div>' }
+  if (CS.missing) return ''
+  const groups = {}
+  for (const s of CS.skills) { const i = s.indexOf(':'), g = i > 0 ? s.slice(0, i) : 'Your own and built-in'; (groups[g] = groups[g] || []).push(i > 0 ? s.slice(i + 1) : s) }
+  const usedBy = s => S.agents.filter(a => a.engine === 'claude' && !a.noMcp && !(a.mcpOff || []).includes(s.name)).length, bees = S.agents.filter(a => a.engine === 'claude').length
+  return `<div class="setup-sec"><div class="row"><h2 class="round grow">From Claude Code</h2><button class="btn sm ghost" data-act="setup-refresh">${ICON.refresh}Refresh</button></div>
+  <div class="mute" style="margin:-4px 0 10px">Every Claude Code bee starts with these, on top of the hive's skills above. Choose a bee's MCP servers in its settings.</div>
+  <div class="setup-mod"><div class="hd">MCP servers <span class="faint">${CS.servers.length}</span></div>${CS.servers.length ? `<div class="setup-rows">${CS.servers.map(s => `<div class="r"><span class="nm ell">${esc(s.label)}</span><span class="faint ell">${esc(s.source)}</span><span class="faint">${s.tools ? s.tools + ' tools' : MCP_ST[s.status] || '—'}</span><span class="faint">${bees ? `${usedBy(s)} of ${bees} bee${bees === 1 ? '' : 's'}` : ''}</span></div>`).join('')}</div>` : '<div class="faint">None</div>'}</div>
+  <div class="setup-mod"><div class="hd">Skills <span class="faint">${CS.skills.length}</span></div>${Object.entries(groups).map(([g, list]) => `<div class="grp"><span class="g">${esc(g)}</span>${list.map(n => `<span class="chip">${esc(n)}</span>`).join('')}</div>`).join('') || '<div class="faint">None</div>'}</div></div>`
+}
 function renderGarden() {
   if (!G) return
   if (view === 'skills') {
@@ -551,7 +578,7 @@ function renderGarden() {
       <textarea id="skill-text" spellcheck="false">---\nname: \ndescription: One line on when to use it\n---\n\n## Steps\n\n1. </textarea><div class="acts"><button class="btn sm primary" data-act="skill-save" data-n="+">Save</button><button class="btn sm" data-act="skill-cancel">Cancel</button></div></div>` : ''
     $('#v-skills').innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Skills</h1></div>
       <button class="btn" data-act="open-garden" data-k="skills">${ICON.folder}Folder</button><button class="btn primary" data-act="skill-new">${ICON.plus}New</button></div>
-      ${nightHtml('gardener')}<div class="sgrid">${fresh}${G.skills.map(card).join('')}</div>${G.skills.length || fresh ? '' : '<div class="guide">No skills yet</div>'}`
+      ${nightHtml('gardener')}<div class="sgrid">${fresh}${G.skills.map(card).join('')}</div>${G.skills.length || fresh ? '' : '<div class="guide">No skills yet</div>'}${setupHtml()}`
   }
   if (view === 'memory') {
     const card = (key, head, md) => {
@@ -659,6 +686,10 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  'f-mcp-all': () => setMcpOff([]),
+  'f-mcp-none': () => CS && setMcpOff(CS.servers.map(s => s.name)),
+  'f-mcp-refresh': () => { CS = null; updBeh() },
+  'setup-refresh': () => { CS = null; renderGarden(); loadSetup(true) },
   'room-toggle': () => toggleRoom(),
   'room-open': el => (R.open && R.cur === el.dataset.id ? closeRoom() : openRoom(el.dataset.id)),
   'queen-room': () => openQueenRoom(),

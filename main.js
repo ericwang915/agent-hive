@@ -1102,6 +1102,7 @@ function parseSettings(c) {
     color: COLORS.includes(c.color) ? c.color : COLORS[0],
     permission: PERMS.includes(c.permission) ? c.permission : 'full',
     sleepResume: c.sleepResume !== false, isolate: !!c.isolate, freshSchedule: c.freshSchedule !== false, noMcp: !!c.noMcp,
+    mcpOff: (Array.isArray(c.mcpOff) ? c.mcpOff : []).filter(n => typeof n === 'string' && n.length <= 120).slice(0, 200),
     schedule: parseSchedule(c.schedule, prompt),
   }
 }
@@ -1190,6 +1191,35 @@ function loadCursorModels() {
   })
 }
 
+// ───────── What Claude Code brings along ─────────
+// Its MCP servers and skills, read from the first line a session prints; the process is stopped before it calls the model, so this costs nothing
+let setup = null, setupBusy = null
+function claudeSetup(force) {
+  if (!core.onPath('claude')) return Promise.resolve({ servers: [], skills: [], missing: true })
+  if (setup && !force && Date.now() - setup.at < 10 * 60000) return Promise.resolve(setup)
+  if (setupBusy) return setupBusy
+  return (setupBusy = new Promise(resolve => {
+    const child = spawn('claude', ['-p', 'hi', '--output-format', 'stream-json', '--verbose'], { cwd: DIR, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
+    let buf = '', done = false
+    const end = got => { if (done) return; done = true; clearTimeout(timer); try { child.kill('SIGKILL') } catch {} setupBusy = null; if (got) setup = { ...got, at: Date.now() }; resolve(got ? setup : setup || { servers: [], skills: [], failed: true }) }
+    const timer = setTimeout(() => end(null), 40000)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', d => {
+      buf += d
+      let i
+      while ((i = buf.indexOf('\n')) >= 0) {
+        let o = null
+        try { o = JSON.parse(buf.slice(0, i)) } catch {}
+        buf = buf.slice(i + 1)
+        const got = core.parseInit(o)
+        if (got) return end(got)
+        if (o && (o.type === 'assistant' || o.type === 'result')) return end(null)      // never let it get as far as a reply
+      }
+    })
+    child.on('error', () => end(null)); child.on('close', () => end(null))
+  }))
+}
+
 // ───────── Upgrade ─────────
 const upd = require('./update')
 let newRel = null                                       // the newer release, if any: {version, tag, notes, url, state: available | downloading | installing}
@@ -1257,6 +1287,7 @@ const need = id => { const a = byId(id); if (!a) throw new Error('This bee no lo
 const IMG = /\.(png|jpe?g|gif|webp|svg|bmp|heic|tiff?)$/i
 
 function ipc() {
+  handle('claudeSetup', force => claudeSetup(!!force))
   handle('checkUpdate', () => checkUpdate())
   handle('upgrade', () => upgrade())
   handle('init', () => ({

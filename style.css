@@ -529,3 +529,15 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 #v-dash .page-head { flex-wrap: wrap; row-gap: 10px }
 #v-dash .page-head > .grow { flex: 1 0 auto }
 #d-compact { width: 56px !important }
+
+.mcp-box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px }
+.mcp-list { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; max-height: 190px; overflow-y: auto }
+.mcp-list .check { min-width: 0; font-size: 12.5px } .mcp-list .check span { min-width: 0 }
+.setup-sec { margin-top: 28px } .setup-sec h2 { font-size: 16px; margin: 0 0 8px }
+.setup-mod { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px }
+.setup-mod .hd { font-weight: 700; font-size: 13px; margin-bottom: 8px }
+.setup-rows .r { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 90px 90px; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13px }
+.setup-rows .r .nm { font-weight: 600 }
+.setup-mod .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0; border-top: 1px solid var(--line) }
+.setup-mod .grp .g { width: 170px; flex: none; font-size: 12.5px; color: var(--mute) }
+.setup-mod .chip { font: 12px var(--mono); background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px }

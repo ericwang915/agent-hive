@@ -17,10 +17,22 @@ const m = (flag, a) => (a.model ? [flag, a.model] : [])
 const HEADLESS_OFF = 'Artifact,ArtifactComments,ArtifactData,ExitPlanMode,ListAgents,SendMessage,CronCreate,CronDelete,CronList,ScheduleWakeup'
 // Kept fixed (no names in it), so it never invalidates a session's prompt cache
 const BEE_SYS = 'You are running as a "bee" inside Agent Hive, a desktop app that runs several coding agents side by side. The other bees are separate agents in their own folders; your tools cannot see or reach them. To pass something to another bee, write @Name followed by exactly what you need from it, on a line of its own in your reply: Agent Hive delivers it when the two of you share a group. Schedules are set in the Agent Hive app, not by you.'
+// An MCP server's tools are named mcp__<server>__<tool>; disallowing "mcp__<server>" removes all of them from the session
+const mcpPrefix = name => 'mcp__' + String(name).replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')      // "claude.ai Interactive Brokers (IBKR)" → claude_ai_Interactive_Brokers_IBKR
+// What a Claude Code session reports when it starts: its MCP servers (with how many tools each brings) and its skills
+function parseInit(o) {
+  if (!o || o.type !== 'system' || o.subtype !== 'init') return null
+  const tools = Array.isArray(o.tools) ? o.tools.map(String) : []
+  const servers = (Array.isArray(o.mcp_servers) ? o.mcp_servers : []).filter(s => s && s.name).map(s => {
+    const name = String(s.name), pre = mcpPrefix(name) + '__'
+    return { name, label: name.replace(/^claude\.ai /, '').replace(/^plugin:[^:]+:/, ''), source: s.source === 'claudeai' ? 'claude.ai' : s.source === 'plugin' ? 'plugin ' + (name.split(':')[1] || '') : String(s.source || ''), status: String(s.status || ''), tools: tools.filter(t => t.startsWith(pre)).length }
+  })
+  return { servers, skills: (Array.isArray(o.skills) ? o.skills : []).map(String).sort() }
+}
 const ENGINES = {
   claude: {
     label: 'Claude Code', cmd: 'claude', models: ['opus', 'sonnet', 'haiku', 'fable'],
-    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', HEADLESS_OFF, '--append-system-prompt', BEE_SYS, ...m('--model', a),
+    args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', [HEADLESS_OFF, ...(a.noMcp ? [] : a.mcpOff || []).map(mcpPrefix)].join(','), '--append-system-prompt', BEE_SYS, ...m('--model', a),
       ...(a.permission === 'full' ? ['--dangerously-skip-permissions']
         : a.permission === 'plan' ? ['--permission-mode', 'plan']
         : ['--permission-mode', 'acceptEdits',
@@ -427,7 +439,7 @@ function pickName(used = [], rnd = Math.random) {
   for (let i = 2; ; i++) { const n = NAMES[Math.floor(rnd() * NAMES.length)] + i; if (!taken.has(n.toLowerCase())) return n }
 }
 
-module.exports = { HEADLESS_OFF, BEE_SYS,
+module.exports = { HEADLESS_OFF, BEE_SYS, mcpPrefix, parseInit,
   MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,

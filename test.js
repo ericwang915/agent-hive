@@ -543,6 +543,12 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq([core.compactWhy(B, { compactAt: 0, compactCold: false }, 1e10), core.compactWhy({ ...B, context: { used: 50000, window: 1e6 } }, { compactAt: 50 }, 1e10)], ['', ''])
   eq([core.compactWhy({ ...B, engine: 'codex' }, { compactAt: 50 }), core.compactWhy({ ...B, sessionId: '' }, { compactAt: 50 }), core.compactWhy({ ...B, context: undefined }, { compactAt: 50 })], ['', '', ''])
   const args = x => core.command({ engine: 'claude', workspace: '/tmp', ...x }, 'hi', { mcp: '{"x":1}' }).args
+  eq([core.mcpPrefix('claude.ai Google Drive'), core.mcpPrefix('plugin:engineering:slack'), core.mcpPrefix('audiee'), core.mcpPrefix('claude.ai Interactive Brokers (IBKR)')], ['mcp__claude_ai_Google_Drive', 'mcp__plugin_engineering_slack', 'mcp__audiee', 'mcp__claude_ai_Interactive_Brokers_IBKR'])
+  eq(args({ mcpOff: ['audiee', 'claude.ai Gmail'] })[args({}).indexOf('--disallowedTools') + 1], core.HEADLESS_OFF + ',mcp__audiee,mcp__claude_ai_Gmail')
+  eq(args({ mcpOff: ['audiee'], noMcp: true })[args({}).indexOf('--disallowedTools') + 1], core.HEADLESS_OFF)
+  eq(core.parseInit({ type: 'system', subtype: 'init', tools: ['Read', 'mcp__audiee__a', 'mcp__audiee__b', 'mcp__claude_ai_Gmail__send'], skills: ['z', 'eng:debug'], mcp_servers: [{ name: 'audiee', status: 'connected', source: 'user' }, { name: 'claude.ai Gmail', status: 'needs-auth', source: 'claudeai' }, { name: 'plugin:eng:slack', status: 'failed', source: 'plugin' }] }),
+    { servers: [{ name: 'audiee', label: 'audiee', source: 'user', status: 'connected', tools: 2 }, { name: 'claude.ai Gmail', label: 'Gmail', source: 'claude.ai', status: 'needs-auth', tools: 1 }, { name: 'plugin:eng:slack', label: 'slack', source: 'plugin eng', status: 'failed', tools: 0 }], skills: ['eng:debug', 'z'] })
+  eq(core.parseInit({ type: 'assistant' }), null)
   assert.ok(args({ noMcp: true, permission: 'full' }).join(' ').endsWith('--strict-mcp-config --mcp-config {"mcpServers":{}}'))
   eq(args({ noMcp: true, permission: 'ask' }).filter(x => x === '--mcp-config').length, 1)
   assert.ok(args({ noMcp: true, permission: 'ask' }).includes('--strict-mcp-config') && !args({ permission: 'full' }).includes('--strict-mcp-config'))
