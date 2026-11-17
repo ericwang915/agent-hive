@@ -139,7 +139,7 @@ const iconBtns = a => `<button class="btn sm icon ghost" data-act="edit" data-id
 
 function cardHtml(a) {
   const g = a.git ? `<div class="gitline">${ICON.branch}<span class="ell">${esc(a.git.url.replace(/^.*[:/]([^/:]+\/[^/]+?)(\.git)?$/, '$1'))}${a.git.branch ? '@' + esc(a.git.branch) : ''}</span></div>` : ''
-  return `<div class="card${a.status === 'running' ? ' running' : ''}">
+  return `<div class="card${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}">
   <div class="card-head">${beeOf(a, 44)}<div class="grow"><div class="nm round ell">${esc(a.name)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a)}</div>
@@ -163,7 +163,7 @@ function relHtml(a, A) {
   return out.map(t => `<span class="badge rel">${t}</span>`).join('')
 }
 function miniHtml(a, tight) {
-  return `<div class="mini${a.status === 'running' ? ' running' : ''}">
+  return `<div class="mini${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}">
   <div class="card-head">${beeOf(a, 30)}<div class="grow"><div class="nm round ell">${esc(a.name)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status, tight)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a, true)}${relHtml(a, S.agents)}</div>
@@ -644,7 +644,7 @@ const ACT = {
   'group-new': () => openGroup(),
   'group-edit': () => openGroup(R.cur),
   'group-close': () => { $('#group').close(); GF = null },
-  'group-delete': async () => { const r = R.rooms.find(x => x.id === GF.id); if (r && confirm(`Delete group "${r.name}"? Its chat history is deleted.`) && await call('roomDelete', r.id)) { $('#group').close(); GF = null } },
+  'group-delete': async () => { const id = GF.id; $('#group').close(); GF = null; deleteRoom(id) },
   'room-stop': () => { if (confirm('Stop what this group is working on?')) call('roomStop', R.cur) },
   'room-new': () => { if (confirm('Make Queen forget this conversation and start over?')) call('roomNew', R.cur) },
   'room-ask': el => call('roomDecide', el.dataset.id, !!el.dataset.ok),
@@ -690,6 +690,7 @@ document.addEventListener('keydown', e => {
     else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); palRun(palSel) }
     return
   }
+  if (e.key === 'Escape') closeCtx()
   if ($('#hatch').open || $('#group').open) return
   if (e.metaKey && e.key.toLowerCase() === 'n') { e.preventDefault(); openHatch() }
   if (e.metaKey && /^[1-9]$/.test(e.key)) { const a = S.agents[+e.key - 1]; if (a) { e.preventDefault(); call('openChat', a.id) } }
@@ -712,7 +713,8 @@ function renderRooms() {
   const pin = R.rooms.some(r => r.main) ? '' : `<button class="side-room" data-act="queen-room"><span class="ricon">${queenSvg(28)}</span><span class="grow"><span class="nm ell">Chat with Queen</span><span class="last ell">She leads the bees</span></span></button>`
   setHtml($('#side-rooms'), pin + (list.length ? list.map(r => {
     const n = R.unread[r.id] || 0, busy = r.status === 'running' || r.pending.length || roomBusy(r).length, wait = r.asks.length
-    return `<button class="side-room${R.open && R.cur === r.id ? ' on' : ''}" data-act="room-open" data-id="${r.id}"><span class="ricon">${roomIcon(r)}</span>
+    if (R.renaming === r.id) return `<div class="side-room on" data-room="${r.id}"><span class="ricon">${roomIcon(r)}</span><input type="text" class="rename grow" id="room-rename" maxlength="30" spellcheck="false" value="${esc(r.name)}"></div>`
+    return `<button class="side-room${R.open && R.cur === r.id ? ' on' : ''}" data-act="room-open" data-id="${r.id}" data-room="${r.id}"><span class="ricon">${roomIcon(r)}</span>
       <span class="grow"><span class="nm ell">${esc(r.name)}</span><span class="last ell">${esc(r.last || `${r.queen ? 'Queen, ' : ''}${roomBees(r).map(a => a.name).join(', ') || 'no bees yet'}`)}</span></span>
       ${wait ? '<span class="unread">!</span>' : n ? `<span class="unread">${n}</span>` : busy ? '<span class="dot blink" style="background:var(--green)"></span>' : ''}</button>`
   }).join('') : '') + (R.rooms.filter(r => !r.main).length ? '' : `<button class="side-new" data-act="group-new">+ New group</button>`))
@@ -720,8 +722,7 @@ function renderRooms() {
 
 function buildRoom() {
   $('#room').innerHTML = `
-  <div class="room-head"><span id="room-bee"></span><div class="grow"><b class="round ell" id="room-name" style="display:block"></b><div class="sub ell" id="room-sub"></div></div>
-    <select id="room-model" title="Queen's model"><option value="">Default model</option>${(eng('claude').models || []).map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>
+  <div class="room-head"><span id="room-bee"></span><div class="grow"><b class="round ell" id="room-name" style="display:block" title="Double-click to rename"></b><div class="sub ell" id="room-sub"></div></div>
     <button class="btn sm icon ghost" data-act="group-edit" title="Group settings">${ICON.gear}</button>
     <button class="btn sm icon ghost" data-act="room-new" id="room-newbtn" title="New conversation">${ICON.refresh}</button>
     <button class="btn sm icon ghost danger" data-act="room-stop" id="room-stop" title="Stop">${ICON.stop}</button>
@@ -744,7 +745,6 @@ function buildRoom() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRoom() }
   })
   $('#room-send').addEventListener('click', sendRoom)
-  $('#room-model').addEventListener('change', async e => { if (await call('roomUpdate', R.cur, { model: e.target.value })) toast(`Queen uses ${e.target.value || 'the default model'}`) })
   grow()
 }
 async function sendRoom() {
@@ -821,8 +821,7 @@ function renderRoomMeta() {
   $('#room-name').textContent = r.name
   $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}`
   $('#room-stop').hidden = !running && !pend.length && !busy.length
-  $('#room-model').hidden = $('#room-newbtn').hidden = !r.queen
-  if (document.activeElement !== $('#room-model')) $('#room-model').value = r.model || ''
+  $('#room-newbtn').hidden = !r.queen
   $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message everyone, @ to mention'
   const think = $('#room-think')
   if (think) {
@@ -880,23 +879,25 @@ async function openQueenRoom() {
 // New group / group settings
 function openGroup(id) {
   const r = id ? R.rooms.find(x => x.id === id) : null
-  GF = r ? { id: r.id, name: r.name, members: new Set(r.members), queen: r.queen } : { name: '', members: new Set(), queen: true }
+  GF = r ? { id: r.id, name: r.name, members: new Set(r.members), queen: r.queen, model: r.model || '' } : { name: '', members: new Set(), queen: true }
   $('#group-form').innerHTML = `
   <div class="dlg-head">${queenSvg(40)}<div class="grow"><h2 class="round">${r ? 'Group settings' : 'New group'}</h2></div><button type="button" class="btn icon ghost" data-act="group-close">${ICON.x}</button></div>
   <div class="dlg-body">
     <div class="field"><div class="lab">Name</div><input type="text" id="g-name" maxlength="30" style="width:100%" placeholder="Group name" value="${esc(GF.name)}"></div>
     <label class="g-queen"><input type="checkbox" id="g-queen" ${GF.queen ? 'checked' : ''}>${queenSvg(34)}<span><b>Queen leads</b><span class="sub" style="display:block">She picks bees, dispatches work and sums up. Unchecked: messages go to every member.</span></span></label>
+    <div class="field" id="g-model-row" ${GF.queen ? '' : 'hidden'}><div class="lab">Queen's model</div><select id="g-model"><option value="">Default</option>${(eng('claude').models || []).map(m => `<option value="${esc(m)}" ${GF.model === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
     <div class="field"><div class="lab">Members <span class="opt" id="g-count"></span></div><div class="g-list">${S.agents.length ? S.agents.map(a => `<label class="g-row"><input type="checkbox" data-g="${a.id}" ${GF.members.has(a.id) ? 'checked' : ''}>${beeOf(a, 28)}<span class="grow"><b>${esc(a.name)}</b><span class="sub ell" style="display:block">${esc(a.task)} · ${esc(eng(a.engine).label)}</span></span>${pill(a.status)}</label>`).join('') : '<div class="hint">No bees yet</div>'}</div></div>
   </div>
   <div class="dlg-foot">${r ? `<button type="button" class="btn danger" data-act="group-delete">Delete group</button>` : ''}<span class="grow"></span><button type="button" class="btn" data-act="group-close">Cancel</button><button type="submit" class="btn primary">${r ? 'Save' : 'New group'}</button></div>`
   const count = () => { $('#g-count').textContent = `${GF.members.size} selected` }
-  $('#group-form').onchange = e => { const t = e.target; if (t.dataset.g) { t.checked ? GF.members.add(t.dataset.g) : GF.members.delete(t.dataset.g); count() } if (t.id === 'g-queen') GF.queen = t.checked }
+  $('#group-form').onchange = e => { const t = e.target; if (t.dataset.g) { t.checked ? GF.members.add(t.dataset.g) : GF.members.delete(t.dataset.g); count() } if (t.id === 'g-queen') $('#g-model-row').hidden = !t.checked
+    if (t.id === 'g-queen') GF.queen = t.checked }
   count()
   $('#group').showModal()
   $('#g-name').focus()
 }
 async function submitGroup() {
-  const cfg = { name: $('#g-name').value.trim() || (GF.queen ? 'Queen and the bees' : [...GF.members].map(id => (byId(id) || {}).name).filter(Boolean).slice(0, 3).join(', ')), members: [...GF.members], queen: GF.queen }
+  const cfg = { queenModel: $('#g-model') ? $('#g-model').value : '', name: $('#g-name').value.trim() || (GF.queen ? 'Queen and the bees' : [...GF.members].map(id => (byId(id) || {}).name).filter(Boolean).slice(0, 3).join(', ')), members: [...GF.members], queen: GF.queen }
   const made = GF.id ? await call('roomUpdate', GF.id, cfg) : await call('roomCreate', cfg)
   if (!made) return
   const id = GF.id || made.id
@@ -906,6 +907,89 @@ async function submitGroup() {
 }
 $('#group-form').addEventListener('submit', e => { e.preventDefault(); submitGroup() })
 $('#group').addEventListener('click', e => { if (e.target === $('#group')) $('#group').close() })
+
+// Inline rename of a group in the sidebar (right-click → Rename, or double-click the panel title)
+function renameRoom(id) {
+  R.renaming = id
+  renderRooms()
+  const input = $('#room-rename')
+  if (!input) return
+  input.focus(); input.select()
+  let done = false
+  const finish = async save => {
+    if (done) return
+    done = true
+    const name = input.value.trim(), r = R.rooms.find(x => x.id === id)
+    R.renaming = null
+    if (save && r && name && name !== r.name && await call('roomUpdate', id, { name })) r.name = name
+    renderRoomMeta()
+  }
+  input.addEventListener('keydown', e => { if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); finish(true) } if (e.key === 'Escape') { e.stopPropagation(); finish(false) } })
+  input.addEventListener('blur', () => finish(true))
+}
+async function deleteRoom(id) {
+  const r = R.rooms.find(x => x.id === id)
+  if (r && confirm(`Delete "${r.name}"? Its chat history will be removed.`)) await call('roomDelete', id)
+}
+
+// ───────── Context menus ─────────
+function showCtx(e, items) {
+  e.preventDefault()
+  closeCtx()
+  const m = document.createElement('div')
+  m.id = 'ctx'
+  m.innerHTML = items.filter(Boolean).map((x, i) => (x === '-' ? '<hr>' : `<button data-i="${i}" class="${x.danger ? 'danger' : ''}">${x.icon || '<span class="ic"></span>'}${esc(x.label)}</button>`)).join('')
+  document.body.appendChild(m)
+  const w = m.offsetWidth, h = m.offsetHeight
+  m.style.left = Math.max(6, Math.min(e.clientX, innerWidth - w - 6)) + 'px'
+  m.style.top = Math.max(6, Math.min(e.clientY, innerHeight - h - 6)) + 'px'
+  const list = items.filter(Boolean)
+  m.addEventListener('click', ev => { const b = ev.target.closest('[data-i]'); if (!b) return; ev.stopPropagation(); closeCtx(); list[+b.dataset.i].run() })
+}
+const closeCtx = () => { const m = $('#ctx'); if (m) m.remove() }
+function roomMenu(e, id) {
+  const r = R.rooms.find(x => x.id === id)
+  if (!r) return
+  const busy = r.status === 'running' || r.pending.length || roomBusy(r).length
+  showCtx(e, [
+    { label: 'Open', icon: ICON.chat, run: () => openRoom(id) },
+    { label: 'Rename', icon: ICON.edit, run: () => renameRoom(id) },
+    { label: 'Members & settings…', icon: ICON.gear, run: () => openGroup(id) },
+    busy && { label: 'Stop', icon: ICON.stop, run: () => call('roomStop', id) },
+    '-',
+    { label: 'Delete group', icon: ICON.trash, danger: true, run: () => deleteRoom(id) },
+  ])
+}
+function beeMenu(e, id) {
+  const a = byId(id)
+  if (!a) return
+  const el = { dataset: { id } }, setup = a.status === 'setup'
+  showCtx(e, [
+    { label: 'Open chat', icon: ICON.chat, run: () => call('openChat', id) },
+    { label: 'View changes', icon: ICON.branch, run: () => call('openChat', id, 'changes') },
+    '-',
+    !setup && a.status !== 'running' && a.status !== 'paused' && a.prompt && { label: 'Run', icon: ICON.play, run: () => ACT.run(el) },
+    a.status === 'running' && { label: 'Pause', icon: ICON.pause, run: () => ACT.pause(el) },
+    (a.status === 'paused' || (['stopped', 'error', 'sleeping'].includes(a.status) && a.lastRunAt)) && { label: 'Resume', icon: ICON.resume, run: () => ACT.continue(el) },
+    ['running', 'paused', 'setup'].includes(a.status) && { label: 'Stop', icon: ICON.stop, run: () => ACT.stop(el) },
+    !a.isolate && Team.teamOf(S.agents, id).length < S.teamMax && { label: 'Add relay bee…', icon: ICON.plus, run: () => ACT.relay(el) },
+    { label: 'Show in Finder', icon: ICON.finder, run: () => call('reveal', id) },
+    { label: 'Rename & settings…', icon: ICON.gear, run: () => ACT.edit(el) },
+    '-',
+    { label: 'Delete bee', icon: ICON.trash, danger: true, run: () => ACT.delete(el) },
+  ])
+}
+document.addEventListener('contextmenu', e => {
+  const room = e.target.closest('[data-room]'), bee = e.target.closest('[data-bee]')
+  if (e.target.closest('input, textarea, .sel, .md')) return closeCtx()          // keep the native menu for text
+  if (room) return roomMenu(e, room.dataset.room)
+  if (bee) return beeMenu(e, bee.dataset.bee)
+  closeCtx()
+})
+document.addEventListener('click', closeCtx)
+window.addEventListener('blur', closeCtx)
+document.addEventListener('scroll', closeCtx, true)
+document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && R.cur) renameRoom(R.cur) })
 
 async function bootRoom() {
   buildRoom()

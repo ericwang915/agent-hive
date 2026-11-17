@@ -1045,7 +1045,7 @@ function create(c) {
   fs.mkdirSync(a.workspace, { recursive: true })
   setSchedKey(a)
   state.agents.push(a)
-  log(a, { role: 'system', text: `${a.name} hatched, workspace ${a.workspace}` })
+  log(a, { role: 'system', text: `${a.name} hatched in ${a.workspace.startsWith(HOME + path.sep) ? '~' + a.workspace.slice(HOME.length) : a.workspace}` })
   if (plan && plan.kind !== 'same') { a.startAfterSetup = !!c.startNow; setupGit(a) }
   else if (c.startNow && a.prompt) run(a, a.prompt, 'manual')
   push()
@@ -1215,11 +1215,18 @@ function ipc() {
   })
   handle('rooms', () => state.rooms.map(roomPublic))
   handle('room', id => { const r = needRoom(id); return { entries: readRoom(r), room: roomPublic(r) } })
-  handle('roomCreate', c => { const r = newRoom(parseRoom(c)); if (c.main && r.queen && !state.rooms.some(x => x.main)) r.main = true; state.rooms.push(r); roomsPush(); return { id: r.id } })
+  handle('roomCreate', c => { const r = newRoom(parseRoom(c)); if (typeof c.queenModel === 'string' && core.validModel(c.queenModel) && c.queenModel.length <= 80) r.model = c.queenModel; if (c.main && r.queen && !state.rooms.some(x => x.main)) r.main = true; state.rooms.push(r); roomsPush(); return { id: r.id } })
   handle('roomUpdate', (id, c) => {
     const r = needRoom(id)
     if (c && typeof c.model === 'string') { if (!core.validModel(c.model) || c.model.length > 80) throw new Error('Invalid model name'); r.model = c.model }
-    else Object.assign(r, parseRoom(c, r))
+    else if (c && typeof c.name === 'string' && c.members === undefined) {          // rename only
+      const name = c.name.trim().slice(0, 30)
+      if (!name) throw new Error('Give the group a name')
+      r.name = name
+    } else {
+      Object.assign(r, parseRoom(c, r))
+      if (typeof c.queenModel === 'string' && core.validModel(c.queenModel) && c.queenModel.length <= 80) r.model = c.queenModel
+    }
     roomsPush()
   })
   handle('roomDelete', id => roomDelete(needRoom(id)))

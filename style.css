@@ -273,6 +273,7 @@ button.badge:hover { border-color: var(--line2); background: var(--line) }
 .mini.running { border-color: transparent; animation: hive-glow 1.8s ease-in-out infinite; animation-delay: calc(var(--t, 0) * -1ms) }
 .mini .card-head { gap: 8px }
 .mini .card-head .nm { font-size: 13.5px }
+.mini .tail div:nth-last-child(n+3) { display: none }
 .mini .tail { height: 48px; padding: 6px 8px; font-size: 11px }
 .mini .card-actions { gap: 3px }
 .team-body.tight .mini .tail { height: 31px }
@@ -460,6 +461,18 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 #room-at button span.st { margin-left: auto; font-size: 11.5px; color: var(--mute) }
 .unread { background: var(--clay); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 0 6px; min-width: 18px; text-align: center }
 @media (max-width: 1220px) { #room { position: fixed; right: 0; top: 0; z-index: 20; box-shadow: var(--pop) } }
+
+/* ── Context menu, inline rename ── */
+#ctx { position: fixed; z-index: 80; min-width: 190px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--pop); padding: 5px }
+#ctx button { display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 10px; border: 0; background: transparent; border-radius: 8px; text-align: left; font-size: 13.5px; color: var(--ink); white-space: nowrap }
+#ctx button:hover { background: var(--soft) }
+#ctx button .ic { width: 16px; color: var(--mute) }
+#ctx button.danger, #ctx button.danger .ic { color: var(--red-ink) }
+#ctx button.danger:hover { background: var(--red-soft) }
+#ctx hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px }
+.side-room .rename { min-height: 28px; padding: 3px 8px; font-size: 14px; font-weight: 600; min-width: 0; width: 100% }
+#room-name { cursor: default }
+#g-model { min-width: 160px }
 
 /* ── ⌘K ── */
 #palette { position: fixed; inset: 0; background: rgba(40, 34, 26, .3); z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh }
