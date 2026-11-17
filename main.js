@@ -13,6 +13,8 @@ const HOME = os.homedir(), MAX = 40
 const COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']
 const PERMS = ['ask', 'safe', 'full'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval']
 const GATED = { schedule: 'scheduled run', handoff: 'relay handoff', feedback: 'review feedback', resume: 'auto-resume', queen: 'task from Queen' }
+// Status lines written by pre-English builds; dropped from the activity feed on load
+const LEGACY_FEED = /\u8dd1\u5b8c\u4e86|\u51fa\u9519|\u7b49\u4f60|\u901a\u8fc7\uff08|\u8fd9\u4e00\u8def|\u7684\u7ed3\u679c|\u5df2\u7ecf\u6765\u56de|\u51c6\u5907\u4ed3\u5e93|\u9884\u7b97|\u6ca1\u6709\u7ed9\u51fa|\u8df3\u8fc7\u4e86|\u5b8c\u4e86 \u00b7|\u5931\u8d25/
 let DIR, LOGS, REPORTS, STATE
 let state = { agents: [], settings: {}, spend: {}, feed: [] }
 let mainWin = null, quitting = false, queenBusy = false, blocker = null, chatCount = 0
@@ -51,7 +53,7 @@ function load() {
   let s = {}
   try { s = JSON.parse(fs.readFileSync(STATE, 'utf8')) } catch {}
   const now = new Date(), st = s.settings || {}
-  state = { agents: Array.isArray(s.agents) ? s.agents : [], feed: Array.isArray(s.feed) ? s.feed : [], spend: s.spend || { day: today(), usd: 0, tok: 0 } }
+  state = { agents: Array.isArray(s.agents) ? s.agents : [], feed: (Array.isArray(s.feed) ? s.feed : []).filter(f => !LEGACY_FEED.test(String(f.text))), spend: s.spend || { day: today(), usd: 0, tok: 0 } }
   state.settings = { workspaceRoot: path.join(HOME, 'AgentHive'), reportTime: '18:00', budget: 0, memoryInject: true, ...st }
   if (state.settings.lastReportKey === undefined) state.settings.lastReportKey = slotKey({ mode: 'daily', time: state.settings.reportTime }, now) || ''
   const night = {}

@@ -188,9 +188,9 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .cap .today { margin-bottom: 8px }
 .cap .bar { margin-top: 0 }
 .today { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px }
-.today div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 6px; text-align: center; min-width: 0 }
+.today div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 4px; text-align: center; min-width: 0 }
 .today b { display: block; font: 800 17px/1.2 var(--round); color: var(--ink); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis }
-.today span { font-size: 12px }
+.today span { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .cap .bar { height: 6px; background: var(--line2); border-radius: 999px; margin-top: 6px; overflow: hidden }
 .cap .bar i { display: block; height: 100%; background: var(--honey); border-radius: 999px }
 

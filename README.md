@@ -6,6 +6,8 @@ A macOS desktop app for running a hive of coding agents. Each **bee** is a codin
 
 ## Install
 
+> **Not released yet.** The app is still being polished, so the installer below has nothing to download. For now, run it from source (see [Development](#development)).
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
 ```
