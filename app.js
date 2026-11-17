@@ -28,7 +28,8 @@ function renderSide() {
     : '')
   const sp = S.spend && S.spend.day === dayKey() ? S.spend : { usd: 0, tok: 0 }
   $('#side-chats-h').hidden = !live.length
-  setHtml($('#cap'), `<div class="today"><div><b>${S.agents.filter(a => a.status === 'running').length}</b><span>Running</span></div><div><b>${S.agents.filter(scheduled).length}</b><span>Scheduled</span></div><div title="Today's spend${S.settings.budget ? ', budget $' + S.settings.budget : ''}"><b>${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok).replace(' tok', '')}</b><span>Today</span></div></div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
+  const run = S.agents.filter(a => a.status === 'running').length, sch = S.agents.filter(scheduled).length
+  setHtml($('#cap'), `<div class="today-line" title="${S.agents.length} of ${S.max} bees hatched${S.settings.budget ? ' · budget $' + S.settings.budget : ''}">${run} running · ${sch} scheduled · ${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok)}</div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
   renderFeed()
 }
 function renderFeed() {
@@ -66,7 +67,6 @@ function buildHive() {
   $('#q').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); renderHive() })
 }
 
-const hello = () => { const h = new Date().getHours(); return h < 5 || h >= 23 ? 'Late night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 const scheduled = a => a.schedule && a.schedule.mode !== 'manual'
 const FILTERS = [['all', 'All', () => true], ['running', 'Running', a => a.status === 'running' || a.status === 'setup'], ['paused', 'Paused', a => a.status === 'paused' || a.status === 'sleeping'],
   ['sched', 'Scheduled', scheduled], ['error', 'Error', a => a.status === 'error'], ['stopped', 'Stopped', a => a.status === 'stopped']]
@@ -76,12 +76,12 @@ const matches = a => !query || [a.name, a.task, a.workspace, eng(a.engine).label
 function renderHive() {
   if (view !== 'hive') return
   const A = S.agents, n = f => A.filter(FILTERS.find(x => x[0] === f)[2]).length
-  $('#hello').textContent = hello()
-  $('#hive-sub').textContent = A.length ? [[n('running'), 'running'], [n('paused'), 'paused'], [n('error'), 'error']].filter(x => x[0]).map(x => `${x[0]} ${x[1]}`).join(' · ') || `${A.length} bee${A.length === 1 ? '' : 's'}, all idle` : 'No bees yet'
+  $('#hello').textContent = 'Hive'
+  $('#hive-sub').textContent = A.length ? [[n('running'), 'running'], [n('paused'), 'paused'], [n('error'), n('error') === 1 ? 'error' : 'errors']].filter(x => x[0]).map(x => `${x[0]} ${x[1]}`).join(' · ') || `${A.length} bee${A.length === 1 ? '' : 's'}, all idle` : 'No bees yet'
   setHtml($('#queen-bee'), queenSvg(34, 'happy', queenBusy ? 'running' : 'idle'))
   $('#queen-when').textContent = `Daily ${S.settings.reportTime || '18:00'}`
   $('#queen-line').textContent = queenBusy ? 'Queen is writing…' : queenLine || 'None yet'
-  setHtml($('#chips'), FILTERS.map(([id, label]) => `<button class="chip${filter === id ? ' on' : ''}" data-act="filter" data-f="${id}">${label}<span class="n">${n(id)}</span></button>`).join(''))
+  setHtml($('#chips'), FILTERS.filter(([id]) => id === 'all' || id === filter || n(id)).map(([id, label]) => `<button class="chip${filter === id ? ' on' : ''}" data-act="filter" data-f="${id}">${label}<span class="n">${n(id)}</span></button>`).join(''))
   const used = KINDS.filter(([k]) => A.some(a => schedKind(a.schedule) === k))
   if (!used.some(([k]) => k === sub)) sub = 'all'
   setHtml($('#chips2'), filter === 'sched' && used.length ? [['all', 'All scheduled'], ...used].map(([k, label]) => `<button class="chip${sub === k ? ' on' : ''}" data-act="sub" data-k="${k}">${label}<span class="n">${k === 'all' ? n('sched') : A.filter(a => schedKind(a.schedule) === k).length}</span></button>`).join('') : '')
@@ -149,7 +149,6 @@ function cardHtml(a) {
   <div class="path ell" title="${esc(a.workspace)}">${esc(tilde(a.workspace, S.home))}</div>
   ${g}
   <div class="card-actions">${mainBtn(a)}<span class="sp"></span>
-    ${a.isolate ? '' : `<button class="btn sm ghost" data-act="relay" data-id="${a.id}" title="Hatch a bee that picks up after this one">+ Relay</button>`}
     <button class="btn sm" data-act="chat" data-id="${a.id}">Chat →</button>${iconBtns(a)}</div>
 </div>`
 }
@@ -501,7 +500,7 @@ function renderDash() {
     <div></div><div class="axis">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${h}:00</span>`).join('')}</div></div>` : '<div class="mute">No activity</div>'}</div>
   <div class="panel"><h3 class="round">Bees</h3>${A.length ? `<table class="atable"><thead><tr><th>Name</th><th>Task</th><th>Status</th><th>Runtime</th><th>Spend</th><th>7 days</th><th>Last message</th></tr></thead><tbody>${A.map(a => {
     const x = st(a.id), mx = Math.max(1, ...x.week)
-    return `<tr data-act="chat" data-id="${a.id}"><td><div class="row">${beeOf(a, 24)}<b>${esc(a.name)}</b></div></td><td>${esc(a.task)}</td><td>${pill(a.status)}</td><td>${x.runs ? `${x.runs} run${x.runs === 1 ? '' : 's'} · ${fmtMin(x.ms)}` : '<span class="faint">—</span>'}</td><td>${x.usd ? fmtUsd(x.usd) : x.tok ? fmtTok(x.tok) : '<span class="faint">—</span>'}</td><td><span class="spark">${x.week.map(v => `<i style="height:${Math.round(v / mx * 100)}%"></i>`).join('')}</span></td><td class="said"><div class="ell">${esc(x.last) || '<span class="faint">—</span>'}</div></td></tr>`
+    return `<tr data-act="chat" data-id="${a.id}"><td><div class="row">${beeOf(a, 24)}<b>${esc(a.name)}</b></div></td><td>${esc(a.task)}</td><td>${pill(a.status)}</td><td>${x.runs ? `${x.runs} run${x.runs === 1 ? '' : 's'} · ${fmtMin(x.ms)}` : '<span class="faint">—</span>'}</td><td>${x.usd ? fmtUsd(x.usd) : x.tok ? fmtTok(x.tok) : '<span class="faint">—</span>'}</td><td>${x.week.some(Boolean) ? `<span class="spark">${x.week.map(v => `<i style="height:${Math.round(v / mx * 100)}%"></i>`).join('')}</span>` : '<span class="faint">—</span>'}</td><td class="said"><div class="ell">${esc(x.last) || '<span class="faint">—</span>'}</div></td></tr>`
   }).join('')}</tbody></table>` : '<div class="mute">No bees yet</div>'}</div>`)
 }
 

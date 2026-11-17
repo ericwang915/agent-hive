@@ -576,7 +576,7 @@ function startApprovals() {
       const desc = q.input && typeof q.input.description === 'string' ? q.input.description.slice(0, 200) : ''
       a.approvals = [...(a.approvals || []), { id, tool, input, desc }]
       pending.set(id, { a, answer })
-      log(a, { role: 'system', text: `Wants to use ${tool}: ${first(input, 120)} — waiting for your approval` })
+      log(a, { role: 'system', text: `Wants to use ${tool}: ${first(input, 120)}. Waiting for your approval` })
       event(a, `Waiting for your approval: ${tool} ${first(input, 80)}`, 'approve', true)
       res.on('close', () => {                 // CLI killed or connection dropped
         if (!pending.delete(id)) return
@@ -788,7 +788,7 @@ function askUser(r, kind, data, onClose) {
   const id = crypto.randomUUID()
   r.asks.push({ id, kind, data })
   roomsPush()
-  event(roomBee(r), kind === 'plan' ? 'Queen has a plan waiting for you' : `Queen wants to hatch a new bee ${data.name} — waiting for you`, 'approve', true)
+  event(roomBee(r), kind === 'plan' ? 'Queen has a plan waiting for you' : `Queen wants to hatch a new bee, ${data.name}`, 'approve', true)
   const drop = () => { asks.delete(id); r.asks = r.asks.filter(x => x.id !== id); roomsPush() }
   onClose(() => { if (asks.has(id)) drop() })
   return new Promise(resolve => asks.set(id, ok => { drop(); resolve(ok) }))
