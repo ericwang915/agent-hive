@@ -20,10 +20,10 @@ DEST="/Applications"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "Downloading Agent Hive ($ARCH)…"
+echo "Downloading Agent Hive (${ARCH})..."
 curl -fL --progress-bar -o "$TMP/app.zip" "https://github.com/$REPO/releases/latest/download/Agent-Hive-$ARCH.zip"
 
-echo "Installing to $DEST…"
+echo "Installing to ${DEST}..."
 ditto -x -k "$TMP/app.zip" "$TMP/out"
 [ -d "$TMP/out/$APP" ] || { echo "The download did not contain $APP." >&2; exit 1; }
 if pgrep -f "$DEST/$APP/Contents/MacOS/" >/dev/null 2>&1; then
