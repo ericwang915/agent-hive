@@ -1,15 +1,57 @@
-<p align="center"><img src="icon.png" width="112" alt=""></p>
+<p align="center"><img src="icon.png" width="112" alt="Agent Hive logo: a queen bee on a honeycomb"></p>
 <h1 align="center">Agent Hive</h1>
-<p align="center">Run a team of coding agents on your Mac, and see what every one of them is doing.</p>
+<p align="center"><b>Run a team of AI coding agents on your Mac, and see what every one of them is doing.</b><br>
+A free, open-source desktop app for Claude Code, Codex, Gemini CLI and Cursor Agent.</p>
 <p align="center">
+  <a href="https://github.com/ericwang915/agent-hive/releases/latest"><img src="https://img.shields.io/github/v/release/ericwang915/agent-hive?label=release" alt="latest release"></a>
   <a href="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml"><img src="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml/badge.svg" alt="tests"></a>
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="macOS">
+  <img src="https://img.shields.io/badge/platform-macOS%2012%2B-lightgrey" alt="macOS 12 or later">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
+<p align="center">
+  <a href="#install">Install</a> · <a href="#what-you-can-do-with-it">Features</a> · <a href="#how-it-compares">How it compares</a> · <a href="#faq">FAQ</a>
+</p>
 
-![A relay team: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
+![Agent Hive running a relay team of coding agents: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
 
-Each **bee** is a coding-agent CLI working in its own folder: Claude Code, Codex, Gemini, Cursor Agent, or any command you like. Agent Hive runs them side by side, on a schedule if you want, and lets them hand work to each other. It uses the CLIs and logins you already have. It ships no API keys and stores none.
+## What is Agent Hive?
+
+Agent Hive is a macOS app that runs several coding-agent CLIs at once and lets them work as a team. Each agent is a **bee**: Claude Code, Codex, Gemini CLI, Cursor Agent, or any command you like, working in its own folder. You can talk to each bee, put it on a schedule, chain bees into a relay where one writes and another reviews, or pull them into a group and let **Queen** hand out the work.
+
+It uses the CLIs and logins you already have, including a Claude or ChatGPT subscription. It ships no API keys, stores none, has no account and no server of its own.
+
+## Highlights
+
+- **Any agent, mixed in one team.** Claude Code writes, Codex reviews, Gemini tests. Any CLI that takes a prompt can be a bee.
+- **Agents that work while you are away.** Schedules (once, daily, weekly, monthly, every N minutes), catch-up for runs missed while the Mac slept, and a daily budget that stops automatic runs when it is used up.
+- **A lead agent instead of ten terminals.** Tell Queen what you want; she picks the bees, dispatches the work, waits for the results and sums them up.
+- **Review built into the flow.** Relay teams send a reviewer's findings back to the writer until it approves. Every bee has a diff view with commit, push and pull request.
+- **Spends fewer tokens than the CLI on its own.** Sessions are compacted before they get expensive, scheduled runs start fresh, unused tools and MCP servers are left out. In a measured three-round task a bee carried about 30% less context per round than plain `claude -p` on the same machine with the same setup (29k against 44k tokens).
+- **It remembers.** Overnight, two helper bees turn the day's conversations into long-term memory and reusable skills. New sessions start with both.
+- **Nothing to trust but your own machine.** MIT licensed, no build step, no telemetry; the only request the app makes on its own is a check for new releases on GitHub. The app is signed and notarized by Apple and updates itself if you let it.
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
+```
+
+This downloads the latest release for your Mac (Apple silicon or Intel), puts `Agent Hive.app` in `/Applications` and opens it. You can also download the `.dmg` from the [releases page](https://github.com/ericwang915/agent-hive/releases). The app is signed and notarized by Apple.
+
+To run from source instead:
+
+```bash
+git clone https://github.com/ericwang915/agent-hive.git
+cd agent-hive
+npm install
+npm start
+```
+
+### Requirements
+
+- macOS 12 or later
+- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini` or `cursor-agent`. Queen, the daily report and the night bees need `claude`.
+- `git` for diffs, commits, branches and pull requests. `gh` is optional and used to open pull requests.
 
 ## What you can do with it
 
@@ -51,28 +93,27 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 - **Ranks.** Every finished round counts. A bee climbs from Bronze through Silver, Gold, Platinum and Diamond to Master, and its look changes with each rank.
 - **Right-click anything.** Rename, settings, stop and delete for bees and groups.
 
-## Install
+## How it compares
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash
-```
+Several good tools run coding agents in parallel. They differ in what they are built around. This is how Agent Hive sees the field in November 2026; check each project for its current features.
 
-This downloads the latest release for your Mac (Apple silicon or Intel), puts `Agent Hive.app` in `/Applications` and opens it. You can also download the `.dmg` from the [releases page](https://github.com/ericwang915/agent-hive/releases). The app is signed and notarized by Apple.
+| Tool | Built around | Good fit when |
+|---|---|---|
+| **Agent Hive** | A standing team: scheduled agents, a lead agent (Queen), relay teams with review loops, memory and skills. Open source, macOS. | You want agents that keep working on a schedule, hand work to each other, and that you can supervise from one window. |
+| [Conductor](https://www.conductor.build) | Parallel workspaces, each agent in its own git worktree. A proprietary macOS app. | You want to start many independent tasks on one repository and review each branch. |
+| [Claude Squad](https://github.com/smtg-ai/claude-squad) | A terminal UI on tmux, each agent in its own git worktree. Open source. | You live in the terminal and want sessions that survive a closed window. |
+| [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) | A kanban board of tasks that agents pick up in workspaces. Open source. | You think in tickets and want a board as the main view. |
+| Claude Code agent teams | Several Claude Code instances that message each other. Claude only. | You use only Claude Code and want it to split one task among teammates. |
 
-To run from source instead:
+What Agent Hive adds on top of running agents side by side:
 
-```bash
-git clone https://github.com/ericwang915/agent-hive.git
-cd agent-hive
-npm install
-npm start
-```
+- **Scheduling with catch-up, sleep-safe runs and a daily budget**, so unattended work is predictable.
+- **Routing by a small model.** In a group, a message without an `@mention` goes only to the bee it concerns; the others stay asleep and cost nothing.
+- **Review loops across engines**: a reviewer on one model can send work back to a writer on another, for at most three rounds.
+- **Token controls you can see**: a context meter, automatic compaction, cost per round, and a checklist of MCP servers per bee.
+- **Memory and skills** that are distilled from your own conversations and shared by every bee.
 
-### Requirements
-
-- macOS 12 or later
-- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini` or `cursor-agent`. Queen, the daily report and the night bees need `claude`.
-- `git` for diffs, commits, branches and pull requests. `gh` is optional and used to open pull requests.
+Agent Hive also uses git worktrees, for bees that run in parallel on the same step of a relay.
 
 ## Safety
 
@@ -81,6 +122,44 @@ Bees run real commands on your machine, with the permission level you choose. "A
 The app listens on `127.0.0.1` on a random port, protected by a per-launch token. Claude Code uses it to ask for permission decisions, and Queen uses it to call her tools. Nothing is exposed to the network.
 
 State lives in `~/Library/Application Support/Agent Hive/`. Workspaces, skills and memory live under `~/AgentHive/` by default.
+
+## FAQ
+
+### Is Agent Hive free?
+
+Yes. It is open source under the MIT license. You pay only for the agent CLIs you already use, through their own subscriptions or API billing.
+
+### Does it need an API key?
+
+No. Agent Hive starts the CLIs installed on your Mac (`claude`, `codex`, `gemini`, `cursor-agent`) with the logins they already have. It never sees or stores a key.
+
+### Does it work with a Claude Pro or Max subscription, or ChatGPT Plus?
+
+Yes. If the CLI works in your terminal, it works as a bee, with the same account and limits.
+
+### Which coding agents does it support?
+
+Claude Code, Codex CLI, Gemini CLI and Cursor Agent out of the box, plus any command line that accepts a prompt (a custom template with `{prompt}`). Queen, the daily report and the night bees need Claude Code.
+
+### How is it different from Claude Code subagents or agent teams?
+
+Subagents and agent teams are features of Claude Code and use Claude only. Agent Hive runs separate, long-lived agents from different vendors, each with its own folder, session, schedule and chat window, and keeps running them after you close the conversation.
+
+### Can agents run on a schedule, like a cron job for Claude Code?
+
+Yes. Each bee can run once, daily, weekly, monthly or every N minutes. Runs missed while the Mac slept are caught up the same day, and a daily budget can stop automatic runs.
+
+### Does my code leave my machine?
+
+Agent Hive has no server and sends your code nowhere. The agent CLIs talk to their own providers exactly as they do in your terminal. The only request the app makes on its own is a check for new releases on GitHub.
+
+### Does it run on Windows or Linux?
+
+Not yet. It is built and tested for macOS 12 or later, on Apple silicon and Intel.
+
+### How do I update it?
+
+An Upgrade button appears in the sidebar when a new release is out. Settings can also install new versions automatically once no bee is working.
 
 ## How it is built
 
