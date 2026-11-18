@@ -139,8 +139,8 @@ function mainBtn(a, mini) {
   if (['running', 'paused', 'setup'].includes(a.status) || (a.queue && a.queue.length)) out += `<button class="btn sm icon ghost" data-act="stop" data-id="${a.id}" title="Stop">${ICON.stop}</button>`
   return out
 }
-// Settings, delete and the rest live in the "more" menu (same as right-click)
-const iconBtns = a => `<button class="btn sm icon ghost" data-act="more" data-id="${a.id}" title="More">${ICON.more}</button>`
+// Settings has its own button; delete and the rest live in the "more" menu (same as right-click)
+const iconBtns = a => `<button class="btn sm icon ghost" data-act="edit" data-id="${a.id}" title="Settings">${ICON.gear}</button><button class="btn sm icon ghost" data-act="more" data-id="${a.id}" title="More">${ICON.more}</button>`
 
 function cardHtml(a) {
   const g = a.git ? `<div class="gitline">${ICON.branch}<span class="ell">${esc(a.git.url.replace(/^.*[:/]([^/:]+\/[^/]+?)(\.git)?$/, '$1'))}${a.git.branch ? '@' + esc(a.git.branch) : ''}</span></div>` : ''
