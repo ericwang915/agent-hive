@@ -191,6 +191,15 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .upd-btn:hover:not(:disabled) { border-color: var(--honey) }
 .upd-btn:disabled { opacity: .7; cursor: default }
 .cap { padding: 12px 6px 0; font-size: 13px; color: var(--mute) }
+.cap-row { display: flex; align-items: center; gap: 4px; margin-bottom: 8px }
+.cap-row .today-line { margin-bottom: 0; min-width: 0 }
+.cap-row .btn { margin-right: -6px; color: var(--mute) }
+#prefs { width: min(460px, 92vw) }
+#prefs .check { align-items: flex-start; gap: 10px }
+#prefs .check input { margin-top: 3px }
+#prefs .sub { display: block; font-size: 12.5px; color: var(--mute); line-height: 1.45; margin-top: 2px }
+#prefs .sub.new { color: var(--clay-ink); font-weight: 600 }
+.pref-ver { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft) }
 .today-line { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .cap .bar { height: 4px; background: var(--line2); border-radius: 999px; overflow: hidden }
 .cap .bar i { display: block; height: 100%; background: var(--honey); border-radius: 999px }

@@ -29,7 +29,7 @@ function renderSide() {
   const sp = S.spend && S.spend.day === dayKey() ? S.spend : { usd: 0, tok: 0 }
   $('#side-chats-h').hidden = !live.length
   const run = S.agents.filter(a => a.status === 'running').length, sch = S.agents.filter(scheduled).length
-  setHtml($('#cap'), `<div class="today-line" title="${S.agents.length} of ${S.max} bees hatched${S.settings.budget ? ' · budget $' + S.settings.budget : ''}">${run} running · ${sch} scheduled · ${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok)}</div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
+  setHtml($('#cap'), `<div class="cap-row"><div class="today-line grow" title="${S.agents.length} of ${S.max} bees hatched${S.settings.budget ? ' · budget $' + S.settings.budget : ''}">${run} running · ${sch} scheduled · ${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok)}</div><button class="btn sm icon ghost" data-act="prefs" title="Settings">${ICON.gear}</button></div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
   renderFeed()
 }
 function renderFeed() {
@@ -638,7 +638,7 @@ const ACT = {
   edit: el => openHatch({ edit: el.dataset.id }),
   'hatch-close': () => { $('#hatch').close(); F = null },
   chat: el => call('openChat', el.dataset.id, el.dataset.tab || ''),
-  feed: el => { const n = S.night[el.dataset.id]; if (String(el.dataset.id).startsWith('room:')) openRoom(el.dataset.id.slice(5)); else if (n) show(n.view); else if (byId(el.dataset.id)) call('openChat', el.dataset.id); else toast('No longer exists') },
+  feed: el => { const n = S.night[el.dataset.id]; if (el.dataset.id === 'hive') openPrefs(); else if (String(el.dataset.id).startsWith('room:')) openRoom(el.dataset.id.slice(5)); else if (n) show(n.view); else if (byId(el.dataset.id)) call('openChat', el.dataset.id); else toast('No longer exists') },
   run: el => act(el.dataset.id, 'run'),
   pause: el => act(el.dataset.id, 'pause'),
   continue: el => act(el.dataset.id, 'continue'),
@@ -687,6 +687,9 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  prefs: () => openPrefs(),
+  'prefs-close': () => $('#prefs').close(),
+  'prefs-check': () => checkNow(),
   'f-mcp-all': () => setMcpOff([]),
   'f-mcp-none': () => CS && setMcpOff(CS.servers.map(s => s.name)),
   'f-mcp-refresh': () => { CS = null; updBeh() },
@@ -767,6 +770,35 @@ async function doUpgrade() {
   if (u.inPlace && !confirm(`Upgrade Agent Hive from ${u.current} to ${u.version}?\n\nThe app restarts when the download is done.${n ? ` ${n} running bee${n === 1 ? '' : 's'} will pause and pick up where ${n === 1 ? 'it' : 'they'} left off.` : ''}`)) return
   await call('upgrade')
 }
+// Settings (the gear at the bottom of the sidebar): the version and how new ones arrive
+let prefsNote = ''
+function renderPrefs() {
+  const u = S.update, st = S.settings, busy = u && u.state !== 'available'
+  const status = u ? (u.state === 'downloading' ? `Downloading ${esc(u.version)}…` : u.state === 'installing' ? 'Restarting…' : `Version ${esc(u.version)} is out`) : prefsNote || 'You have the latest version'
+  $('#prefs').innerHTML = `
+  <div class="dlg-head">${queenSvg(40)}<div class="grow"><h2 class="round">Settings</h2></div><button type="button" class="btn icon ghost" data-act="prefs-close">${ICON.x}</button></div>
+  <div class="dlg-body">
+    <div class="pref-ver"><div class="grow"><b>Agent Hive ${esc(S.version || '')}</b><div class="sub${u ? ' new' : ''}">${status}</div></div>
+      ${u ? `<button class="btn primary" data-act="upgrade"${busy ? ' disabled' : ''}>${S.canSwap ? 'Upgrade now' : 'Open download page'}</button>` : `<button class="btn" data-act="prefs-check">Check now</button>`}</div>
+    <label class="check"><input type="checkbox" data-pref="autoUpdate" ${st.autoUpdate ? 'checked' : ''} ${S.canSwap ? '' : 'disabled'}><span><b>Install new versions automatically</b><span class="sub">${S.canSwap ? 'Downloads the release, checks that it is signed by the same developer and restarts, once no bee is working.' : 'Not available for this copy: it runs from source or from a place that cannot be replaced.'}</span></span></label>
+    <label class="check"><input type="checkbox" data-pref="updateNotify" ${st.updateNotify !== false ? 'checked' : ''}><span><b>Tell me when a new version is out</b><span class="sub">A notification, once per version. The Upgrade button in the sidebar appears either way.</span></span></label>
+  </div>
+  <div class="dlg-foot"><span class="grow"></span><button type="button" class="btn primary" data-act="prefs-close">Done</button></div>`
+}
+function openPrefs() { prefsNote = ''; renderPrefs(); if (!$('#prefs').open) $('#prefs').showModal() }
+async function checkNow() {
+  prefsNote = 'Checking…'; renderPrefs()
+  const r = await hive.call('checkUpdate')
+  if (r && r.error) prefsNote = `Could not check: ${r.error}`; else { prefsNote = ''; S.update = r || null; renderUpdate() }
+  renderPrefs()
+}
+$('#prefs').addEventListener('change', async e => {
+  const k = e.target.dataset.pref
+  if (!k) return
+  const r = await call('settings', { [k]: e.target.checked })
+  if (r) S.settings = r
+  renderPrefs()
+})
 let R = { rooms: [], cur: null, open: false, entries: {}, unread: {} }
 let GF = null                                             // new / edit group form
 const RLABEL = { DONE: 'Done', BLOCKED: 'Blocked', NEED_INPUT: 'Needs your call', ERROR: 'Error', STOPPED: 'Stopped', INTERRUPTED: 'Interrupted' }
@@ -1071,7 +1103,8 @@ document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && 
 async function bootRoom() {
   buildRoom()
   R.rooms = S.rooms || []
-  hive.on('update', u => { S.update = u; renderUpdate() })
+  hive.on('update', u => { S.update = u; renderUpdate(); if ($('#prefs').open) renderPrefs() })
+  hive.on('show-settings', () => openPrefs())
   renderUpdate()
   hive.on('room-entry', addRoomEntry)
   hive.on('rooms', list => {

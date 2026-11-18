@@ -55,7 +55,7 @@ function load() {
   try { s = JSON.parse(fs.readFileSync(STATE, 'utf8')) } catch {}
   const now = new Date(), st = s.settings || {}
   state = { agents: Array.isArray(s.agents) ? s.agents : [], feed: (Array.isArray(s.feed) ? s.feed : []).filter(f => !LEGACY_FEED.test(String(f.text))), spend: s.spend || { day: today(), usd: 0, tok: 0 } }
-  state.settings = { workspaceRoot: path.join(HOME, 'AgentHive'), reportTime: '18:00', budget: 0, memoryInject: true, compactAt: 50, compactCold: true, choreModel: 'sonnet', ...st }
+  state.settings = { workspaceRoot: path.join(HOME, 'AgentHive'), reportTime: '18:00', budget: 0, memoryInject: true, compactAt: 50, compactCold: true, choreModel: 'sonnet', autoUpdate: false, updateNotify: true, ...st }
   if (state.settings.lastReportKey === undefined) state.settings.lastReportKey = slotKey({ mode: 'daily', time: state.settings.reportTime }, now) || ''
   const night = {}
   for (const k in NIGHT) {     // don't run right after the first launch
@@ -1258,7 +1258,20 @@ async function checkUpdate() {
   const rel = await upd.latest()
   newRel = rel && upd.newer(rel.version, curVersion()) ? { ...rel, state: 'available' } : null
   send('update', updatePublic())
+  const st = state.settings
+  if (newRel && st.updateNotify !== false && st.toldVersion !== newRel.version && !(st.autoUpdate && canSwap())) {     // say it once per version
+    st.toldVersion = newRel.version; save()
+    if (Notification.isSupported()) { const n = new Notification({ title: `Agent Hive ${newRel.version} is out`, body: 'Click to open Agent Hive, then Upgrade in the sidebar.' }); notes.add(n); n.on('click', () => { showMain(); send('show-settings'); notes.delete(n) }); n.on('close', () => notes.delete(n)); n.show() }
+  }
+  autoUpgrade()
   return updatePublic()
+}
+const canSwap = () => app.isPackaged && !!upd.bundleOf(process.execPath)
+// Automatic updates: install the new release once nothing is working, so no bee is cut off mid-round
+const hiveIdle = () => !procs.size && !qprocs.size && !nightBusy.size && !queenBusy
+function autoUpgrade() {
+  if (!state.settings.autoUpdate || !newRel || newRel.state !== 'available' || !canSwap() || !hiveIdle()) return
+  upgrade().catch(() => {})
 }
 // Packaged and replaceable: download, check the signature, swap the bundle and restart. Otherwise open the release page
 async function upgrade() {
@@ -1319,7 +1332,7 @@ function ipc() {
   handle('checkUpdate', () => checkUpdate())
   handle('upgrade', () => upgrade())
   handle('init', () => ({
-    update: updatePublic(),
+    update: updatePublic(), version: curVersion(), canSwap: canSwap(),
     agents: state.agents, engines: enginesInfo(), settings: state.settings, max: MAX, home: HOME, names: core.NAMES, colors: COLORS,
     presets: core.PRESETS, maxRounds: core.MAX_ROUNDS, teamMax: core.TEAM_MAX, feed: state.feed, spend: (rollSpend(), state.spend), night: NIGHT, queenBusy, rooms: state.rooms.map(roomPublic),
   }))
@@ -1456,6 +1469,8 @@ function ipc() {
     if (typeof patch.memoryInject === 'boolean') st.memoryInject = patch.memoryInject
     if (patch.compactAt !== undefined) st.compactAt = Math.max(0, Math.min(95, Math.round(+patch.compactAt) || 0))
     if (typeof patch.compactCold === 'boolean') st.compactCold = patch.compactCold
+    if (typeof patch.updateNotify === 'boolean') st.updateNotify = patch.updateNotify
+    if (typeof patch.autoUpdate === 'boolean') { st.autoUpdate = patch.autoUpdate; if (st.autoUpdate) setTimeout(autoUpgrade, 500) }
     if (typeof patch.choreModel === 'string' && core.validModel(patch.choreModel) && patch.choreModel.length <= 80) st.choreModel = patch.choreModel
     save()
     return st
@@ -1475,7 +1490,10 @@ else {
     loadCursorModels()
     showMain()
     const look = () => checkUpdate().catch(() => {})
-    setTimeout(look, 4000); setInterval(look, 6 * 3600000)
+    setTimeout(look, 4000); setInterval(look, 6 * 3600000); setInterval(autoUpgrade, 60000)
+    { const st = state.settings, v = curVersion()        // first launch after an upgrade: say so once
+      if (st.lastVersion && st.lastVersion !== v && upd.newer(v, st.lastVersion)) event({ id: 'hive', name: 'Agent Hive', color: '#F6C86B' }, `upgraded to ${v}`, 'info')
+      if (st.lastVersion !== v) { st.lastVersion = v; save() } }
     for (const a of state.agents) {      // runs left unfinished last time count as sleeping; unfinished clones start over
       a.approvals = []
       if (a.status === 'running' || a.status === 'paused') a.status = 'sleeping'
