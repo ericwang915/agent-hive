@@ -404,21 +404,26 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .g-row .sub { font-size: 12px; color: var(--mute) }
 .g-queen { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #F3E3B3; background: var(--honey-soft); border-radius: 12px; cursor: pointer }
 .g-queen .sub { font-size: 12.5px; color: var(--ink2); line-height: 1.45 }
-.room-bees .add { border: 1px dashed var(--line2); border-radius: 999px; padding: 3px 10px; font-weight: 500; color: var(--mute) }
-.room-bees .add:hover { border-color: var(--clay); color: var(--clay-ink) }
+.room-bees .add { border: 1px dashed var(--line2); background: transparent; padding: 0 11px; font-weight: 500; color: var(--mute) }
+.room-bees .add:hover { border-color: var(--clay); color: var(--clay-ink); background: transparent }
 .rm-card.result.direct { background: var(--card) }
 .rm-card.result.direct .md { max-height: 300px; overflow: hidden; font-size: 13.5px }
 .rm-card.result.direct.long .md { -webkit-mask-image: linear-gradient(#000 78%, transparent) }
 
 /* ── Groups: Queen and the bees ── */
-#room { width: 410px; flex: none; background: var(--card); border-left: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; min-width: 0 }
-.room-head { display: flex; align-items: center; gap: 10px; padding: 14px 12px 10px 16px; border-bottom: 1px solid var(--line); -webkit-app-region: drag }
+#room { width: 420px; flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 18px; margin: 10px 10px 10px 0; display: flex; flex-direction: column; height: calc(100vh - 20px); min-width: 0; overflow: hidden; box-shadow: 0 1px 2px rgba(40, 30, 20, .04), 0 10px 30px rgba(40, 30, 20, .08); animation: room-in .22s cubic-bezier(.2, .8, .2, 1) }
+@keyframes room-in { from { opacity: 0; transform: translateX(18px) } }
+@media (prefers-reduced-motion: reduce) { #room { animation: none } }
+.room-head { display: flex; align-items: center; gap: 11px; padding: 14px 12px 8px 16px; background: linear-gradient(color-mix(in srgb, var(--honey-soft) 75%, var(--card)), var(--card)); -webkit-app-region: drag }
 .room-head > * { -webkit-app-region: no-drag }
 .room-head b { font-size: 15.5px }
 .room-head .sub { font-size: 12px; color: var(--mute) }
 .room-head select { min-height: 26px; padding: 2px 6px; font-size: 12px; border-radius: 8px; max-width: 92px }
-.room-bees { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--soft); overflow-x: auto; min-height: 46px; font-size: 12.5px; color: var(--mute) }
-.room-bees button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 0; color: var(--ink2); font-weight: 600; white-space: nowrap }
+.room-bees { display: flex; align-items: center; gap: 6px; padding: 4px 14px 11px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; font-size: 12.5px; color: var(--mute); scrollbar-width: none }
+.room-bees::-webkit-scrollbar { display: none }
+.room-bees button, .room-bees .who { display: inline-flex; align-items: center; gap: 5px; height: 30px; border: 0; background: var(--soft); border-radius: 999px; padding: 0 11px 0 3px; color: var(--ink2); font-weight: 600; white-space: nowrap; flex: none; transition: background .12s }
+.room-bees button:hover { background: var(--line) }
+.room-bees .who { background: var(--honey-soft) }
 .room-bees .task { font-weight: 400; color: var(--mute); max-width: 120px }
 .room-tl { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 12px; min-height: 0 }
 .rm { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; min-width: 0 }

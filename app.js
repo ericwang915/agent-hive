@@ -905,8 +905,8 @@ function renderRoomMeta() {
     if (was && text) { const tl = $('#room-tl'); tl.scrollTop = tl.scrollHeight }
   }
   const task = id => (pend.find(p => p.id === id) || {}).task
-  setHtml($('#room-bees'), (r.queen ? `<span class="row" style="gap:6px;font-weight:600;color:var(--ink2)">${queenSvg(28, 'happy', running ? 'running' : '')}Queen</span>` : '')
-    + bees.map(a => `<button data-act="chat" data-id="${a.id}" title="${esc(task(a.id) || `Open ${a.name}'s chat`)}">${beeOf(a, 28)}${esc(a.name)}${task(a.id) ? `<span class="task ell">${esc(String(task(a.id)).split('\n')[0])}</span>` : ''}</button>`).join('')
+  setHtml($('#room-bees'), (r.queen ? `<span class="who">${queenSvg(24, 'happy', running ? 'running' : '')}Queen</span>` : '')
+    + bees.map(a => `<button data-act="chat" data-id="${a.id}" title="${esc(task(a.id) || `Open ${a.name}'s chat`)}">${beeOf(a, 24)}${esc(a.name)}${task(a.id) ? `<span class="task ell">${esc(String(task(a.id)).split('\n')[0])}</span>` : ''}</button>`).join('')
     + `<button class="add" data-act="group-edit">+ Add</button>`)
   const asks = (r.asks || []).map(k => k.kind === 'plan'
     ? `<div class="ask-card"><div class="ttl">Queen's plan</div>${k.data.note ? `<div class="kv">${esc(k.data.note)}</div>` : ''}<ol>${k.data.steps.map(s => `<li><b>${esc(s.bee)}</b>: ${esc(s.task)}</li>`).join('')}</ol>
