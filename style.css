@@ -167,7 +167,7 @@ label.check.off { opacity: .5; cursor: not-allowed }
 
 /* ══════════ Main window layout ══════════ */
 #app { display: flex; height: 100vh }
-#side { width: 248px; flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 46px 10px 12px; -webkit-app-region: drag; overflow: hidden }
+#side { width: 276px; flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 46px 10px 12px; -webkit-app-region: drag; overflow: hidden }
 #side > * { -webkit-app-region: no-drag }
 .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 18px; font-size: 20px; -webkit-app-region: drag !important }
 .brand { gap: 8px; padding-left: 4px }
@@ -181,11 +181,32 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .nav button:hover { background: rgba(0, 0, 0, .045) }
 .nav button.on { background: var(--card); color: var(--ink); font-weight: 600 }
 .side-h { font-size: 12.5px; font-weight: 600; color: var(--mute); letter-spacing: .03em; padding: 18px 10px 6px }
-#side-chats { display: flex; flex-direction: column; gap: 1px; max-height: 26%; overflow-y: auto; flex: none }
+/* Chats: every bee and squad, one calm row each: who it is and what it is for */
+#side-chats-h .n { margin-left: 7px; font-weight: 500; color: var(--faint); font-size: 11.5px; letter-spacing: 0 }
+#side-chats { display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 80px; overflow-y: auto }
+.ch-row { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: 12px; min-width: 0; transition: background .12s }
+.ch-row:hover, .ch-sqh:hover { background: rgba(0, 0, 0, .045) }
+.ch-av { flex: none; position: relative; border-radius: 50%; background: color-mix(in srgb, var(--c) 20%, var(--card)); display: flex; align-items: center; justify-content: center }
+.ch-av .st { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 2px var(--side) }
+.ch-av .st.run { background: var(--green) } .ch-av .st.ask { background: var(--clay) }
+.ch-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.3 }
+.ch-tx b { font-weight: 600; font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ch-row.fresh .ch-tx b { font-weight: 700 }
+.ch-last { font-size: 12.5px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ch-last.run { color: var(--green-ink) } .ch-last.err, .ch-last.ask { color: var(--clay-ink) } .ch-last.sleep { color: var(--faint) }
+.ch-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--clay) }
+.ch-sq { margin: 8px 0 4px }
+.ch-sqh { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; padding: 6px 10px 6px 6px; border-radius: 8px; text-align: left; min-width: 0 }
+.ch-sqh .caret { flex: none; width: 14px; height: 14px; color: var(--faint); display: flex; transform: rotate(-90deg); transition: transform .15s } .ch-sq.open .ch-sqh .caret { transform: none } .ch-sqh .caret .ic { width: 14px; height: 14px }
+.ch-sqh b { font-size: 12.5px; font-weight: 700; color: var(--team-ink); white-space: nowrap }
+.ch-sqh .meta { flex: 1; min-width: 0; font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ch-sqh .faces { flex: none; display: flex } .ch-sqh .faces i { width: 12px; height: 12px; border-radius: 50%; margin-left: -4px; box-shadow: 0 0 0 1.5px var(--side) }
+.ch-rail { margin-left: 12px; padding-left: 6px; border-left: 2px solid var(--team-line); display: flex; flex-direction: column; gap: 1px }
+.ch-row.sub { padding: 6px 10px 6px 8px } .ch-row.sub .ch-tx b { font-size: 13.5px }
 .side-chat { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; font-size: 14.5px; border: 0; background: transparent; border-radius: 8px; text-align: left; color: var(--ink2) }
 .side-chat:hover { background: rgba(0, 0, 0, .045) }
 .side-empty { padding: 3px 10px; font-size: 13.5px; color: var(--faint) }
-#side-feed { flex: 1; overflow-y: auto; min-height: 60px; display: flex; flex-direction: column; gap: 1px }
+#side-feed { flex: none; max-height: 22%; overflow-y: auto; display: flex; flex-direction: column; gap: 1px }
 .feed-item { display: flex; gap: 9px; padding: 8px 10px; border: 0; background: transparent; border-radius: 8px; text-align: left; align-items: flex-start; width: 100% }
 .feed-item:hover { background: rgba(0, 0, 0, .045) }
 .feed-item .dot { margin-top: 6px }
@@ -646,7 +667,7 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
   .st-error { --p-bg: #452927; --p-ink: #F09088; --p-dot: #E0685F }
   .st-sleeping { --p-bg: #2C2D49; --p-ink: #A9ADEB; --p-dot: #7C83C9 }
   .st-setup { --p-bg: #1E3A3C; --p-ink: #73CDD2; --p-dot: #2BA5AB }
-  .nav button:hover, .side-chat:hover, .feed-item:hover, .side-room:hover, .side-add:hover { background: rgba(255, 255, 255, .06) }
+  .nav button:hover, .side-chat:hover, .ch-row:hover, .ch-sqh:hover, .feed-item:hover, .side-room:hover, .side-add:hover { background: rgba(255, 255, 255, .06) }
   .g-queen { border-color: #5A4C25 }
   .queen-card, .panel.report { border-color: #5A4C25 }
   .chips.sub .chip.on { border-color: #6B4536 }

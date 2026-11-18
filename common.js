@@ -105,6 +105,7 @@ const ICON = {
   branch: ic('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 2.5-3 2.5-7 3.5"/>'),
   folder: ic('<path d="M2 4.5a1 1 0 0 1 1-1h3l1.4 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>'),
   plus: ic('<path d="M8 3.2v9.6M3.2 8h9.6"/>'),
+  caret: ic('<path d="M4 6l4 4 4-4"/>'),
   doc: ic('<path d="M9.5 2H4.5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V5zM9.5 2v3h3M6 8.5h4M6 11h4"/>'),
   image: ic('<rect x="2.2" y="3" width="11.6" height="10" rx="1.4"/><circle cx="5.8" cy="6.4" r="1.1"/><path d="M2.6 11.6l3.3-3.1 2.5 2.2 2-1.7 3.2 2.8"/>'),
   codefile: ic('<path d="M6 5.2L3.2 8 6 10.8M10 5.2L12.8 8 10 10.8"/>'),

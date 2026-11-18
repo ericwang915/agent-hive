@@ -102,6 +102,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 - **Upgrades.** When a newer release is out, an Upgrade button appears in the sidebar. It downloads the release, checks that it is signed by the same developer, swaps the app and restarts. Settings (the gear at the bottom of the sidebar) can install new versions automatically once no bee is working, and notify you when one is out.
 - **Ranks.** Every finished round counts. A bee climbs from Bronze through Silver, Gold, Platinum and Diamond to Master, and its look changes with each rank.
 - **Files page.** Everything the bees produced in one list, newest first: files they wrote or named in a reply (PDFs, decks, charts, CSVs) and links they gave (artifacts, Google Slides, pull requests). Each row shows the bee and its project; filter by kind or bee, open the file, or jump to it in the bee's window.
+- **Chats in the sidebar.** Every bee and squad in one list: its name and what it is for, or what it is doing right now. A squad folds into one line and opens when something is going on.
 - **Search everything.** The search box and ⌘K find bees, skills, memory, and what was said in any bee's conversation or group; a hit opens the chat at that message.
 - **Right-click anything.** Rename, settings, stop and delete for bees and groups.
 

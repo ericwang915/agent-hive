@@ -23,17 +23,64 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 const VIEWS = [['hive', 'Hive', 'hive'], ['dash', 'Dashboard', 'chart'], ['files', 'Files', 'folder'], ['skills', 'Skills', 'sprout'], ['memory', 'Memory', 'brain']]
 function renderSide() {
   setHtml($('#nav'), VIEWS.map(([id, label, icon]) => `<button data-act="view" data-view="${id}" class="${view === id ? 'on' : ''}">${ICON[icon]}${label}</button>`).join(''))
-  const live = S.agents.filter(a => a.status === 'running' || a.status === 'paused')
-  setHtml($('#side-chats'), live.length ? live.map(a => `<button class="side-chat" data-act="chat" data-id="${a.id}"><span class="dot${a.status === 'running' ? ' blink' : ''}" style="background:${esc(a.color)}"></span><span class="ell grow">${esc(a.name)}</span><span class="faint" style="font-size:11px">${STATUS[a.status]}</span></button>`).join('')
-    : '')
+  renderChats()
   const sp = S.spend && S.spend.day === dayKey() ? S.spend : { usd: 0, tok: 0 }
-  $('#side-chats-h').hidden = !live.length
   const run = S.agents.filter(a => a.status === 'running').length, sch = S.agents.filter(scheduled).length
   setHtml($('#cap'), `<div class="cap-row"><div class="today-line grow" title="${S.agents.length} of ${S.max} bees hatched${S.settings.budget ? ' · budget $' + S.settings.budget : ''}">${run} running · ${sch} scheduled · ${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok)}</div><button class="btn sm icon ghost" data-act="prefs" title="Settings">${ICON.gear}</button></div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
   renderFeed()
 }
+// ───────── Chats ─────────
+// Every bee and squad as a conversation list: who, and what it is doing or said last. Squads fold; one with something going on opens by itself
+let chatSeen = {}, sqFold = {}
+try { chatSeen = JSON.parse(localStorage.getItem('chat-seen') || '{}'); sqFold = JSON.parse(localStorage.getItem('sq-fold') || '{}') } catch {}
+const saveChats = () => { try { localStorage.setItem('chat-seen', JSON.stringify(chatSeen)); localStorage.setItem('sq-fold', JSON.stringify(sqFold)) } catch {} }
+const lastAt = a => (a.status === 'running' ? Date.now() : a.lastEndAt || a.lastRunAt || a.createdAt || 0)
+const agoShort = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'now' : s < 3600 ? Math.floor(s / 60) + 'm' : s < 86400 ? Math.floor(s / 3600) + 'h' : s < 604800 ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(t).getDay()] : `${new Date(t).getMonth() + 1}/${new Date(t).getDate()}` }
+// One line under the name. Normally the bee's job (its project, or its schedule); only when something is going on does it say what
+function chatLine(a) {
+  const tail = (a.tail || []).filter(Boolean), last = String(tail[tail.length - 1] || '').replace(/^[●>]\s*/, '')
+  if (a.approvals && a.approvals.length) return ['ask', 'Needs your OK']
+  if (a.status === 'running') return ['run', last || 'Working…']
+  if (a.status === 'setup') return ['', 'Setting up its repo…']
+  if (a.status === 'error') { const f = (S.feed || []).find(x => x.id === a.id && x.kind === 'error'), g = f ? gentle(f.text) : 'hit a snag'; return ['err', g[0].toUpperCase() + g.slice(1)] }
+  if (a.status === 'paused') return ['sleep', 'Paused']
+  if (a.status === 'sleeping') return ['sleep', 'Sleeping']
+  return ['', scheduled(a) ? `${a.task} · ${schedText(a.schedule)}` : a.task]
+}
+const chatFresh = a => a.status !== 'running' && a.lastEndAt && a.lastEndAt > (chatSeen[a.id] || 0) && (a.ctx || {}).why !== 'chat'
+// inside a squad the project is already in the heading, so a resting bee shows its part in the relay instead
+function chatRole(a) {
+  const ups = upNames(a)
+  return !ups.length ? 'Goes first' : a.after && a.after.loop ? `Reviews ${ups.join(', ')}` : ups.length > 1 ? `Merges ${ups.join(' and ')}` : `After ${ups[0]}`
+}
+function chatRow(a, sub) {
+  let [k, text] = chatLine(a)
+  if (sub && !k) text = chatRole(a)
+  const fresh = chatFresh(a), size = sub ? 28 : 34
+  return `<button class="ch-row${sub ? ' sub' : ''}${fresh ? ' fresh' : ''}" data-act="chat" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(a.task)} · ${esc(STATUS[a.status] || a.status)}, ${agoShort(lastAt(a))}">
+    <span class="ch-av" style="--c:${esc(a.color)};width:${size}px;height:${size}px">${beeFace(a, Math.round(size * .78), a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy', a.status === 'running' ? 'running' : '')}${k === 'run' ? '<i class="st run"></i>' : k === 'ask' ? '<i class="st ask"></i>' : ''}</span>
+    <span class="ch-tx"><b>${esc(a.name)}</b><span class="ch-last ${k}">${esc(text)}</span></span>${fresh && k !== 'ask' ? '<span class="ch-dot"></span>' : ''}</button>`
+}
+function renderChats() {
+  const A = S.agents, done = new Set(), groups = []
+  for (const a of A) {
+    if (done.has(a.id)) continue
+    const team = Team.teamOf(A, a.id)
+    team.forEach(m => done.add(m.id))
+    groups.push({ team, t: Math.max(...team.map(lastAt)), hot: team.some(m => m.status === 'running' || (m.approvals && m.approvals.length)) })
+  }
+  groups.sort((x, y) => (y.hot ? 1 : 0) - (x.hot ? 1 : 0) || y.t - x.t)
+  $('#side-chats-h').hidden = !A.length
+  setHtml($('#side-chats-h'), `Chats<span class="n">${A.length}</span>`)
+  setHtml($('#side-chats'), groups.map(g => {
+    if (g.team.length === 1) return chatRow(g.team[0])
+    const lead = g.team[0], open = sqFold[lead.id] === undefined ? g.hot : !sqFold[lead.id]
+    const layers = Team.layersOf(A, lead.id).flat()
+    return `<div class="ch-sq${open ? ' open' : ''}"><button class="ch-sqh" data-act="sq-fold" data-id="${lead.id}" data-open="${open ? 1 : 0}" title="${esc(layers.map(m => m.name).join(' → '))}"><span class="caret">${ICON.caret}</span><b>${esc(squadNameOf(lead))}</b><span class="meta">${esc(lead.task)}</span>${open ? '' : `<span class="faces">${layers.map(m => `<i style="background:${esc(m.color)}"></i>`).join('')}</span>${g.team.some(chatFresh) ? '<span class="ch-dot"></span>' : ''}`}</button>${open ? `<div class="ch-rail">${layers.map(m => chatRow(m, true)).join('')}</div>` : ''}</div>`
+  }).join(''))
+}
 function renderFeed() {
-  const items = (S.feed || []).slice(0, 12)
+  const items = (S.feed || []).filter(f => !byId(f.id)).slice(0, 4)          // a bee's own news shows on its row under Chats; this keeps the rest (upgrades, the night bees)
   $('#side-feed-h').hidden = !items.length
   setHtml($('#side-feed'), items.length ? items.map(f => `<button class="feed-item k-${esc(f.kind)}" data-act="feed" data-id="${esc(f.id)}"${f.kind === 'error' ? ` title="${esc(f.text)}"` : ''}>${f.kind === 'error' ? `<span class="oops">${beeSvg(f.color || '#ccc', 'sad', 20)}</span>` : `<span class="dot" style="background:${esc(f.color || '#ccc')}"></span>`}<span class="grow"><span class="tx"><b>${esc(f.name)}</b> ${esc(f.kind === 'error' ? gentle(f.text) : f.text)}</span><span class="ago">${ago(f.t)}</span></span></button>`).join('')
     : '')
@@ -862,7 +909,8 @@ const ACT = {
   relay: el => openHatch({ after: el.dataset.id }),
   edit: el => openHatch({ edit: el.dataset.id }),
   'hatch-close': () => { $('#hatch').close(); F = null },
-  chat: el => call('openChat', el.dataset.id, el.dataset.tab || ''),
+  chat: el => { chatSeen[el.dataset.id] = Date.now(); saveChats(); renderChats(); return call('openChat', el.dataset.id, el.dataset.tab || '') },
+  'sq-fold': el => { sqFold[el.dataset.id] = el.dataset.open === '1'; saveChats(); renderChats() },
   feed: el => { const n = S.night[el.dataset.id]; if (el.dataset.id === 'hive') openPrefs(); else if (String(el.dataset.id).startsWith('room:')) openRoom(el.dataset.id.slice(5)); else if (n) show(n.view); else if (byId(el.dataset.id)) call('openChat', el.dataset.id); else toast('No longer exists') },
   run: el => act(el.dataset.id, 'run'),
   pause: el => act(el.dataset.id, 'pause'),
