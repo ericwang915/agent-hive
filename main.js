@@ -1283,7 +1283,7 @@ async function upgrade() {
   try {
     const fresh = await upd.fetchRelease(newRel, { team: await upd.teamOf(dest) })
     newRel.state = 'installing'; send('update', updatePublic())
-    upd.swap(process.pid, fresh, dest)
+    upd.swap(process.pid, fresh, dest, !!process.env.HIVE_NO_REOPEN)      // tests swap without opening the new copy
     setTimeout(() => app.quit(), 300)                    // before-quit puts the running bees to sleep; they pick up after the restart
     return { restarting: true }
   } catch (e) { newRel.state = 'available'; send('update', updatePublic()); throw new Error(`Upgrade failed: ${e.message}`) }

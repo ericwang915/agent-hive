@@ -1,7 +1,7 @@
 {
   "name": "agent-hive",
   "productName": "Agent Hive",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A macOS desktop app for running a hive of coding-agent CLIs (Claude Code, Codex, Gemini, Cursor Agent) with schedules, relay teams, group chats and a Queen that leads them.",
   "main": "main.js",
   "scripts": {
