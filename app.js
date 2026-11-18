@@ -35,7 +35,7 @@ function renderSide() {
 function renderFeed() {
   const items = (S.feed || []).slice(0, 12)
   $('#side-feed-h').hidden = !items.length
-  setHtml($('#side-feed'), items.length ? items.map(f => `<button class="feed-item k-${esc(f.kind)}" data-act="feed" data-id="${esc(f.id)}"><span class="dot" style="background:${esc(f.color || '#ccc')}"></span><span class="grow"><span class="tx"><b>${esc(f.name)}</b> ${esc(f.text)}</span><span class="ago">${ago(f.t)}</span></span></button>`).join('')
+  setHtml($('#side-feed'), items.length ? items.map(f => `<button class="feed-item k-${esc(f.kind)}" data-act="feed" data-id="${esc(f.id)}"${f.kind === 'error' ? ` title="${esc(f.text)}"` : ''}>${f.kind === 'error' ? `<span class="oops">${beeSvg(f.color || '#ccc', 'sad', 20)}</span>` : `<span class="dot" style="background:${esc(f.color || '#ccc')}"></span>`}<span class="grow"><span class="tx"><b>${esc(f.name)}</b> ${esc(f.kind === 'error' ? gentle(f.text) : f.text)}</span><span class="ago">${ago(f.t)}</span></span></button>`).join('')
     : '')
 }
 

@@ -227,6 +227,17 @@ function toast(msg, kind) {
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => (el.className = ''), kind === 'err' ? 5200 : 2600)
 }
+// A raw failure → a soft line for the Activity list (the raw text stays in the tooltip)
+function gentle(text) {
+  const s = String(text || ''), job = /^(Dreaming|Gardening) failed/i.exec(s), at = job ? ` while ${job[1].toLowerCase()}` : ''
+  const d = s.replace(/^(Dreaming|Gardening) failed:\s*/i, '').replace(/^Failed( to start)?:?\s*/i, '')
+  if (/exit code (143|130|137)|SIG(TERM|INT|KILL)|interrupted/i.test(s)) return `got interrupted${at}, will try again later`
+  if (/took too long|timed? ?out/i.test(s)) return `took too long${at} and stopped for now`
+  if (/command not found|ENOENT/i.test(s)) return `can't find its command. Is the CLI installed?`
+  if (/rate.?limit|usage limit|overloaded|\b(429|529)\b/i.test(s)) return `ran into a rate limit${at} and is taking a breather`
+  if (/log ?in|sign ?in|unauthori[sz]ed|\b401\b|api key|credential/i.test(s)) return `needs you to sign in again`
+  return `hit a snag${at}${d ? ': ' + d.slice(0, 90) : ''}`
+}
 // Shared handling of hive.call results: {error} → toast and return null
 async function call(ch, ...args) {
   const r = await window.hive.call(ch, ...args)
@@ -237,4 +248,4 @@ async function call(ch, ...args) {
 const animT = () => `--t:${Math.round(performance.now())}`
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }
+  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }

@@ -558,6 +558,8 @@ fs.rmSync(tmp, { recursive: true, force: true })
 { // ranks
   const c = require('./common.js')
   eq([0, 4, 5, 19, 20, 50, 120, 300, 9999].map(x => c.rankOf(x).name), ['Bronze', 'Bronze', 'Silver', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Master'])
+  eq(['Gardening failed: claude exit code 143', 'Dreaming failed: It took too long', 'Failed to start: claude command not found', 'API Error: 429 rate limit', 'Please log in', 'Gardening failed: Unexpected token'].map(c.gentle),
+    ['got interrupted while gardening, will try again later', 'took too long while dreaming and stopped for now', "can't find its command. Is the CLI installed?", 'ran into a rate limit and is taking a breather', 'needs you to sign in again', 'hit a snag while gardening: Unexpected token'])
   eq([c.rankOf(undefined).i, c.rankOf(-3).xp, c.rankOf(7).need, c.rankOf(7).next, c.rankOf(400).next, c.rankOf(400).pct], [0, 0, 13, 'Gold', '', 1])
   const plain = c.beeSvg('#abc'), gold = c.beeSvg('#abc', 'happy', 44, false, '', '', 2)
   assert.ok(plain.includes('fill="#3A2E22"/></g>') && gold.includes('#E2A93A') && gold !== plain && c.beeSvg('#abc', 'happy', 44, false, '', '', 99) === plain)

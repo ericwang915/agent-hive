@@ -639,11 +639,15 @@ function once(prompt, opts = {}) {
     if (!core.onPath('claude')) return reject(new Error('Queen needs the claude command installed on this machine'))
     const child = spawn('claude', ['-p', prompt, '--output-format', 'json', ...(opts.model ? ['--model', opts.model] : []), ...(opts.bare ? ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'] : [])], { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
     let out = '', err = ''
-    const timer = setTimeout(() => child.kill('SIGTERM'), opts.timeout || 15 * 60000)
+    let slow = false
+    const timer = setTimeout(() => { slow = true; child.kill('SIGTERM') }, opts.timeout || 15 * 60000)
     child.stdout.on('data', d => (out += d)); child.stderr.on('data', d => (err += d))
     child.on('error', e => { clearTimeout(timer); reject(e) })
-    child.on('close', code => {
+    child.on('close', (code, signal) => {
       clearTimeout(timer)
+      if (slow) return reject(new Error('It took too long'))
+      // killed from outside (the app quitting, the Mac going to sleep): not a failure of the job itself
+      if (signal || [130, 137, 143].includes(code)) return reject(Object.assign(new Error('It was interrupted'), { interrupted: true }))
       let o = null
       try { o = JSON.parse(out) } catch {}
       if (Array.isArray(o)) o = o.reverse().find(x => x && x.type === 'result') || null
@@ -1047,7 +1051,7 @@ async function nightRun(k, manual) {
     n.last = { t: Date.now(), summary, changed, agents: logs.length }
     const what = k === 'dreamer' ? (changed.length ? `updated ${changed.length} memor${changed.length === 1 ? 'y' : 'ies'}` : 'no memory changes') : (changed.length ? `skills: ${changed.join(', ')}` : 'no new skills')
     event(bee, `Finished ${meta.verb} · read ${logs.length} bee${logs.length === 1 ? '' : 's'} · ${what}`, 'done', changed.length > 0)
-  } catch (e) { event(bee, `${meta.verb[0].toUpperCase() + meta.verb.slice(1)} failed: ${e.message}`, 'error') }
+  } catch (e) { if (!e.interrupted && !quitting) event(bee, `${meta.verb[0].toUpperCase() + meta.verb.slice(1)} failed: ${e.message}`, 'error') }   // an interrupted night run just waits for the next night
   finally { nightBusy.delete(k); send('night-busy', [...nightBusy]); send('garden-changed'); save() }
 }
 
