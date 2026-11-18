@@ -1396,7 +1396,13 @@ function create(c) {
     if (team.some(t => t.isolate)) throw new Error('A bee on its own branch cannot be part of a relay')
     a.workspace = ups[0].workspace; a.task = ups[0].task; a.isolate = false
     a.after = { ids, prompt: String(c.after.prompt || '').trim().slice(0, 20000) || core.PRESETS[ids.length > 1 ? 'merge' : 'review'].prompt, loop: !!c.after.loop }
-    checkLoop([...state.agents, a], a.id)
+    // joining a step where another bee already works makes it a parallel step, and those cannot send work back (every round would double):
+    // rather than refuse, switch that off for the bees on the step and say so in their chats
+    const layer = Team.layerOf([...state.agents, a], a.id)
+    if (layer.length > 1) {
+      a.after.loop = false
+      for (const p of layer) if (p !== a && p.after && p.after.loop) { p.after = { ...p.after, loop: false }; log(p, { role: 'system', text: `"Send feedback back" was switched off: ${p.name} now works in parallel with ${a.name}` }) }
+    }
   }
   let st = null
   try { st = fs.statSync(a.workspace) } catch {}
