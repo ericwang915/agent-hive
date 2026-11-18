@@ -55,6 +55,7 @@ function buildHive() {
   $('#v-hive').innerHTML = `
   <div class="page-head">
     <div class="grow"><h1 class="round" id="hello"></h1><div class="sub" id="hive-sub"></div></div>
+    <div class="seg" id="hive-view"></div>
     <div class="search">${ICON.search}<input type="search" id="q" placeholder="Search bees, skills, memory, chats" spellcheck="false"></div>
     <button class="btn primary" data-act="hatch">${ICON.plus}Hatch</button>
   </div>
@@ -88,8 +89,11 @@ function renderHive() {
   if (!used.some(([k]) => k === sub)) sub = 'all'
   setHtml($('#chips2'), filter === 'sched' && used.length ? [['all', 'All scheduled'], ...used].map(([k, label]) => `<button class="chip${sub === k ? ' on' : ''}" data-act="sub" data-k="${k}">${label}<span class="n">${k === 'all' ? n('sched') : A.filter(a => schedKind(a.schedule) === k).length}</span></button>`).join('') : '')
 
+  setHtml($('#hive-view'), [['cards', 'Cards'], ['comb', 'Honeycomb']].map(([k, l]) => `<button class="${hiveView === k ? 'on' : ''}" data-act="hive-view" data-k="${k}">${l}</button>`).join(''))
   const grid = $('#grid'), cols = Math.max(1, Math.floor((grid.clientWidth + GAP) / (300 + GAP))), colW = (grid.clientWidth - (cols - 1) * GAP) / cols
   let list = A.filter(FILTERS.find(x => x[0] === filter)[2]).filter(matches), html = ''
+  grid.classList.toggle('comb', hiveView === 'comb')
+  if (hiveView === 'comb') { if (filter === 'sched' && sub !== 'all') list = list.filter(a => schedKind(a.schedule) === sub); return setHtml(grid, combHtml(list, grid.clientWidth)) }
   if (filter === 'sched') {
     if (sub !== 'all') list = list.filter(a => schedKind(a.schedule) === sub)
     const t = a => { const d = nextRun(a.schedule); return d ? d.getTime() : Infinity }
@@ -106,6 +110,74 @@ function renderHive() {
     else if (!list.length) html = query ? '' : `<div class="guide">No bees match</div>`
   }
   setHtml(grid, html)
+}
+
+// ───────── Honeycomb view ─────────
+// The same bees as cells of a comb: each squad is one cluster shaped by its relay, the rest sit together.
+// A cell holds only who and how it is doing; the bee picked shows as a full card beside the comb
+let hiveView = 'cards', combSel = ''
+try { hiveView = localStorage.getItem('hive-view') === 'comb' ? 'comb' : 'cards' } catch {}
+const HX = { W: 138, H: 159, G: 8 }, HX_ROW = HX.H * 0.75 + HX.G, HX_HALF = (HX.W + HX.G) / 2
+// Where a squad's bees go, from its layers: bees on one step stack above and below the line, tucked between the steps before and after
+function combPlace(layers) {
+  const at = new Map()
+  let cur = 0, prevMulti = false
+  for (const layer of layers) {
+    if (layer.length === 1) { at.set(layer[0].id, { xh: cur, row: 0 }); cur += 2; prevMulti = false; continue }
+    if (prevMulti) cur += 2
+    const side = cur === 0 ? 1 : cur - 1               // a first step with several bees has nothing to tuck behind
+    const rows = layer.length === 2 ? [-1, 1] : layer.length === 3 ? [-1, 0, 1] : [-1, 1, 0, 2, -2, 3]
+    layer.forEach((b, i) => { const row = rows[i % rows.length]; at.set(b.id, { xh: row % 2 ? side : side + 1, row }) })
+    cur = Math.max(cur, side + (layer.length > 2 ? 3 : 1))
+    prevMulti = true
+  }
+  const minRow = Math.min(...[...at.values()].map(p => p.row)), minX = Math.min(...[...at.values()].map(p => p.xh))
+  for (const p of at.values()) { p.x = (p.xh - minX) * HX_HALF; p.y = (p.row - minRow) * HX_ROW }
+  return at
+}
+function combCell(a, p) {
+  const live = a.status === 'running', mood = a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy'
+  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(a.task)}"><div class="hx-in">
+    ${beeFace(a, 38, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}</div><div class="hx-task ell">${esc(scheduled(a) ? schedText(a.schedule) : a.task)}</div>${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
+}
+const combLink = (p, q, sym, label) => `<div class="hx-link" style="left:${(p.x + q.x) / 2 + HX.W / 2}px;top:${(p.y + q.y) / 2 + HX.H / 2}px"><span style="transform:rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg)">${sym}</span>${label ? `<em>${label}</em>` : ''}</div>`
+const combBox = at => { const ps = [...at.values()]; return { w: Math.max(...ps.map(p => p.x)) + HX.W, h: Math.max(...ps.map(p => p.y)) + HX.H } }
+function combSquad(team) {
+  const lead = team[0], layers = Team.layersOf(S.agents, lead.id), at = combPlace(layers), box = combBox(at), last = layers[layers.length - 1]
+  let links = ''
+  for (const b of team) {
+    const ups = Team.upIds(b).filter(id => at.has(id))
+    ups.forEach((id, i) => { links += combLink(at.get(id), at.get(b.id), b.after && b.after.loop && ups.length === 1 ? '⇄' : '→', ups.length > 1 && i === ups.length - 1 ? 'merge' : '') })
+  }
+  const busy = team.some(m => ['running', 'paused'].includes(m.status) || (m.queue && m.queue.length))
+  const shape = [team.some(m => m.after && m.after.loop) ? 'review loop' : '', layers.some(l => l.length > 1) ? `${Math.max(...layers.map(l => l.length))} in parallel${layers[layers.length - 1].length === 1 && layers.length > 2 ? ', then a merge' : ''}` : ''].filter(Boolean).join(' · ') || 'relay'
+  return `<div class="hx-group" style="width:${Math.max(box.w, 236)}px"><div class="hx-gh"><button class="sq-name" data-act="squad-rename" data-id="${lead.id}" title="The squad's name: Queen and @mentions use it. Click to rename">${esc(squadNameOf(lead))}</button>
+    ${busy ? `<button class="btn sm icon ghost danger" data-act="team-stop" data-id="${lead.id}" title="Stop the squad">${ICON.stop}</button>` : ''}${team.length < S.teamMax ? `<button class="btn sm relay-add" data-act="relay" data-id="${last.length === 1 ? last[0].id : lead.id}" title="Add a bee to the end of this squad">${ICON.plus}Relay</button>` : ''}</div>
+    <div class="hx-gs ell">${esc(lead.task)} · ${shape}</div><div class="hx-area" style="width:${box.w}px;height:${box.h}px">${team.map(b => combCell(b, at.get(b.id))).join('')}${links}</div></div>`
+}
+// few: a handful of bees next to squads stay two wide, so the group fits beside the last squad instead of under it
+function combSolo(bees, width, withHatch, few) {
+  const n = bees.length + (withHatch ? 1 : 0), cols = Math.max(2, Math.min(n, few ? 2 : 99, Math.floor((width - HX_HALF + HX.G) / (HX.W + HX.G))))
+  const pos = i => { const r = Math.floor(i / cols), c = i % cols; return { x: c * (HX.W + HX.G) + (r % 2 ? HX_HALF : 0), y: r * HX_ROW } }
+  const rows = Math.ceil(n / cols), w = Math.min(n, cols) * (HX.W + HX.G) - HX.G + (rows > 1 ? HX_HALF : 0), h = HX.H + (rows - 1) * HX_ROW
+  const hatch = withHatch ? (() => { const p = pos(bees.length); return `<button class="hx add" style="left:${p.x}px;top:${p.y}px" data-act="hatch"><span class="hx-in"><span class="plus">+</span><span class="hx-task">Hatch</span></span></button>` })() : ''
+  return `<div class="hx-group" style="width:${w}px"><div class="hx-gh"><b class="round">${bees.length ? 'On their own' : 'No bees yet'}</b></div><div class="hx-gs">${bees.length} bee${bees.length === 1 ? '' : 's'}</div><div class="hx-area" style="width:${w}px;height:${h}px">${bees.map((b, i) => combCell(b, pos(i))).join('')}${hatch}</div></div>`
+}
+function combHtml(list, width) {
+  const A = S.agents, done = new Set(), squads = [], solo = []
+  for (const a of list) {
+    if (done.has(a.id)) continue
+    const team = Team.teamOf(A, a.id)
+    if (team.length > 1) { team.forEach(m => done.add(m.id)); squads.push(team) } else solo.push(a)
+  }
+  const shown = [...squads.flat(), ...solo]
+  if (!shown.some(a => a.id === combSel)) combSel = (shown.find(a => a.status === 'running') || shown[0] || {}).id || ''
+  const sel = byId(combSel), narrow = width < 760, leftW = narrow ? width : width - 340 - 20
+  const hatch = filter === 'all' && !query && A.length < S.max
+  if (!shown.length && !hatch) return query ? '' : '<div class="guide">No bees match</div>'
+  const team = sel ? Team.teamOf(A, sel.id) : []
+  const side = sel ? `<div class="hx-side">${cardHtml(sel)}${team.length > 1 ? `<div class="hx-where">${esc(squadNameOf(team[0]))} · ${Team.layersOf(A, team[0].id).map(l => l.map(m => (m.id === sel.id ? `<b>${esc(m.name)}</b>` : esc(m.name))).join(' ∥ ')).join(' → ')}</div>` : ''}<div class="hx-hint">Click a cell to see it here · double-click opens its chat</div></div>` : ''
+  return `<div class="hx-page${narrow ? ' narrow' : ''}"><div class="hx-left">${squads.map(combSquad).join('')}${solo.length || hatch ? combSolo(solo, Math.max(HX.W * 2 + HX_HALF, leftW), hatch, squads.length > 0 && solo.length + (hatch ? 1 : 0) <= 6) : ''}</div>${side}</div>`
 }
 
 const GAP = 18          // grid gap, keep in sync with .grid in style.css
@@ -845,6 +917,8 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  'hive-view': el => { hiveView = el.dataset.k; try { localStorage.setItem('hive-view', hiveView) } catch {} $('#grid')._h = ''; renderHive() },
+  'comb-pick': el => { combSel = el.dataset.id; renderHive() },
   'out-type': el => { OUT.type = el.dataset.k; renderOutputs() },
   'out-bee': el => { OUT.bee = OUT.bee === el.dataset.id ? '' : el.dataset.id; renderOutputs() },
   'out-refresh': () => loadOutputs(),
@@ -1272,7 +1346,7 @@ document.addEventListener('contextmenu', e => {
 document.addEventListener('click', e => { if (!e.target.closest('[data-act="more"]')) closeCtx() })
 window.addEventListener('blur', closeCtx)
 document.addEventListener('scroll', closeCtx, true)
-document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && R.cur) renameRoom(R.cur) })
+document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && R.cur) renameRoom(R.cur); const hx = e.target.closest && e.target.closest('.hx[data-id]'); if (hx) call('openChat', hx.dataset.id) })
 
 async function bootRoom() {
   buildRoom()
