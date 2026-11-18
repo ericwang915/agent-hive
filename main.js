@@ -1053,7 +1053,7 @@ async function nightRun(k, manual) {
     const text = garden.transcript(logs)
     let changed, summary
     if (k === 'dreamer') {
-      const mem = { hive: garden.readMemory(root, 'hive'), agents: Object.fromEntries(logs.map(l => [l.agent.id, garden.readMemory(root, l.agent.id)])) }
+      const mem = { hive: garden.readMemory(root, 'hive'), agents: Object.fromEntries(logs.map(l => [l.agent.id, garden.readMemory(root, l.agent.id)])), names: Object.fromEntries(logs.map(l => [l.agent.id, `${l.agent.name}, working on ${l.agent.task}`])) }
       const res = garden.parseJson(await once(garden.dreamerPrompt(mem, text), chore()))
       changed = garden.applyMemory(root, res, state.agents); summary = res.summary
     } else {

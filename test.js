@@ -376,7 +376,7 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   { const big = [{ name: 'big-one', description: 'D', body: 'x'.repeat(9000) }, { name: 'small-one', description: 'd', body: 'steps' }]
     eq(garden.lockedSkills(big), ['big-one'])
     assert.ok(garden.gardenerPrompt(big, 'T').includes('## big-one\nD\n\n[body too long to show') && garden.gardenerPrompt(big, 'T').includes('## small-one\nd\n\nsteps')) }
-  assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.gardenerPrompt(sk, 'T').includes('## release-flow\nNew description') && /Update before you plant/.test(garden.gardenerPrompt(sk, 'T')))
+  assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' }, names: { a1: 'Puff, working on web' } }, 'T').includes('## a1 (bee Puff, working on web)\nM') && /one or two lines per bee/.test(garden.dreamerPrompt({}, 'T')) && /important, objective and lasting/.test(garden.dreamerPrompt({}, 'T')) && garden.gardenerPrompt(sk, 'T').includes('## release-flow\nNew description') && /Update before you plant/.test(garden.gardenerPrompt(sk, 'T')))
 }
 
 // ───────── Queen leading the team ─────────

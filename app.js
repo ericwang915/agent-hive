@@ -571,7 +571,7 @@ function renderGarden() {
   if (!G) return
   if (view === 'skills') {
     const card = s => {
-      const editing = skillEdit === s.name, open = skillOpen.has(s.name)
+      const editing = false, open = skillOpen.has(s.name)                  // editing happens in a window of its own (openSkillEditor)
       return `<div class="skill${editing || open ? ' wide' : ''}"><div class="top">${ICON.sprout}<span class="nm ell grow">${esc(s.name)}</span><span class="faint" style="font-size:11.5px">${dayKey(new Date(s.mtime)).slice(5)}</span></div>
       ${editing ? `<textarea id="skill-text" spellcheck="false">${esc(s.raw)}</textarea><div class="acts"><button class="btn sm primary" data-act="skill-save" data-n="${esc(s.name)}">Save</button><button class="btn sm" data-act="skill-cancel">Cancel</button></div>`
     : `<div class="desc">${esc(s.description) || '<span class="faint">No description</span>'}</div>${open ? `<div class="body md">${renderMd(s.body)}</div>` : ''}
@@ -579,7 +579,7 @@ function renderGarden() {
       <label class="check" style="font-size:12.5px;align-items:center" title="Symlinks it at ~/.claude/skills/hive-${esc(s.name)}"><input type="checkbox" data-link="${esc(s.name)}" ${s.linked ? 'checked' : ''} style="margin:0">Install in Claude Code</label><span class="sp"></span>
       <button class="btn sm icon ghost danger" data-act="skill-del" data-n="${esc(s.name)}" title="Delete">${ICON.trash}</button></div>`}</div>`
     }
-    const fresh = skillEdit === '+' ? `<div class="skill wide"><div class="top">${ICON.sprout}<input type="text" id="skill-name" class="grow mono" placeholder="skill-name" spellcheck="false"></div>
+    const fresh = false ? `<div class="skill wide"><div class="top">${ICON.sprout}<input type="text" id="skill-name" class="grow mono" placeholder="skill-name" spellcheck="false"></div>
       <textarea id="skill-text" spellcheck="false">---\nname: \ndescription: One line on when to use it\n---\n\n## Steps\n\n1. </textarea><div class="acts"><button class="btn sm primary" data-act="skill-save" data-n="+">Save</button><button class="btn sm" data-act="skill-cancel">Cancel</button></div></div>` : ''
     $('#v-skills').innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Skills</h1></div>
       <button class="btn" data-act="open-garden" data-k="skills">${ICON.folder}Folder</button><button class="btn primary" data-act="skill-new">${ICON.plus}New</button></div>
@@ -596,10 +596,25 @@ function renderGarden() {
     $('#v-memory').innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Memory</h1></div>
       <label class="check" style="align-items:center"><input type="checkbox" id="mem-inject" ${G.memoryInject ? 'checked' : ''}>Give new sessions memory and skills</label>
       <button class="btn" data-act="open-garden" data-k="memory">${ICON.folder}Folder</button></div>
-      ${nightHtml('dreamer')}<div class="sgrid">${card('hive', `${queenSvg(26)}<b class="round">Shared memory</b>`, G.hive)}
+      ${nightHtml('dreamer')}<div class="sgrid">${card('hive', `<span class="mem-hive">${ICON.hive || ''}</span><b class="round">Shared memory</b><span class="faint ell" style="font-size:12px">drawn from every bee, given to every bee</span>`, G.hive)}
       ${S.agents.map(a => card(a.id, `<span class="dot" style="background:${esc(a.color)}"></span><b class="round">${esc(a.name)}</b><span class="faint ell" style="font-size:12px">${esc(a.task)}</span>`, G.agents[a.id] || '')).join('')}</div>`
   }
 }
+
+// A skill is written and edited in a window of its own
+function openSkillEditor() {
+  const isNew = skillEdit === '+', s = isNew ? null : G.skills.find(x => x.name === skillEdit)
+  if (!isNew && !s) { skillEdit = null; return }
+  $('#editor').innerHTML = `
+  <div class="dlg-head"><span class="ed-ic">${ICON.sprout}</span><div class="grow"><h2 class="round">${isNew ? 'New skill' : 'Edit skill'}</h2>${isNew ? '' : `<div class="mono faint" style="font-size:12.5px">${esc(s.name)}</div>`}</div><button type="button" class="btn icon ghost" data-act="skill-cancel">${ICON.x}</button></div>
+  <div class="dlg-body">${isNew ? `<div class="field"><div class="lab">Name <span class="opt">lowercase letters, digits and hyphens</span></div><input type="text" id="skill-name" class="mono" style="width:100%" placeholder="skill-name" spellcheck="false"></div>` : ''}
+    <textarea id="skill-text" spellcheck="false">${esc(isNew ? '---\nname: \ndescription: One line on when to use it\n---\n\n## Steps\n\n1. ' : s.raw)}</textarea></div>
+  <div class="dlg-foot"><span class="hint grow">⌘↩ to save</span><button type="button" class="btn" data-act="skill-cancel">Cancel</button><button type="button" class="btn primary" data-act="skill-save" data-n="${esc(isNew ? '+' : s.name)}">Save</button></div>`
+  if (!$('#editor').open) $('#editor').showModal()
+  ;(isNew ? $('#skill-name') : $('#skill-text')).focus()
+}
+$('#editor').addEventListener('close', () => { skillEdit = null; if (view === 'skills') loadGarden() })
+$('#editor').addEventListener('keydown', e => { if (e.metaKey && e.key === 'Enter') { e.preventDefault(); $('#editor [data-act="skill-save"]').click() } })
 
 // ───────── ⌘K ─────────
 let palItems = [], palSel = 0
@@ -677,13 +692,13 @@ const ACT = {
   // Garden
   'night-now': el => call('nightNow', el.dataset.k),
   'open-garden': el => call('openGarden', el.dataset.k),
-  'skill-new': () => { skillEdit = '+'; renderGarden(); $('#skill-name').focus() },
+  'skill-new': () => { skillEdit = '+'; openSkillEditor() },
   'skill-open': el => { const n = el.dataset.n; skillOpen.has(n) ? skillOpen.delete(n) : skillOpen.add(n); renderGarden() },
-  'skill-edit': el => { skillEdit = el.dataset.n; renderGarden() },
-  'skill-cancel': () => { skillEdit = null; renderGarden() },
+  'skill-edit': el => { skillEdit = el.dataset.n; openSkillEditor() },
+  'skill-cancel': () => $('#editor').close(),
   'skill-save': async el => {
     const name = el.dataset.n === '+' ? $('#skill-name').value.trim() : el.dataset.n
-    if (await call('saveSkill', name, $('#skill-text').value)) { skillEdit = null; toast('Saved'); loadGarden() }
+    if (await call('saveSkill', name, $('#skill-text').value)) { $('#editor').close(); toast('Saved'); loadGarden() }
   },
   'skill-del': async el => { if (confirm(`Delete ${el.dataset.n}?`) && await call('deleteSkill', el.dataset.n)) loadGarden() },
   'mem-open': el => { const k = el.dataset.k; memOpen.has(k) ? memOpen.delete(k) : memOpen.add(k); renderGarden() },

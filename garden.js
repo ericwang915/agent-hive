@@ -118,11 +118,14 @@ function dreamerPrompt(mem, text) {
   return `You are Dreamer, the bee in Agent Hive that curates long-term memory. Below are the existing memories and each bee's new conversation logs since the last pass.
 
 You curate two kinds of memory:
-1. Hive shared memory: the user's preferences, habits and cross-project conventions.
+1. Hive shared memory: what every bee should know, drawn from all of them. It has two parts:
+   - "## The user": the user's preferences, habits and cross-project conventions.
+   - "## The hive": one or two lines per bee, starting with its name: what its project is, and the facts, decisions and conventions from its memory that other bees may need. Refresh a bee's lines when its memory changes in this pass; keep the lines of bees that are not in this pass as they are.
 2. Each bee's own project memory: key facts about its project, decisions made, conventions, pitfalls hit.
 
 Rules:
-- Merge new information into the existing memory, dedupe, and drop anything outdated. Keep each memory to 40 lines at most, as a concise Markdown list.
+- Keep only what is important, objective and lasting. Important: it would change how a bee does its work. Objective: a fact, a decision that was made, a convention in use, something the user stated; not a guess, an impression or praise. Lasting: still true weeks from now; not today's progress, a task's status, a one-off number or a temporary workaround. When in doubt, leave it out. Remove existing entries that fail this test.
+- Merge new information into the existing memory, dedupe, and drop anything outdated. Keep each bee's memory to 40 lines at most and the shared memory to 60, as concise Markdown lists.
 - Do not output a memory that has not changed (omit its field).
 - Write only what the logs support; do not make things up. Never write keys, tokens or passwords.
 - Write in the language the user uses in the conversations.
@@ -135,7 +138,7 @@ Reply with ONLY a JSON object and no other text:
 ${mem.hive || '(empty)'}
 
 # Existing per-bee memory
-${Object.entries(mem.agents || {}).map(([id, md]) => `## ${id}\n${md || '(empty)'}`).join('\n\n') || '(empty)'}
+${Object.entries(mem.agents || {}).map(([id, md]) => `## ${id}${mem.names && mem.names[id] ? ` (bee ${mem.names[id]})` : ''}\n${md || '(empty)'}`).join('\n\n') || '(empty)'}
 
 # New conversation logs
 ${text}`
