@@ -89,7 +89,7 @@ function renderHive() {
   if (!used.some(([k]) => k === sub)) sub = 'all'
   setHtml($('#chips2'), filter === 'sched' && used.length ? [['all', 'All scheduled'], ...used].map(([k, label]) => `<button class="chip${sub === k ? ' on' : ''}" data-act="sub" data-k="${k}">${label}<span class="n">${k === 'all' ? n('sched') : A.filter(a => schedKind(a.schedule) === k).length}</span></button>`).join('') : '')
 
-  setHtml($('#hive-view'), [['cards', 'Cards'], ['comb', 'Honeycomb']].map(([k, l]) => `<button class="${hiveView === k ? 'on' : ''}" data-act="hive-view" data-k="${k}">${l}</button>`).join(''))
+  setHtml($('#hive-view'), [['comb', 'Honeycomb'], ['cards', 'Cards']].map(([k, l]) => `<button class="${hiveView === k ? 'on' : ''}" data-act="hive-view" data-k="${k}">${l}</button>`).join(''))
   const grid = $('#grid'), cols = Math.max(1, Math.floor((grid.clientWidth + GAP) / (300 + GAP))), colW = (grid.clientWidth - (cols - 1) * GAP) / cols
   let list = A.filter(FILTERS.find(x => x[0] === filter)[2]).filter(matches), html = ''
   grid.classList.toggle('comb', hiveView === 'comb')
@@ -115,8 +115,8 @@ function renderHive() {
 // ───────── Honeycomb view ─────────
 // The same bees as cells of a comb: each squad is one cluster shaped by its relay, the rest sit together.
 // A cell holds only who and how it is doing; the bee picked shows as a full card beside the comb
-let hiveView = 'cards', combSel = ''
-try { hiveView = localStorage.getItem('hive-view') === 'comb' ? 'comb' : 'cards' } catch {}
+let hiveView = 'comb', combSel = ''                   // the honeycomb is what a new hive opens with; Cards stays one click away
+try { hiveView = localStorage.getItem('hive-view') === 'cards' ? 'cards' : 'comb' } catch {}
 const HX = { W: 138, H: 159, G: 8 }, HX_ROW = HX.H * 0.75 + HX.G, HX_HALF = (HX.W + HX.G) / 2
 // Where a squad's bees go, from its layers: bees on one step stack above and below the line, tucked between the steps before and after
 function combPlace(layers) {

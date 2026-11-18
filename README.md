@@ -78,7 +78,7 @@ Each bee has its own chat window with the full conversation. Replies stream in a
 
 ### See the whole hive at a glance
 
-Switch the Hive page from cards to a honeycomb. Each squad is a cluster shaped by its relay: a chain sits in a row, a review loop is marked on the shared edge, and bees that work in parallel fan out and meet again at the merge. Click a cell and its full card, with every button, shows beside the comb.
+The Hive page opens as a honeycomb; a switch takes you to the classic cards. Each squad is a cluster shaped by its relay: a chain sits in a row, a review loop is marked on the shared edge, and bees that work in parallel fan out and meet again at the merge. Click a cell and its full card, with every button, shows beside the comb.
 
 ![The honeycomb view: a squad with a review loop, a squad with two bees in parallel and a merge, and three bees on their own](docs/honeycomb.png)
 
