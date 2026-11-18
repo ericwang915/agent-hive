@@ -231,7 +231,7 @@ function fail(a, text) { log(a, { role: 'error', text }); a.status = 'error'; ev
 function run(a, prompt, why = 'manual', meta = {}) {
   if (!alive(a) || !prompt) return
   if (procs.has(a.id) || a.status === 'setup' || folderBusy(a))
-    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, oneOff: meta.oneOff, compacted: meta.compacted, at: Date.now() })
+    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, oneOff: meta.oneOff, compacted: meta.compacted, shown: meta.shown, at: Date.now() })
   if (GATED[why] && overBudget()) {
     const text = `Today's budget $${state.settings.budget} is used up, so the ${GATED[why]} did not run. Manual messages still work.`
     log(a, { role: 'error', text }); event(a, text, 'budget', true)
@@ -243,7 +243,8 @@ function run(a, prompt, why = 'manual', meta = {}) {
   if (!one && !meta.compacted && why !== 'resume' && !String(prompt).startsWith('/') && !Team.isParallel(state.agents, a.id) && a.sessionCwd && fs.existsSync(a.sessionCwd)) {
     const reason = core.compactWhy(a, state.settings)
     if (reason) {                                        // compact now, then run this prompt right after
-      enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, compacted: true, at: 0 })
+      if (!meta.silent && !meta.shown) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show the message now, not after the compaction
+      enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, compacted: true, shown: true, at: 0 })
       log(a, { role: 'system', text: reason })
       const room = meta.room && state.rooms.find(x => x.id === meta.room)
       if (room) roomLog(room, { who: a.id, name: a.name, color: a.color, kind: 'system', text: `${a.name}: ${reason[0].toLowerCase()}${reason.slice(1)}` })
@@ -252,7 +253,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
   }
   if (why !== 'resume') a.ctx = { why, silent: meta.silent, round: meta.round || 0, room: meta.room, hop: meta.hop || 0, batch: meta.batch, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
   if (one) log(a, { role: 'system', text: 'Answering in a side session; the main session stays as it is' })
-  if (!meta.silent) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show: the conversation shows only what the user wrote, not the attached group context
+  if (!meta.silent && !meta.shown) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show: the conversation shows only what the user wrote, not the attached group context
   if (!fs.existsSync(a.workspace)) return fail(a, `Workspace does not exist: ${a.workspace}`)
   let cwd, c
   try { cwd = workDir(a, why) } catch (e) { return fail(a, e.message) }
