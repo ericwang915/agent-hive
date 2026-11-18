@@ -1003,7 +1003,11 @@ function renderUpdate() {
   el.hidden = !u
   if (!u) return
   const busy = u.state !== 'available'
-  setHtml(el, `<button class="upd-btn" data-act="upgrade"${busy ? ' disabled' : ''} title="${esc(`You have ${u.current}.${u.notes ? '\n\n' + u.notes.slice(0, 400) : ''}`)}">${ICON.send}<span class="grow">${u.state === 'downloading' ? 'Downloading…' : u.state === 'installing' ? 'Restarting…' : `Upgrade to ${esc(u.version)}`}</span></button>`)
+  // the first line of the release notes that says something: not a heading, not an empty line
+  const what = String(u.notes || '').split('\n').map(l => l.replace(/^[\s#>*-]+/, '').replace(/[*_`]/g, '').trim()).find(l => l.length > 12 && !/^(install|already on)/i.test(l)) || ''
+  setHtml(el, `<div class="upd-card"><div class="t"><i></i><b class="round">Version ${esc(u.version)} is out</b></div>
+    <div class="s">You have ${esc(u.current)}${what ? ` · ${esc(what.slice(0, 90))}` : ''}</div>
+    <button class="btn primary" data-act="upgrade"${busy ? ' disabled' : ''} title="${esc(u.inPlace ? 'Downloads it, checks the signature and restarts the app' : 'Opens the download page')}">${u.state === 'downloading' ? 'Downloading…' : u.state === 'installing' ? 'Restarting…' : u.inPlace ? 'Upgrade now' : 'Get the new version'}</button></div>`)
 }
 async function doUpgrade() {
   const u = S.update
