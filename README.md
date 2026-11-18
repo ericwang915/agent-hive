@@ -1,7 +1,7 @@
 <p align="center"><img src="icon.png" width="112" alt="Agent Hive logo: a queen bee on a honeycomb"></p>
 <h1 align="center">Agent Hive</h1>
-<p align="center"><b>Run a team of AI coding agents on your Mac, and see what every one of them is doing.</b><br>
-A free, open-source desktop app for Claude Code, Codex, Gemini CLI and Cursor Agent.</p>
+<p align="center"><b>One Queen. Many bees. Your coding agents, working as a hive.</b><br>
+A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI and Cursor Agent into a team you can watch, schedule and steer.</p>
 <p align="center">
   <a href="https://github.com/ericwang915/agent-hive/releases/latest"><img src="https://img.shields.io/github/v/release/ericwang915/agent-hive?label=release" alt="latest release"></a>
   <a href="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml"><img src="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml/badge.svg" alt="tests"></a>
@@ -23,8 +23,9 @@ It uses the CLIs and logins you already have, including a Claude or ChatGPT subs
 ## Highlights
 
 - **Any agent, mixed in one team.** Claude Code writes, Codex reviews, Gemini tests. Any CLI that takes a prompt can be a bee.
-- **Agents that work while you are away.** Schedules (once, daily, weekly, monthly, every N minutes), catch-up for runs missed while the Mac slept, and a daily budget that stops automatic runs when it is used up.
+- **Agents that work while you are away.** Schedules (once, daily, weekdays, weekends, weekly, monthly, every N minutes) and event triggers (new commits, GitHub pull requests, comments and CI failures, another bee finishing), catch-up for runs missed while the Mac slept, and a daily budget that stops automatic runs when it is used up.
 - **A lead agent instead of ten terminals.** Tell Queen what you want; she picks the bees, dispatches the work, waits for the results and sums them up.
+- **Everything they made, in one place.** A Files page lists every PDF, deck, chart and link the bees produced, by bee and project. Search finds bees, skills, memory and anything said in a conversation.
 - **Review built into the flow.** Relay teams send a reviewer's findings back to the writer until it approves. Every bee has a diff view with commit, push and pull request.
 - **Spends fewer tokens than the CLI on its own.** Sessions are compacted before they get expensive, scheduled runs start fresh, unused tools and MCP servers are left out. In a measured three-round task a bee carried about 30% less context per round than plain `claude -p` on the same machine with the same setup (29k against 44k tokens).
 - **It remembers.** Overnight, two helper bees turn the day's conversations into long-term memory and reusable skills. New sessions start with both.
@@ -74,6 +75,12 @@ A relay team is also a **squad** with a name. Queen can hand it a whole job with
 Each bee has its own chat window with the full conversation. Replies stream in as they are written, edits show as inline diffs, sub-agents are nested, and every round shows its cost. Type `@` to point at a file, `/` for commands, Shift-Tab to switch between Ask, Auto-edit and Plan. The bee's folder sits in a sidebar on the left, and file paths in the conversation are clickable: they open at the line mentioned. The Files tab is a small editor: create, rename and delete files and folders, edit and save, find in a file, and search the whole folder by name or text. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.
 
 ![A bee's chat, then its diff](docs/chat.gif)
+
+### See the whole hive at a glance
+
+Switch the Hive page from cards to a honeycomb. Each squad is a cluster shaped by its relay: a chain sits in a row, a review loop is marked on the shared edge, and bees that work in parallel fan out and meet again at the merge. Click a cell and its full card, with every button, shows beside the comb.
+
+![The honeycomb view: a squad with a review loop, a squad with two bees in parallel and a merge, and three bees on their own](docs/honeycomb.png)
 
 ### Hatch a bee in a few clicks
 
