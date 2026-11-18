@@ -153,7 +153,7 @@ function cardHtml(a) {
   <div class="path ell" title="${esc(a.workspace)}">${esc(tilde(a.workspace, S.home))}</div>
   ${g}
   <div class="card-actions">${mainBtn(a)}<span class="sp"></span>
-    <button class="btn sm" data-act="chat" data-id="${a.id}">Chat →</button>${iconBtns(a)}</div>
+    ${!a.isolate && a.status !== 'setup' ? `<button class="btn sm relay-add" data-act="relay" data-id="${a.id}" title="Add a bee that picks up when this one is done: a reviewer, a tester…">${ICON.plus}Relay</button>` : ''}<button class="btn sm" data-act="chat" data-id="${a.id}">Chat →</button>${iconBtns(a)}</div>
 </div>`
 }
 
@@ -199,7 +199,7 @@ function teamHtml(team, cols, colW) {
   return `<div class="team" style="grid-column:span ${span}">
   <div class="team-head"><button class="sq-name" data-act="squad-rename" data-id="${team[0].id}" title="The squad's name: Queen and @mentions use it. Click to rename">${esc(squadNameOf(team[0]))}</button><div class="chain grow">${chain}<span class="folder">· ${esc(team[0].task)}</span></div>
     ${busy ? `<button class="btn sm danger" data-act="team-stop" data-id="${team[0].id}">${ICON.stop}Stop</button>` : ''}
-    ${team.length < S.teamMax ? `<button class="btn sm ghost" data-act="relay" data-id="${last.length === 1 ? last[0].id : team[0].id}">+ Relay ${team.length}/${S.teamMax}</button>` : `<span class="faint" style="font-size:12px">${team.length}/${S.teamMax}</span>`}</div>
+    ${team.length < S.teamMax ? `<button class="btn sm relay-add" data-act="relay" data-id="${last.length === 1 ? last[0].id : team[0].id}" title="Add a bee to the end of this squad">${ICON.plus}Relay<span class="faint">${team.length}/${S.teamMax}</span></button>` : `<span class="faint" style="font-size:12px">${team.length}/${S.teamMax}</span>`}</div>
   <div class="team-body${stacked ? ' stacked' : ''}${tight ? ' tight' : ''}${dag ? ' dag' : ''}" style="--cols:${n}">${layers.map(l => `<div class="layer">${l.map(m => miniHtml(m, tight)).join('')}</div>`).join('')}</div>
 </div>`
 }

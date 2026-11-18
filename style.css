@@ -473,6 +473,9 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .sq-step.chg i { color: var(--clay-ink) } .sq-step.bad { color: var(--red-ink) }
 .sq-arrow { color: var(--faint); font-size: 12px }
 .sq-note { margin-top: 6px; font-size: 12px; color: var(--clay-ink) }
+.btn.relay-add { color: var(--team-ink); border-color: var(--team-line); background: var(--team); gap: 3px; padding: 0 9px 0 6px }
+.btn.relay-add:hover { border-color: color-mix(in srgb, var(--team-ink) 40%, var(--team-line)) }
+.btn.relay-add .ic { width: 13px; height: 13px } .btn.relay-add .faint { font-size: 11px; margin-left: 3px; font-weight: 400 }
 .sq-name { border: 0; background: var(--team); color: var(--team-ink); font-weight: 700; font-size: 12.5px; height: 24px; padding: 0 10px; border-radius: 999px; white-space: nowrap; flex: none }
 .sq-name:hover { filter: brightness(.96) }
 #sq-input { height: 26px; min-height: 0; width: 170px; padding: 0 9px; font-size: 12.5px; font-weight: 600; border-radius: 999px; flex: none }
