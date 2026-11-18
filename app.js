@@ -54,7 +54,7 @@ function buildHive() {
   $('#v-hive').innerHTML = `
   <div class="page-head">
     <div class="grow"><h1 class="round" id="hello"></h1><div class="sub" id="hive-sub"></div></div>
-    <div class="search">${ICON.search}<input type="search" id="q" placeholder="Search" spellcheck="false"></div>
+    <div class="search">${ICON.search}<input type="search" id="q" placeholder="Search bees, skills, memory, chats" spellcheck="false"></div>
     <button class="btn primary" data-act="hatch">${ICON.plus}Hatch</button>
   </div>
   <div class="queen-card">
@@ -63,8 +63,8 @@ function buildHive() {
     <button class="btn sm" data-act="view-report">View</button>
   </div>
   <div class="chips" id="chips"></div><div class="chips sub" id="chips2"></div>
-  <div class="grid" id="grid"></div>`
-  $('#q').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); renderHive() })
+  <div class="grid" id="grid"></div><div id="found"></div>`
+  $('#q').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); renderHive(); searchMore(e.target.value, renderFound) })
 }
 
 const scheduled = a => a.schedule && a.schedule.mode !== 'manual'
@@ -101,7 +101,7 @@ function renderHive() {
       if (team.length > 1) { team.forEach(m => done.add(m.id)); html += teamHtml(team, cols, colW) } else html += cardHtml(a)
     }
     if (filter === 'all' && !query && A.length < S.max) html += `<button class="empty-slot" data-act="hatch">${ICON.plus}<span>Hatch</span></button>`
-    else if (!list.length) html = `<div class="guide">No bees match</div>`
+    else if (!list.length) html = query ? '' : `<div class="guide">No bees match</div>`
   }
   setHtml(grid, html)
 }
@@ -616,6 +616,44 @@ function openSkillEditor() {
 $('#editor').addEventListener('close', () => { skillEdit = null; if (view === 'skills') loadGarden() })
 $('#editor').addEventListener('keydown', e => { if (e.metaKey && e.key === 'Enter') { e.preventDefault(); $('#editor [data-act="skill-save"]').click() } })
 
+// ───────── Search everywhere ─────────
+// Beyond bee names: skills, memory, conversations and groups that mention the text. Used by the Hive search box and by ⌘K
+let FOUND = { q: '', items: [], busy: false }, foundSeq = 0, foundTimer = null
+const markSnip = h => (h ? `${esc(h.text.slice(0, h.at))}<b>${esc(h.text.slice(h.at, h.at + h.len))}</b>${esc(h.text.slice(h.at + h.len))}` : '')
+const dotOf = c => `<span class="dot" style="background:${esc(c || '#ccc')}"></span>`
+function foundItems(r) {
+  const reveal = (v, sel) => { show(v); setTimeout(() => { const el = document.querySelector(sel); if (el) { const c = el.closest('.skill, .mem'); c.scrollIntoView({ block: 'center' }); c.classList.add('flash'); setTimeout(() => c.classList.remove('flash'), 1600) } }, 350) }
+  return [
+    ...r.skills.map(s => ({ group: 'Skills', icon: ICON.sprout, label: s.name, snip: s.hit ? markSnip(s.hit) : esc(s.description), run: () => { skillOpen.add(s.name); reveal('skills', `[data-act="skill-open"][data-n="${CSS.escape(s.name)}"]`) } })),
+    ...r.memory.map(m => ({ group: 'Memory', icon: m.key === 'hive' ? ICON.hive : dotOf(m.color), label: m.title, snip: markSnip(m.hit), run: () => { memOpen.add(m.key); reveal('memory', `[data-act="mem-edit"][data-k="${CSS.escape(m.key)}"]`) } })),
+    ...r.chats.map(c => ({ group: 'Conversations', icon: dotOf(c.color), label: c.name, who: c.role === 'user' ? 'You' : c.name, t: c.t, snip: markSnip(c.hit), run: () => call('openChat', c.id, '', r.q) })),
+    ...r.rooms.map(g => ({ group: 'Groups', icon: ICON.chat, label: g.name, who: g.who, t: g.t, snip: markSnip(g.hit), run: () => openRoom(g.id) })),
+  ]
+}
+function searchMore(q, done) {
+  clearTimeout(foundTimer)
+  q = String(q || '').trim()
+  const seq = ++foundSeq
+  if (q.length < 2) { FOUND = { q, items: [], busy: false }; return done() }
+  FOUND = { q, items: FOUND.q === q ? FOUND.items : [], busy: true }; done()
+  foundTimer = setTimeout(async () => {
+    const r = await hive.call('searchAll', q)
+    if (seq !== foundSeq) return
+    FOUND = { q, items: r && !r.error ? foundItems(r) : [], busy: false }
+    done()
+  }, 220)
+}
+const foundRow = (x, i, act) => `<button class="found-row" data-act="${act}" data-i="${i}">${x.icon}<span class="lb">${esc(x.label)}</span><span class="sn ell">${x.who && x.who !== x.label ? `<i>${esc(x.who)}:</i> ` : ''}${x.snip}</span>${x.t ? `<span class="ago">${ago(x.t)}</span>` : ''}</button>`
+function renderFound() {
+  const el = $('#found')
+  if (!el) return
+  if (!query || FOUND.q.toLowerCase() !== query || (!FOUND.items.length && FOUND.busy)) return setHtml(el, '')
+  const none = !FOUND.items.length && !S.agents.some(matches)
+  let html = '', group = ''
+  FOUND.items.forEach((x, i) => { if (x.group !== group) { group = x.group; html += `<div class="found-h">${group}</div>` } html += foundRow(x, i, 'found') })
+  setHtml(el, none ? `<div class="guide">Nothing matches “${esc(FOUND.q)}” in bees, skills, memory or conversations</div>` : html)
+}
+
 // ───────── ⌘K ─────────
 let palItems = [], palSel = 0
 function palAll() {
@@ -634,9 +672,15 @@ function palAll() {
 }
 function renderPal() {
   const q = $('#pal-input').value.trim().toLowerCase()
-  palItems = palAll().filter(x => !q || (x.label + ' ' + (x.st || '')).toLowerCase().includes(q))
+  const more = q && FOUND.q.toLowerCase() === q ? FOUND.items : []
+  palItems = [...palAll().filter(x => !q || (x.label + ' ' + (x.st || '')).toLowerCase().includes(q)), ...more]
   palSel = Math.min(palSel, Math.max(0, palItems.length - 1))
-  $('#pal-list').innerHTML = palItems.length ? palItems.map((x, i) => `<button class="item${i === palSel ? ' on' : ''}" data-act="pal" data-i="${i}">${x.icon}<span>${esc(x.label)}</span>${x.st ? `<span class="st ell">${esc(x.st)}</span>` : ''}${x.kbd ? `<kbd>${x.kbd}</kbd>` : ''}</button>`).join('') : '<div class="none">No results</div>'
+  let group = ''
+  $('#pal-list').innerHTML = palItems.length ? palItems.map((x, i) => {
+    const head = x.group && x.group !== group ? `<div class="found-h">${x.group}</div>` : ''
+    group = x.group || ''
+    return head + `<button class="item${i === palSel ? ' on' : ''}" data-act="pal" data-i="${i}">${x.icon}<span class="lb">${esc(x.label)}</span>${x.snip ? `<span class="st sn ell">${x.who && x.who !== x.label ? `<i>${esc(x.who)}:</i> ` : ''}${x.snip}</span>` : x.st ? `<span class="st ell">${esc(x.st)}</span>` : ''}${x.kbd ? `<kbd>${x.kbd}</kbd>` : ''}</button>`
+  }).join('') : `<div class="none">${q && FOUND.busy ? 'Searching…' : 'No results'}</div>`
   const on = $('#pal-list .item.on')
   if (on) on.scrollIntoView({ block: 'nearest' })
 }
@@ -645,6 +689,7 @@ function togglePal(open = $('#palette').hidden) {
   if (open) { $('#pal-input').value = ''; palSel = 0; renderPal(); $('#pal-input').focus() }
 }
 const palRun = i => { const x = palItems[i]; togglePal(false); if (x) x.run() }
+const foundRun = i => { const x = FOUND.items[i]; if (x) x.run() }
 
 // ───────── Click actions ─────────
 const act = (id, name, text, opts) => call('action', id, name, text, opts)
@@ -708,6 +753,7 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  found: el => foundRun(+el.dataset.i),
   prefs: () => openPrefs(),
   'prefs-close': () => $('#prefs').close(),
   'prefs-check': () => checkNow(),
@@ -741,7 +787,7 @@ document.addEventListener('click', e => {
 })
 document.addEventListener('input', e => {
   const t = e.target
-  if (t.id === 'pal-input') { palSel = 0; return renderPal() }
+  if (t.id === 'pal-input') { palSel = 0; renderPal(); return searchMore(t.value, renderPal) }
   if (!F) return
   const k = t.id && INPUT[t.id] ? t.id : t.dataset.input
   if (k && INPUT[k]) INPUT[k](t.value)

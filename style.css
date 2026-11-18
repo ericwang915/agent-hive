@@ -521,6 +521,19 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 #palette .item.on { background: var(--soft) }
 #palette .item kbd { margin-left: auto; font: 11px var(--mono); color: var(--faint) }
 #palette .item .st { font-size: 11.5px; color: var(--mute) }
+#found:empty { display: none }
+#found { margin-top: 18px; display: flex; flex-direction: column; gap: 2px }
+.found-h { font-size: 11.5px; font-weight: 600; color: var(--mute); letter-spacing: .04em; text-transform: uppercase; padding: 12px 10px 4px }
+.found-row { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 4px 10px; border: 0; background: transparent; border-radius: 9px; text-align: left; width: 100%; font-size: 13.5px }
+.found-row:hover { background: var(--card) }
+.found-row .ic { color: var(--mute); flex: none } .found-row .dot { flex: none }
+.found-row .lb, #palette .item .lb { font-weight: 600; white-space: nowrap; flex: none; max-width: 40% ; overflow: hidden; text-overflow: ellipsis }
+.found-row .sn, #palette .item .sn { color: var(--mute); font-size: 12.5px; flex: 1; min-width: 0 }
+.found-row .sn b, #palette .item .sn b { color: var(--ink); background: color-mix(in srgb, var(--honey) 45%, transparent); border-radius: 3px; font-weight: 600 }
+.found-row .sn i, #palette .item .sn i { font-style: normal; color: var(--faint) }
+.found-row .ago { font-size: 11.5px; color: var(--faint); flex: none }
+#palette .found-h { padding: 10px 10px 3px }
+.skill.flash, .mem.flash { box-shadow: 0 0 0 2px var(--honey); transition: box-shadow .2s }
 #palette .none { padding: 16px; color: var(--mute); text-align: center }
 
 /* ══════════ Dark mode (overrides go last) ══════════ */

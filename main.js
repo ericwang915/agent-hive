@@ -1080,6 +1080,48 @@ function gardenInfo() {
   }
 }
 
+// ───────── Search ─────────
+// Everything that mentions q: skills, memory, each bee's conversation, the groups. Newest conversation hits first
+function searchAll(q) {
+  q = String(q || '').trim().slice(0, 100)
+  const out = { q, skills: [], memory: [], chats: [], rooms: [] }
+  if (q.length < 2) return out
+  const low = q.toLowerCase(), root = wsRoot(), has = s => String(s || '').toLowerCase().includes(low)
+  for (const s of garden.listSkills(root)) {
+    const hit = core.snippet(s.name, q) || core.snippet(s.description, q) || core.snippet(s.body, q)
+    if (hit) out.skills.push({ name: s.name, description: s.description, hit: has(s.name) && !has(s.description) && !has(s.body) ? null : core.snippet(s.description, q) || core.snippet(s.body, q) })
+  }
+  const mem = (key, title, color) => { const hit = core.snippet(garden.readMemory(root, key), q); if (hit) out.memory.push({ key, title, color, hit }) }
+  mem('hive', 'Shared memory', '')
+  for (const a of state.agents) mem(a.id, a.name, a.color)
+  for (const a of state.agents) {
+    let raw = ''
+    try { raw = fs.readFileSync(logFile(a.id), 'utf8') } catch {}
+    if (!raw.toLowerCase().includes(low)) continue
+    let n = 0
+    const lines = raw.split('\n')
+    for (let i = lines.length - 1; i >= 0 && n < 3; i--) {
+      if (!lines[i] || !lines[i].toLowerCase().includes(low)) continue
+      let e = null
+      try { e = JSON.parse(lines[i]) } catch {}
+      if (!e || (e.role !== 'user' && e.role !== 'assistant')) continue
+      const hit = core.snippet(e.text, q)
+      if (hit) { out.chats.push({ id: a.id, name: a.name, color: a.color, role: e.role, t: e.t || 0, hit }); n++ }
+    }
+  }
+  for (const r of state.rooms) {
+    let n = 0
+    const es = readRoom(r, 400)
+    for (let i = es.length - 1; i >= 0 && n < 3; i--) {
+      const e = es[i], hit = e.kind !== 'system' && core.snippet(e.text, q)
+      if (hit) { out.rooms.push({ id: r.id, name: r.name, who: e.who === 'user' ? 'You' : e.name, t: e.t || 0, hit }); n++ }
+    }
+  }
+  out.chats.sort((x, y) => y.t - x.t); out.chats = out.chats.slice(0, 30)
+  out.rooms.sort((x, y) => y.t - x.t); out.rooms = out.rooms.slice(0, 15)
+  return out
+}
+
 // ───────── Dashboard stats ─────────
 function stats(date) {
   const [s, e] = dayRange(date), now = Date.now()
@@ -1302,11 +1344,11 @@ function showMain() {
   mainWin.loadFile(path.join(__dirname, 'index.html'))
   mainWin.on('closed', () => (mainWin = null))
 }
-function openChat(id, tab) {
+function openChat(id, tab, find) {
   const a = byId(id)
   if (!a) return
   const old = chats.get(id)
-  if (old && !old.isDestroyed()) { old.show(); old.focus(); if (tab) old.webContents.send('tab', tab); return }
+  if (old && !old.isDestroyed()) { old.show(); old.focus(); if (tab) old.webContents.send('tab', tab); if (find) old.webContents.send('find', find); return }
   const mb = mainWin && !mainWin.isDestroyed() ? mainWin.getBounds() : { x: 80, y: 60, width: 1380, height: 900 }
   const wa = screen.getDisplayMatching(mb).workArea, k = (chatCount++ % 8) + 1
   const width = Math.min(mb.width, wa.width), height = Math.min(mb.height, wa.height)
@@ -1316,7 +1358,7 @@ function openChat(id, tab) {
     x: clamp(mb.x + 28 * k, wa.x, wa.x + wa.width - width), y: clamp(mb.y + 28 * k, wa.y, wa.y + wa.height - height),
   })
   guard(w)
-  w.loadFile(path.join(__dirname, 'chat.html'), { query: tab ? { id, tab } : { id } })
+  w.loadFile(path.join(__dirname, 'chat.html'), { query: { id, ...(tab ? { tab } : {}), ...(find ? { find } : {}) } })
   chats.set(id, w)
   w.on('closed', () => { if (chats.get(id) === w) chats.delete(id) })
 }
@@ -1396,7 +1438,8 @@ function ipc() {
     return { path: f, name: path.basename(f) }
   })
   handle('feed', () => state.feed)
-  handle('openChat', (id, tab) => openChat(id, tab === 'changes' || tab === 'files' ? tab : ''))
+  handle('openChat', (id, tab, find) => openChat(id, tab === 'changes' || tab === 'files' ? tab : '', typeof find === 'string' ? find.slice(0, 100) : ''))
+  handle('searchAll', q => searchAll(q))
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: fs.existsSync(wsRoot()) ? wsRoot() : HOME })
     return r.canceled ? '' : r.filePaths[0]

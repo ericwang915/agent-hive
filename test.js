@@ -560,6 +560,8 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq(core.compactWhy(B, { compactAt: 70 }, 2000), '')
   assert.ok(/idle for 2 h/.test(core.compactWhy(B, { compactAt: 0 }, 1000 + 2 * 3600000)))
   eq([core.compactWhy(B, { compactAt: 0, compactCold: false }, 1e10), core.compactWhy({ ...B, context: { used: 50000, window: 1e6 } }, { compactAt: 50 }, 1e10)], ['', ''])
+  eq(core.snippet('Hello World', 'WORLD'), { text: 'Hello World', at: 6, len: 5 }); eq(core.snippet('abc', 'zz'), null); eq(core.snippet('abc', ''), null)
+  { const s = core.snippet('x'.repeat(100) + ' the\nneedle here ' + 'y'.repeat(200), 'needle', 60); assert.ok(s.text.startsWith('…') && s.text.endsWith('…') && s.text.slice(s.at, s.at + s.len) === 'needle' && !s.text.includes('\n')) }
   // a 1M window: the percentage counts against 200k at most
   eq([core.compactWhy({ ...B, context: { used: 99000, window: 1e6 } }, { compactAt: 50 }, 2000), core.compactWhy({ ...B, context: { used: 101000, window: 1e6 } }, { compactAt: 50 }, 2000), core.compactWhy({ ...B, context: { used: 101000 } }, { compactAt: 50 }, 2000)],
     ['', 'This session holds 101k tokens: compacting first', 'This session holds 101k tokens: compacting first'])

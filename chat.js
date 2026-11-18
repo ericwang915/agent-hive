@@ -837,6 +837,16 @@ document.addEventListener('keydown', e => {
   if (e.metaKey && e.key === 'Backspace' && F.sel && !F.sel.startsWith('/') && F.mode === 'tree' && !$('#tree').hidden && !e.target.closest('input, textarea, [contenteditable]')) { e.preventDefault(); trashPath(F.sel, F.selDir) }
 })
 
+// Arriving from a search: show the latest place in the conversation that mentions the text, selected
+function findInChat(q) {
+  setTab('chat')
+  input.blur(); getSelection().removeAllRanges()
+  if (!window.find(q, false, true, true)) return toast('Not in the part of the conversation shown here')
+  const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement)
+  if (el && !tl.contains(el)) { getSelection().removeAllRanges(); return }
+  if (el) el.scrollIntoView({ block: 'center' })
+}
+
 // ───────── Boot ─────────
 async function boot() {
   S = await hive.call('init')
@@ -848,6 +858,8 @@ async function boot() {
   if (Array.isArray(log) && log.length) log.forEach(e => addEntry(e, false))
   else tl.innerHTML = `<div id="empty">${beeFace(A, 56, 'happy', 'idle')}<b class="round">${esc(A.name)}</b> is ready</div>`
   renderAll(); renderView(); toBottom(); input.focus()
+  const find0 = new URLSearchParams(location.search).get('find')
+  if (find0) setTimeout(() => findInChat(find0), 250)
   let side = '1'
   try { side = localStorage.getItem('hive-side') || '1' } catch {}
   if (side === '1' && innerWidth >= 760) { $('#tree').hidden = false; openFiles() }
@@ -862,5 +874,6 @@ async function boot() {
   hive.on('entry', ({ id, entry }) => { if (id === ID) addEntry(entry, true) })
   hive.on('partial', p => { if (p.id === ID) setLive(p.end ? null : p) })
   hive.on('tab', t => setTab(TABS.includes(t) ? t : 'chat'))
+  hive.on('find', q => findInChat(q))
 }
 boot()

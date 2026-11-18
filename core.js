@@ -159,6 +159,17 @@ function compactWhy(a, st = {}, now = Date.now()) {
   return ''
 }
 
+// Search: where q occurs in text → {text, at, len}: one line of context around the first match, or null. Case-insensitive
+function snippet(text, q, width = 90) {
+  const s = String(text || ''), needle = String(q || '').toLowerCase()
+  const i = needle ? s.toLowerCase().indexOf(needle) : -1
+  if (i < 0) return null
+  const from = Math.max(0, i - Math.floor(width / 3)), cut = s.slice(from, from + width)
+  const lead = from > 0 ? '…' : '', flat = cut.replace(/\s+/g, ' ')
+  const pre = s.slice(from, i).replace(/\s+/g, ' ')
+  return { text: lead + flat + (from + width < s.length ? '…' : ''), at: lead.length + pre.length, len: needle.length }
+}
+
 // How full the context is, from Claude Code's stream: {used} after each model call or compaction, {window} from the result
 function contextOf(o) {
   if (!o || o.parent_tool_use_id) return null          // a sub-agent's calls have their own context
@@ -444,7 +455,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = { HEADLESS_OFF, BEE_SYS, mcpPrefix, parseInit,
-  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, BIG, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,
