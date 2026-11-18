@@ -94,6 +94,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 - **Dashboard.** A 24-hour activity timeline, spend, and Queen's daily report.
 - **Upgrades.** When a newer release is out, an Upgrade button appears in the sidebar. It downloads the release, checks that it is signed by the same developer, swaps the app and restarts. Settings (the gear at the bottom of the sidebar) can install new versions automatically once no bee is working, and notify you when one is out.
 - **Ranks.** Every finished round counts. A bee climbs from Bronze through Silver, Gold, Platinum and Diamond to Master, and its look changes with each rank.
+- **Files page.** Everything the bees produced in one list, newest first: files they wrote or named in a reply (PDFs, decks, charts, CSVs) and links they gave (artifacts, Google Slides, pull requests). Each row shows the bee and its project; filter by kind or bee, open the file, or jump to it in the bee's window.
 - **Search everything.** The search box and ⌘K find bees, skills, memory, and what was said in any bee's conversation or group; a hit opens the chat at that message.
 - **Right-click anything.** Rename, settings, stop and delete for bees and groups.
 
@@ -177,6 +178,7 @@ No build step and no framework: plain HTML, CSS and JS in the renderer, Electron
 | `queen.js` | Queen's tools, dispatch rules and result parsing |
 | `garden.js` | Skills and memory files, Dreamer and Gardener prompts |
 | `events.js` | Event triggers: checking the settings, telling what is new on GitHub, matching a finished bee |
+| `outputs.js` | Files page: finding the files and links a bee produced in its log |
 | `update.js` | Upgrade: finding, downloading, verifying and installing a newer release |
 | `files.js` | File browser: listing, reading and locating paths inside a bee's folder |
 | `approve-mcp.js`, `hive-mcp.js` | Small MCP stdio servers that call back into the app |

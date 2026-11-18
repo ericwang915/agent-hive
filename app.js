@@ -20,7 +20,7 @@ function setHtml(el, html) {
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms) } }
 
 // ───────── Sidebar ─────────
-const VIEWS = [['hive', 'Hive', 'hive'], ['dash', 'Dashboard', 'chart'], ['skills', 'Skills', 'sprout'], ['memory', 'Memory', 'brain']]
+const VIEWS = [['hive', 'Hive', 'hive'], ['dash', 'Dashboard', 'chart'], ['files', 'Files', 'folder'], ['skills', 'Skills', 'sprout'], ['memory', 'Memory', 'brain']]
 function renderSide() {
   setHtml($('#nav'), VIEWS.map(([id, label, icon]) => `<button data-act="view" data-view="${id}" class="${view === id ? 'on' : ''}">${ICON[icon]}${label}</button>`).join(''))
   const live = S.agents.filter(a => a.status === 'running' || a.status === 'paused')
@@ -46,6 +46,7 @@ function show(v) {
   if (v === 'hive') renderHive()
   if (v === 'dash') loadDash()
   if (v === 'skills' || v === 'memory') loadGarden()
+  if (v === 'files') loadOutputs()
   $('#main').scrollTop = 0
 }
 
@@ -656,6 +657,54 @@ function reportHtml(md) {
     return `<h3 class="rp-bee">${bee ? `<span class="dot" style="background:${esc(bee.color)}"></span>` : ''}${name}<span class="proj">${parts[0]}</span>${parts.length > 1 ? `<span class="job">${parts.slice(1).join(' · ')}</span>` : ''}</h3>`
   })
 }
+// ───────── Files page ─────────
+// What the bees produced: files they wrote or named, and links they gave. Newest first, by bee and by kind
+const OUT = { items: null, shown: [], type: 'main', bee: '', q: '' }
+const OUT_TYPES = [['main', 'Documents & links', x => x.type !== 'code'], ['doc', 'Documents', x => x.type === 'doc'], ['image', 'Images', x => x.type === 'image' || x.type === 'media'], ['link', 'Links', x => x.kind === 'link'], ['code', 'Code', x => x.type === 'code'], ['all', 'All', () => true]]
+async function loadOutputs() {
+  const r = await hive.call('outputs')
+  OUT.items = Array.isArray(r) ? r : []
+  if (view === 'files') renderOutputs()
+}
+const loadOutputsSoon = debounce(() => { if (view === 'files') loadOutputs() }, 2500)
+const dayLabel = t => { const k = dayKey(new Date(t)), d = new Date(); if (k === dayKey(d)) return 'Today'; d.setDate(d.getDate() - 1); return k === dayKey(d) ? 'Yesterday' : new Date(t).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) }
+const outSize = n => (n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB')
+function renderOutputs() {
+  const el = $('#v-files'), all = OUT.items
+  if (!el.querySelector('#out-q')) {
+    el.innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Files</h1><div class="mute" id="out-sub"></div></div>
+      <div class="search">${ICON.search}<input type="search" id="out-q" placeholder="File name, link, bee or project" spellcheck="false"></div><button class="btn" data-act="out-refresh">${ICON.refresh}Refresh</button></div>
+      <div class="chips" id="out-types"></div><div class="chips sub" id="out-bees"></div><div id="out-list"></div>`
+    $('#out-q').addEventListener('input', e => { OUT.q = e.target.value.trim().toLowerCase(); renderOutputs() })
+  }
+  if (!all) return setHtml($('#out-list'), '<div class="guide">Looking through the bees\' work…</div>')
+  const beeOfItem = x => byId(x.bee), q = OUT.q
+  const text = x => { const b = beeOfItem(x) || {}; return [x.name, x.dir, x.url, x.label, x.site, b.name, b.task].join(' ').toLowerCase() }
+  const inQ = all.filter(x => !q || text(x).includes(q)), inBee = inQ.filter(x => !OUT.bee || x.bee === OUT.bee)
+  const pick = OUT_TYPES.find(t => t[0] === OUT.type) || OUT_TYPES[0]
+  OUT.shown = inBee.filter(x => (x.kind === 'link' ? ['main', 'link', 'all'].includes(pick[0]) : pick[2](x)))
+  $('#out-sub').textContent = all.length ? `${all.filter(x => x.kind === 'file').length} files and ${all.filter(x => x.kind === 'link').length} links from ${new Set(all.map(x => x.bee)).size} bee${new Set(all.map(x => x.bee)).size === 1 ? '' : 's'}` : ''
+  setHtml($('#out-types'), OUT_TYPES.map(([k, l, f]) => `<button class="chip${OUT.type === k ? ' on' : ''}" data-act="out-type" data-k="${k}">${l}<span class="n">${inBee.filter(x => (x.kind === 'link' ? ['main', 'link', 'all'].includes(k) : f(x))).length}</span></button>`).join(''))
+  const counts = new Map()
+  for (const x of inQ) counts.set(x.bee, (counts.get(x.bee) || 0) + 1)
+  setHtml($('#out-bees'), [...counts].map(([id, n]) => [byId(id), n]).filter(([a]) => a).sort((x, y) => y[1] - x[1]).map(([a, n]) => `<button class="chip${OUT.bee === a.id ? ' on' : ''}" data-act="out-bee" data-id="${a.id}" title="${esc(a.task)}"><span class="dot" style="background:${esc(a.color)}"></span>${esc(a.name)}<span class="n">${n}</span></button>`).join(''))
+  if (!OUT.shown.length) return setHtml($('#out-list'), `<div class="guide">${all.length ? 'Nothing matches' : 'Nothing yet. Files a bee writes or names in a reply, and links it gives, show up here.'}</div>`)
+  let day = '', html = ''
+  OUT.shown.slice(0, 400).forEach((x, i) => {
+    const d = dayLabel(x.t), b = beeOfItem(x) || { name: 'Gone', color: '#ccc', task: '' }
+    if (d !== day) { day = d; html += `<div class="out-day">${d}</div>` }
+    const icon = x.kind === 'link' ? ICON.link : x.type === 'doc' ? ICON.doc : x.type === 'code' ? ICON.codefile : ICON.image
+    const ext = x.kind === 'link' ? x.site : (x.name.includes('.') ? x.name.split('.').pop().toUpperCase() : 'FILE')
+    html += `<div class="out-row k-${x.kind === 'link' ? 'link' : x.type}"><button class="main" data-act="out-open" data-i="${i}" title="${esc(x.kind === 'link' ? x.url : x.abs)}">
+      <span class="ico">${icon}</span><span class="tx"><span class="nm ell">${esc(x.kind === 'link' ? x.label || x.url.replace(/^https?:\/\//, '') : x.name)}</span><span class="sub ell">${esc(x.kind === 'link' ? x.url : x.dir)}</span></span></button>
+      <span class="tag">${esc(ext)}</span>
+      <button class="who" data-act="out-bee-open" data-i="${i}" title="${x.kind === 'link' ? `Open ${esc(b.name)}'s chat where this link came up` : `Open in ${esc(b.name)}'s window`}"><span class="dot" style="background:${esc(b.color)}"></span><b>${esc(b.name)}</b><span class="ell">${esc(b.task)}</span></button>
+      <span class="when">${hm(x.t)}${x.kind === 'file' ? ` · ${outSize(x.size)}` : ''}</span>
+      <span class="acts">${x.kind === 'file' ? `<button class="btn sm icon ghost" data-act="out-reveal" data-i="${i}" title="Show in Finder">${ICON.finder}</button>` : ''}<button class="btn sm icon ghost" data-act="out-copy" data-i="${i}" title="${x.kind === 'link' ? 'Copy link' : 'Copy path'}">${ICON.link}</button></span></div>`
+  })
+  setHtml($('#out-list'), html + (OUT.shown.length > 400 ? `<div class="guide">Showing the newest 400 of ${OUT.shown.length}. Search or pick a bee to narrow it down.</div>` : ''))
+}
+
 // ───────── Search everywhere ─────────
 // Beyond bee names: skills, memory, conversations and groups that mention the text. Used by the Hive search box and by ⌘K
 let FOUND = { q: '', items: [], busy: false }, foundSeq = 0, foundTimer = null
@@ -796,6 +845,13 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  'out-type': el => { OUT.type = el.dataset.k; renderOutputs() },
+  'out-bee': el => { OUT.bee = OUT.bee === el.dataset.id ? '' : el.dataset.id; renderOutputs() },
+  'out-refresh': () => loadOutputs(),
+  'out-open': el => { const x = OUT.shown[+el.dataset.i]; if (x) x.kind === 'link' ? call('openLink', x.url) : call('openOutput', x.bee, x.abs, 'open') },
+  'out-reveal': el => { const x = OUT.shown[+el.dataset.i]; if (x) call('openOutput', x.bee, x.abs, 'reveal') },
+  'out-bee-open': el => { const x = OUT.shown[+el.dataset.i]; if (x) x.kind === 'link' ? call('openChat', x.bee, '', x.url) : call('openChat', x.bee, 'files', '', x.abs) },
+  'out-copy': async el => { const x = OUT.shown[+el.dataset.i]; if (!x) return; try { await navigator.clipboard.writeText(x.kind === 'link' ? x.url : x.abs); toast('Copied') } catch { toast('Could not copy', 'err') } },
   'squad-rename': el => renameSquad(el),
   found: el => foundRun(+el.dataset.i),
   prefs: () => openPrefs(),
@@ -1252,6 +1308,7 @@ async function boot() {
     renderSide(); renderHive(); renderRoomMeta()
     if (view === 'dash') { renderDash(); loadDashSoon() }
     if (view === 'memory' && !memEdit) renderGarden()
+    if (view === 'files') loadOutputsSoon()
     if (F && F.mode === 'create' && !F.after.ids.length && $('#hatch').open) updRelay()
   })
   hive.on('feed', f => { S.feed = f; renderFeed() })

@@ -840,6 +840,14 @@ document.addEventListener('keydown', e => {
   if (e.metaKey && e.key === 'Backspace' && F.sel && !F.sel.startsWith('/') && F.mode === 'tree' && !$('#tree').hidden && !e.target.closest('input, textarea, [contenteditable]')) { e.preventDefault(); trashPath(F.sel, F.selDir) }
 })
 
+// Arriving from the Files page: show that file, selected in the tree when it lies in the folder
+async function openFromOutside(p) {
+  const l = await hive.call('locate', ID, [p]), hit = Array.isArray(l) && l[0]
+  if (!hit) return toast('That file is no longer there', 'err')
+  if (hit.rel != null) return showPath(hit.rel, hit.dir, 0)
+  setTab('files'); await openFile(hit.abs); renderTree()
+}
+
 // Arriving from a search: show the latest place in the conversation that mentions the text, selected
 function findInChat(q) {
   setTab('chat')
@@ -861,6 +869,8 @@ async function boot() {
   if (Array.isArray(log) && log.length) log.forEach(e => addEntry(e, false))
   else tl.innerHTML = `<div id="empty">${beeFace(A, 56, 'happy', 'idle')}<b class="round">${esc(A.name)}</b> is ready</div>`
   renderAll(); renderView(); toBottom(); input.focus()
+  const file0 = new URLSearchParams(location.search).get('file')
+  if (file0) setTimeout(() => openFromOutside(file0), 250)
   const find0 = new URLSearchParams(location.search).get('find')
   if (find0) setTimeout(() => findInChat(find0), 250)
   let side = '1'
@@ -878,5 +888,6 @@ async function boot() {
   hive.on('partial', p => { if (p.id === ID) setLive(p.end ? null : p) })
   hive.on('tab', t => setTab(TABS.includes(t) ? t : 'chat'))
   hive.on('find', q => findInChat(q))
+  hive.on('file', p => openFromOutside(p))
 }
 boot()

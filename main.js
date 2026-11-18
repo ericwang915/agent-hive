@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, 
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http'), crypto = require('crypto')
 const { spawn, execFile, execFileSync } = require('child_process')
 const { rankOf } = require('./common')
-const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files'), evs = require('./events')
+const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files'), evs = require('./events'), outs = require('./outputs')
 const { upIds } = Team, { git, tryGit, repoInfo, headOf, slotKey, ymd } = core
 const NIGHT = garden.NIGHT
 
@@ -1235,6 +1235,44 @@ function gardenInfo() {
   }
 }
 
+// ───────── Files page ─────────
+// Every file a bee wrote or named and every link it gave, newest first. A bee's log is read again only when it has changed
+const outCache = new Map()        // agent id → {key, items}
+function outputsOf(a) {
+  let key = ''
+  try { const st = fs.statSync(logFile(a.id)); key = `${st.size}:${st.mtimeMs}` } catch { return [] }
+  const hit = outCache.get(a.id)
+  if (hit && hit.key === key) return hit.items
+  const items = outs.scan(readLog(a.id))
+  outCache.set(a.id, { key, items })
+  return items
+}
+function outputs() {
+  const list = []
+  for (const a of state.agents) {
+    const root = a.sessionCwd && fs.existsSync(a.sessionCwd) ? a.sessionCwd : dirOf(a), seen = new Set()
+    for (const x of outputsOf(a)) {
+      if (x.kind === 'link') { list.push({ ...x, bee: a.id }); continue }
+      let l = null
+      try { l = files.locate(root, x.path, HOME) } catch {}
+      if (!l || l.dir || seen.has(l.abs)) continue          // gone since, or the same file under another spelling
+      seen.add(l.abs)
+      let size = 0
+      try { size = fs.statSync(l.abs).size } catch { continue }
+      list.push({ kind: 'file', type: outs.kindOf(l.abs), name: path.basename(l.abs), abs: l.abs, rel: l.rel, dir: tilde(path.dirname(l.abs)), size, t: x.t, via: x.via, open: outs.canOpen(l.abs), bee: a.id })
+    }
+  }
+  return list.sort((x, y) => y.t - x.t).slice(0, 1500)
+}
+const tilde = p => (p === HOME || p.startsWith(HOME + path.sep) ? '~' + p.slice(HOME.length) : p)
+// Open one of the listed files with the system's app for it; anything that could run is only shown in Finder
+function openOutput(id, abs, how) {
+  const a = need(id), x = outputs().find(o => o.kind === 'file' && o.bee === a.id && o.abs === abs)
+  if (!x) throw new Error('That file is no longer there')
+  if (how === 'open' && x.open) return void shell.openPath(x.abs)
+  shell.showItemInFolder(x.abs)
+}
+
 // ───────── Search ─────────
 // Everything that mentions q: skills, memory, each bee's conversation, the groups. Newest conversation hits first
 function searchAll(q) {
@@ -1500,11 +1538,11 @@ function showMain() {
   mainWin.loadFile(path.join(__dirname, 'index.html'))
   mainWin.on('closed', () => (mainWin = null))
 }
-function openChat(id, tab, find) {
+function openChat(id, tab, find, file) {
   const a = byId(id)
   if (!a) return
   const old = chats.get(id)
-  if (old && !old.isDestroyed()) { old.show(); old.focus(); if (tab) old.webContents.send('tab', tab); if (find) old.webContents.send('find', find); return }
+  if (old && !old.isDestroyed()) { old.show(); old.focus(); if (tab) old.webContents.send('tab', tab); if (find) old.webContents.send('find', find); if (file) old.webContents.send('file', file); return }
   const mb = mainWin && !mainWin.isDestroyed() ? mainWin.getBounds() : { x: 80, y: 60, width: 1380, height: 900 }
   const wa = screen.getDisplayMatching(mb).workArea, k = (chatCount++ % 8) + 1
   const width = Math.min(mb.width, wa.width), height = Math.min(mb.height, wa.height)
@@ -1514,7 +1552,7 @@ function openChat(id, tab, find) {
     x: clamp(mb.x + 28 * k, wa.x, wa.x + wa.width - width), y: clamp(mb.y + 28 * k, wa.y, wa.y + wa.height - height),
   })
   guard(w)
-  w.loadFile(path.join(__dirname, 'chat.html'), { query: { id, ...(tab ? { tab } : {}), ...(find ? { find } : {}) } })
+  w.loadFile(path.join(__dirname, 'chat.html'), { query: { id, ...(tab ? { tab } : {}), ...(find ? { find } : {}), ...(file ? { file } : {}) } })
   chats.set(id, w)
   w.on('closed', () => { if (chats.get(id) === w) chats.delete(id) })
 }
@@ -1594,8 +1632,11 @@ function ipc() {
     return { path: f, name: path.basename(f) }
   })
   handle('feed', () => state.feed)
-  handle('openChat', (id, tab, find) => openChat(id, tab === 'changes' || tab === 'files' ? tab : '', typeof find === 'string' ? find.slice(0, 100) : ''))
+  handle('openChat', (id, tab, find, file) => openChat(id, tab === 'changes' || tab === 'files' ? tab : '', typeof find === 'string' ? find.slice(0, 100) : '', typeof file === 'string' ? file.slice(0, 1024) : ''))
   handle('searchAll', q => searchAll(q))
+  handle('outputs', () => outputs())
+  handle('openOutput', (id, abs, how) => openOutput(id, String(abs || ''), how === 'open' ? 'open' : 'reveal'))
+  handle('openLink', url => { if (!/^https?:\/\//.test(String(url))) throw new Error('Not a web link'); shell.openExternal(String(url)) })
   handle('squadName', (id, name) => { const a = need(id); if (!Team.isLead(state.agents, a)) throw new Error('Only the first bee of a squad carries its name'); a.squadName = String(name || '').replace(/[@\n]/g, ' ').trim().slice(0, 30); if (!a.squadName) delete a.squadName; push() })
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: fs.existsSync(wsRoot()) ? wsRoot() : HOME })

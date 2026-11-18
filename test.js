@@ -53,6 +53,17 @@ const at = s => new Date(s)
     eq(slotKey(s, new Date(n.getTime() - 60000)) === slotKey(s, n), false)
   }
   eq(common.nextRun({ mode: 'interval', every: 30 }, now).getTime(), at('2026-11-17T10:30').getTime())
+  { // outputs: what a bee wrote, named or linked
+    const o = require('./outputs')
+    eq([o.kindOf('a/b/Report.PDF'), o.kindOf('x.png'), o.kindOf('main.py'), o.kindOf('noext'), o.canOpen('a.pdf'), o.canOpen('run.sh'), o.canOpen('page.html'), o.canOpen('Tool.app')], ['doc', 'image', 'code', 'code', true, false, false, false])
+    eq([o.siteOf('https://docs.google.com/presentation/d/1/edit'), o.siteOf('https://claude.ai/artifact/abc'), o.siteOf('https://github.com/a/b/pull/7'), o.siteOf('https://www.example.com/x')], ['Google Slides', 'Claude artifact', 'Pull request', 'example.com'])
+    const got = o.scan([
+      { role: 'tool', name: 'Write', input: { file_path: '/w/report.md', content: 'x' }, t: 5 }, { role: 'tool', name: 'Read', input: { file_path: '/w/secret.txt' }, t: 6 }, { role: 'tool', name: 'Edit', input: { file_path: '/w/report.md' }, t: 9 },
+      { role: 'assistant', t: 10, text: '画了每日趋势图，保存在 `tmp/sg_daily.png`。PDF 在 `~/out/周报 v2.pdf`，另见 [Q4 deck](https://docs.google.com/presentation/d/1AbC/edit#slide=id.p).\n链接：https://claude.ai/artifact/xyz。 Also (see https://example.com/a_(b)). Not a file: version 1.2.pdfx or http://localhost:3000/x.pdf' },
+      { role: 'assistant', t: 12, text: 'Updated tmp/sg_daily.png again and https://claude.ai/artifact/xyz' }, { role: 'assistant', sub: true, t: 13, text: 'sub.pdf' }, { role: 'user', t: 14, text: 'user.pdf https://user.example' }])
+    eq(got.filter(x => x.kind === 'file').map(x => [x.path, x.t, x.via]), [['/w/report.md', 9, 'wrote'], ['tmp/sg_daily.png', 12, 'named'], ['~/out/周报 v2.pdf', 10, 'named']])
+    eq(got.filter(x => x.kind === 'link').map(x => [x.url, x.site, x.label, x.t]), [['https://docs.google.com/presentation/d/1AbC/edit#slide=id.p', 'Google Slides', 'Q4 deck', 10], ['https://claude.ai/artifact/xyz', 'Claude artifact', '', 12], ['https://example.com/a_(b)', 'example.com', '', 10]])
+  }
   { // event triggers
     const ev = require('./events'), bees = [{ id: 'a', name: 'Mochi' }, { id: 'b', name: 'Pip' }]
     eq(ev.parseEvent({ type: 'commit', branch: ' main ', remote: 1 }), { type: 'commit', cooldown: 5, branch: 'main', remote: true }); assert.throws(() => ev.parseEvent({ type: 'commit', branch: '--upload-pack=x' }), /branch name/); assert.throws(() => ev.parseEvent({ type: 'commit', branch: 'a b' }), /branch name/)
