@@ -326,7 +326,7 @@ function renderView() {
   const v = $('#view'), c = F.cur
   if (!c) { v.innerHTML = '<div class="note">Pick a file to read or edit it</div>'; return }
   const canEdit = c.kind === 'text' && !c.cut && !c.outside
-  const bar = `<div class="vbar"><span class="vdot" id="v-dot" hidden title="Unsaved changes">●</span><span class="grow ell" title="${esc(c.abs)}">${esc(c.rel)}</span><span class="sz" id="v-sz">${fmtSize(c.size)}${c.cut ? ' · first 400 KB shown, read-only' : c.kind === 'text' && c.outside ? ' · outside the folder, read-only' : ''}</span>`
+  const bar = `<div class="vbar"><button class="btn sm ghost vback" data-v="back" title="Back to the conversation (Esc)">← Chat</button><span class="vdot" id="v-dot" hidden title="Unsaved changes">●</span><span class="grow ell" title="${esc(c.abs)}">${esc(c.rel)}</span><span class="sz" id="v-sz">${fmtSize(c.size)}${c.cut ? ' · first 400 KB shown, read-only' : c.kind === 'text' && c.outside ? ' · outside the folder, read-only' : ''}</span>`
     + (c.kind === 'text' ? `<button class="btn sm icon ghost" data-v="find" title="Find ⌘F">${ICON.search}</button>` : '') + (canEdit ? `<button class="btn sm" data-v="save" id="v-save" disabled title="Save ⌘S">Save</button>` : '')
     + `<button class="btn sm icon ghost" data-v="reveal" title="Show in Finder">${ICON.finder}</button></div>`
   if (c.kind === 'image') v.innerHTML = `${bar}<div class="vbody"><div class="vimg"><img src="${esc(fileUrl(c.abs))}" alt=""></div></div>`
@@ -556,7 +556,8 @@ $('#view').addEventListener('click', e => {
   const b = e.target.closest('[data-v]')
   if (!b || !F.cur) return
   const k = b.dataset.v
-  if (k === 'reveal') call('revealPath', ID, F.cur.rel)
+  if (k === 'back') setTab('chat')
+  else if (k === 'reveal') call('revealPath', ID, F.cur.rel)
   else if (k === 'save') saveFile()
   else if (k === 'find') ($('#v-find').hidden ? openFind() : closeFind())
   else if (k === 'next') showHit(1)
@@ -831,6 +832,8 @@ document.addEventListener('keydown', e => {
   if (e.metaKey && e.key === '2') { e.preventDefault(); setTab('changes') }
   if (e.metaKey && e.key === '3') { e.preventDefault(); setTab('files') }
   if (e.metaKey && e.key === 'b') { e.preventDefault(); setSide($('#tree').hidden) }
+  // Esc leaves the file and goes back to the conversation, unless it is closing something smaller first
+  if (e.key === 'Escape' && tab === 'files' && !e.defaultPrevented && !$('#ctx') && !(e.target.closest && e.target.closest('#tree input, #v-find')) && !($('#v-find') && !$('#v-find').hidden)) { e.preventDefault(); setTab('chat') }
   if (e.metaKey && !e.shiftKey && e.key === 's' && tab === 'files') { e.preventDefault(); saveFile() }
   if (e.metaKey && !e.shiftKey && e.key === 'f' && tab === 'files' && F.cur && F.cur.kind === 'text') { e.preventDefault(); openFind() }
   if (e.metaKey && ((e.shiftKey && e.key.toLowerCase() === 'f') || (!e.shiftKey && e.key === 'p'))) { e.preventDefault(); setSearch(true) }
