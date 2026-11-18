@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, 
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http'), crypto = require('crypto')
 const { spawn, execFile, execFileSync } = require('child_process')
 const { rankOf } = require('./common')
-const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files')
+const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files'), evs = require('./events')
 const { upIds } = Team, { git, tryGit, repoInfo, headOf, slotKey, ymd } = core
 const NIGHT = garden.NIGHT
 
@@ -12,8 +12,8 @@ app.setName('Agent Hive')
 if (process.env.HIVE_DATA) app.setPath('userData', path.resolve(process.env.HIVE_DATA))      // use a separate data directory in tests
 const HOME = os.homedir(), MAX = 40
 const COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']
-const PERMS = ['ask', 'safe', 'full', 'plan'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval']
-const GATED = { schedule: 'scheduled run', handoff: 'relay handoff', feedback: 'review feedback', resume: 'auto-resume', queen: 'task from Queen' }
+const PERMS = ['ask', 'safe', 'full', 'plan'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'event']
+const GATED = { event: 'event run', schedule: 'scheduled run', handoff: 'relay handoff', feedback: 'review feedback', resume: 'auto-resume', queen: 'task from Queen' }
 // Status lines written by pre-English builds; dropped from the activity feed on load
 const LEGACY_FEED = /\u8dd1\u5b8c\u4e86|\u51fa\u9519|\u7b49\u4f60|\u901a\u8fc7\uff08|\u8fd9\u4e00\u8def|\u7684\u7ed3\u679c|\u5df2\u7ecf\u6765\u56de|\u51c6\u5907\u4ed3\u5e93|\u9884\u7b97|\u6ca1\u6709\u7ed9\u51fa|\u8df3\u8fc7\u4e86|\u5b8c\u4e86 \u00b7|\u5931\u8d25/
 let DIR, LOGS, REPORTS, STATE
@@ -231,7 +231,7 @@ function fail(a, text) { log(a, { role: 'error', text }); a.status = 'error'; ev
 function run(a, prompt, why = 'manual', meta = {}) {
   if (!alive(a) || !prompt) return
   if (procs.has(a.id) || a.status === 'setup' || folderBusy(a))
-    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, oneOff: meta.oneOff, compacted: meta.compacted, shown: meta.shown, at: Date.now() })
+    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, oneOff: meta.oneOff, compacted: meta.compacted, shown: meta.shown, evDepth: meta.evDepth, at: Date.now() })
   if (GATED[why] && overBudget()) {
     const text = `Today's budget $${state.settings.budget} is used up, so the ${GATED[why]} did not run. Manual messages still work.`
     log(a, { role: 'error', text }); event(a, text, 'budget', true)
@@ -239,19 +239,19 @@ function run(a, prompt, why = 'manual', meta = {}) {
     return
   }
   const one = !!meta.oneOff                             // a short question answered in a throwaway session, so the main one does not grow
-  if (why === 'schedule' && a.freshSchedule !== false && a.sessionId) { delete a.sessionId; delete a.context; log(a, { role: 'system', text: 'Scheduled run: starting a new session' }) }
+  if ((why === 'schedule' || why === 'event') && a.freshSchedule !== false && a.sessionId) { delete a.sessionId; delete a.context; log(a, { role: 'system', text: `${why === 'event' ? 'Event' : 'Scheduled'} run: starting a new session` }) }
   if (!one && !meta.compacted && why !== 'resume' && !String(prompt).startsWith('/') && !Team.isParallel(state.agents, a.id) && a.sessionCwd && fs.existsSync(a.sessionCwd)) {
     const reason = core.compactWhy(a, state.settings)
     if (reason) {                                        // compact now, then run this prompt right after
       if (!meta.silent && !meta.shown) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show the message now, not after the compaction
-      enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, compacted: true, shown: true, at: 0 })
+      enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, evDepth: meta.evDepth, compacted: true, shown: true, at: 0 })
       log(a, { role: 'system', text: reason })
       const room = meta.room && state.rooms.find(x => x.id === meta.room)
       if (room) roomLog(room, { who: a.id, name: a.name, color: a.color, kind: 'system', text: `${a.name}: ${reason[0].toLowerCase()}${reason.slice(1)}` })
       return run(a, '/compact', 'chat', { compacted: true, silent: true })
     }
   }
-  if (why !== 'resume') a.ctx = { why, silent: meta.silent, round: meta.round || 0, room: meta.room, hop: meta.hop || 0, batch: meta.batch, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
+  if (why !== 'resume') a.ctx = { why, silent: meta.silent, round: meta.round || 0, room: meta.room, hop: meta.hop || 0, batch: meta.batch, evDepth: meta.evDepth || 0, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
   if (one) log(a, { role: 'system', text: 'Answering in a side session; the main session stays as it is' })
   if (!meta.silent && !meta.shown) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show: the conversation shows only what the user wrote, not the attached group context
   if (!fs.existsSync(a.workspace)) return fail(a, `Workspace does not exist: ${a.workspace}`)
@@ -334,6 +334,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
     // dispatched by Queen / mentioned in a group: hand the result back to the group (a sleeping bee hands it in after it wakes and finishes)
     const forced = p.interrupted ? 'INTERRUPTED' : a.status === 'stopped' ? 'STOPPED' : a.status === 'error' ? 'ERROR' : null
     if (a.status !== 'sleeping') { teamResult(a, said.join('\n\n') || lastErr, forced); squadAfter(a, planned, said.join('\n\n') || lastErr, forced) }
+    eventsAfter(a, clean ? 'done' : a.status === 'error' ? 'error' : null, said.join('\n\n') || lastErr, one)
     push()
     drainFolder(a)
   }
@@ -455,6 +456,7 @@ function tick() {
     a.lastSchedKey = key
     run(a, a.prompt, 'schedule')
   }
+  eventTick()
   for (const k in NIGHT) {
     const n = state.settings.night[k], key = slotKey({ mode: 'daily', time: n.time }, now)
     if (key && key !== n.lastKey) { n.lastKey = key; nightRun(k) }
@@ -462,6 +464,88 @@ function tick() {
   const rk = slotKey({ mode: 'daily', time: state.settings.reportTime }, now)
   if (rk && rk !== state.settings.lastReportKey) { state.settings.lastReportKey = rk; if (state.agents.length) queenReport(today()) }
   save()
+}
+
+// ───────── Event triggers ─────────
+// A bee whose schedule is "On event" runs when something happens. a.evt remembers what it has already seen.
+// Its own round resets that memory, so what the bee itself commits or comments never wakes it again
+const EV_POLL = 5 * 60000, EV_DEPTH = 3
+const sh = (cmd, args, cwd, ms = 30000) => new Promise(resolve => execFile(cmd, args, { cwd, timeout: ms, maxBuffer: 8 << 20, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes', GH_PROMPT_DISABLED: '1', ELECTRON_RUN_AS_NODE: undefined } }, (e, out) => resolve(e ? null : String(out))))
+const evOf = a => (a.schedule && a.schedule.mode === 'event' && a.prompt ? a.schedule.event : null)
+const evReady = a => !['paused', 'stopped', 'sleeping', 'setup'].includes(a.status) && !beeBusy(a) && !squadRunOf(a.id)
+function evFire(a, title, lines, depth = 0) {
+  const st = (a.evt = a.evt || {})
+  st.fired = Date.now()
+  run(a, evs.eventPrompt(a.prompt, title, lines), 'event', { evDepth: depth })
+}
+// → the commit the watched branch is at now, or '' when it cannot be told
+async function evHead(a, ev, st, dir) {
+  if (!ev.remote) return ((await sh('git', ['rev-parse', '--verify', '-q', ev.branch || 'HEAD'], dir)) || '').trim()
+  const branch = ev.branch || ((await sh('git', ['rev-parse', '--abbrev-ref', 'HEAD'], dir)) || '').trim()
+  if (!branch || branch === 'HEAD') return ''
+  if (Date.now() - (st.fetched || 0) >= EV_POLL) { st.fetched = Date.now(); await sh('git', ['fetch', '--quiet', 'origin', branch], dir, 60000) }
+  return ((await sh('git', ['rev-parse', '--verify', '-q', `origin/${branch}`], dir)) || '').trim()
+}
+async function evGithub(dir, what, since) {
+  const json = async args => { const out = await sh('gh', args, dir); try { return out == null ? null : JSON.parse(out) } catch { return null } }
+  const snap = {}
+  if (what.includes('pr')) snap.prs = await json(['pr', 'list', '--state', 'open', '--limit', '30', '--json', 'number,title,url,author'])
+  if (what.includes('ci')) snap.runs = await json(['run', 'list', '--limit', '20', '--json', 'databaseId,name,conclusion,status,headBranch,url'])
+  if (what.includes('comment')) {
+    const q = `since=${new Date(since || Date.now() - 60000).toISOString()}&per_page=30`
+    const [x, y] = await Promise.all([json(['api', `repos/{owner}/{repo}/issues/comments?${q}`]), json(['api', `repos/{owner}/{repo}/pulls/comments?${q}`])])
+    if (x || y) snap.comments = [...(Array.isArray(x) ? x : []), ...(Array.isArray(y) ? y : [])]
+  }
+  return snap
+}
+let evBusy = false
+async function eventTick() {
+  if (evBusy) return
+  evBusy = true
+  try {
+    for (const a of [...state.agents]) {
+      const ev = evOf(a)
+      if (!ev || !alive(a) || !evReady(a)) continue
+      const st = (a.evt = a.evt || {}), now = Date.now(), dir = dirOf(a)
+      if (now - (st.fired || 0) < (ev.cooldown || 0) * 60000) continue
+      if (ev.type === 'bee') { if (st.pending) { const p = st.pending; delete st.pending; evFire(a, p.title, p.lines, p.depth) } continue }
+      if (!fs.existsSync(dir)) continue
+      if (ev.type === 'commit') {
+        const sha = await evHead(a, ev, st, dir)
+        if (!sha || !alive(a) || !evReady(a) || evOf(a) !== ev) continue
+        if (!st.sha) { st.sha = sha; continue }           // first look: take note, do not run
+        if (sha === st.sha) continue
+        const logText = (await sh('git', ['log', '--oneline', '-n', '20', `${st.sha}..${sha}`], dir)) || ''
+        const was = st.sha
+        st.sha = sha
+        const lines = logText.trim().split('\n').filter(Boolean)
+        if (!lines.length) continue                        // the branch moved back (a reset): nothing new to look at
+        evFire(a, `New commit${lines.length === 1 ? '' : 's'} on ${ev.branch || 'the current branch'}${ev.remote ? ' (remote)' : ''}, ${was.slice(0, 7)}..${sha.slice(0, 7)}:`, lines)
+      } else if (ev.type === 'github') {
+        if (now - (st.ghAt || 0) < EV_POLL || !core.onPath('gh')) continue
+        st.ghAt = now
+        const snap = await evGithub(dir, ev.what, st.gh && st.gh.since)
+        if (!alive(a) || !evReady(a) || evOf(a) !== ev) continue
+        const d = evs.ghDiff(st.gh, snap, ev.what, now)
+        st.gh = d.st
+        if (d.lines.length) evFire(a, 'On GitHub:', d.lines)
+      }
+    }
+  } finally { evBusy = false; save() }
+}
+// a bee ended a round: forget what its own work produced, and wake the bees that wait for it
+function eventsAfter(a, outcome, reply, oneOff) {
+  if (a.evt) { delete a.evt.sha; delete a.evt.gh; delete a.evt.ghAt }
+  const c = a.ctx || {}
+  if (!outcome || c.silent || oneOff) return
+  const depth = (c.why === 'event' ? c.evDepth || 0 : 0) + 1
+  for (const b of state.agents) {
+    if (!evs.beeMatch(b, a, outcome) || !b.prompt) continue
+    if (depth > EV_DEPTH) { log(b, { role: 'system', text: `Not started by ${a.name} this time: ${EV_DEPTH} event runs in a row already` }); continue }
+    const st = (b.evt = b.evt || {})
+    st.pending = { title: `${a.name} ${outcome === 'error' ? 'failed' : 'finished a round'}. Its last reply:`, lines: [String(reply || '(no reply)').trim().slice(-4000)], depth }
+  }
+  setTimeout(eventTick, 200)
 }
 
 // ───────── Remote setup ─────────
@@ -1214,7 +1298,7 @@ function stats(date) {
 
 // ───────── Settings validation (trust boundary: every argument from the renderer passes through here) ─────────
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
-function parseSchedule(c, prompt) {
+function parseSchedule(c, prompt, selfId) {
   c = c || {}
   const mode = MODES.includes(c.mode) ? c.mode : 'manual'
   const s = { mode, time: HHMM.test(c.time) ? c.time : '09:00', at: '', every: Math.min(1440, Math.max(5, Math.round(+c.every) || 60)) }
@@ -1224,7 +1308,8 @@ function parseSchedule(c, prompt) {
     if (!s.days.length) throw new Error('Pick at least one day for a weekly run')
   }
   if (mode === 'monthly') { s.dom = Math.round(+c.dom); if (!(s.dom >= 1 && s.dom <= 31)) throw new Error('The day of the month must be 1-31') }
-  if (mode !== 'manual' && !prompt) throw new Error('A scheduled run needs initial instructions')
+  if (mode === 'event') s.event = evs.parseEvent(c.event, state.agents, selfId)
+  if (mode !== 'manual' && !prompt) throw new Error(mode === 'event' ? 'An event run needs instructions: what the bee should do when it happens' : 'A scheduled run needs initial instructions')
   return s
 }
 function parseSettings(c) {
@@ -1243,11 +1328,11 @@ function parseSettings(c) {
     permission: PERMS.includes(c.permission) ? c.permission : 'full',
     sleepResume: c.sleepResume !== false, isolate: !!c.isolate, freshSchedule: c.freshSchedule !== false, noMcp: !!c.noMcp, noSkills: !!c.noSkills,
     mcpOff: (Array.isArray(c.mcpOff) ? c.mcpOff : []).filter(n => typeof n === 'string' && n.length <= 120).slice(0, 200),
-    schedule: parseSchedule(c.schedule, prompt),
+    schedule: parseSchedule(c.schedule, prompt, c.selfId),
   }
 }
 const absPath = p => { p = expand(String(p || '').trim()); if (!path.isAbsolute(p)) throw new Error('The path must be absolute or start with ~/'); return path.resolve(p) }
-const setSchedKey = a => { if (a.schedule.mode === 'adhoc') delete a.lastSchedKey; else a.lastSchedKey = slotKey(a.schedule, new Date()) || '' }
+const setSchedKey = a => { delete a.evt; if (a.schedule.mode === 'adhoc') delete a.lastSchedKey; else a.lastSchedKey = slotKey(a.schedule, new Date()) || '' }
 
 // a parallel layer cannot use "send feedback back"
 function checkLoop(agents, id) {
@@ -1299,7 +1384,7 @@ function create(c) {
 function update(id, c) {
   const a = byId(id)
   if (!a) throw new Error('This bee no longer exists')
-  const s = parseSettings({ ...c, engine: c.engine || a.engine })
+  const s = parseSettings({ ...c, engine: c.engine || a.engine, selfId: id })
   const after = a.after && c.after ? { ...a.after, prompt: String(c.after.prompt || '').trim().slice(0, 20000) || a.after.prompt, loop: !!c.after.loop } : a.after
   if (after) checkLoop(state.agents.map(x => (x === a ? { ...a, after } : x)), a.id)
   if (inRelay(a)) s.isolate = false
@@ -1446,7 +1531,7 @@ function ipc() {
   handle('init', () => ({
     update: updatePublic(), version: curVersion(), canSwap: canSwap(),
     agents: state.agents, engines: enginesInfo(), settings: state.settings, max: MAX, home: HOME, names: core.NAMES, colors: COLORS,
-    presets: core.PRESETS, maxRounds: core.MAX_ROUNDS, teamMax: core.TEAM_MAX, feed: state.feed, spend: (rollSpend(), state.spend), night: NIGHT, queenBusy, rooms: state.rooms.map(roomPublic),
+    hasGh: core.onPath('gh'), presets: core.PRESETS, maxRounds: core.MAX_ROUNDS, teamMax: core.TEAM_MAX, feed: state.feed, spend: (rollSpend(), state.spend), night: NIGHT, queenBusy, rooms: state.rooms.map(roomPublic),
   }))
   handle('isRepo', p => !!repoInfo(absPath(p)))
   handle('exists', p => { try { const st = fs.statSync(absPath(p)); return st.isDirectory() ? 'dir' : 'file' } catch { return 'none' } })

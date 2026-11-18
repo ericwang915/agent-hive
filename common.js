@@ -146,9 +146,17 @@ function ago(t, now = Date.now()) {
 
 const isWeekdays = s => s.mode === 'weekdays' || (s.mode === 'weekly' && (s.days || []).join() === '1,2,3,4,5')
 const isWeekends = s => s.mode === 'weekly' && [...(s.days || [])].sort().join() === '0,6'
+// An event trigger in a few words. nameOf: bee id → name (optional)
+function eventText(e, nameOf) {
+  if (!e) return 'On event'
+  if (e.type === 'github') return `On GitHub: ${(e.what || []).map(w => ({ pr: 'new PR', comment: 'new comment', ci: 'CI failure' }[w])).filter(Boolean).join(', ')}`
+  if (e.type === 'bee') { const n = (e.ids || []).map(id => (nameOf ? nameOf(id) : '')).filter(Boolean); return `When ${n.length ? n.join(' or ') : 'a bee'} ${e.on === 'error' ? 'fails' : e.on === 'any' ? 'ends a round' : 'finishes'}` }
+  return `On commit${e.branch ? ` to ${e.branch}` : ''}${e.remote ? ' (remote)' : ''}`
+}
 function schedText(s) {
   if (!s) return 'Manual'
   switch (s.mode) {
+    case 'event': return eventText(s.event)
     case 'adhoc': return `Once · ${String(s.at || '').slice(5).replace('T', ' ')}`
     case 'daily': return `Daily ${s.time}`
     case 'weekdays': return `Weekdays ${s.time}`
@@ -173,7 +181,7 @@ function dayMatch(s, d) {
 }
 // Next run time (Date) or null
 function nextRun(s, now = new Date()) {
-  if (!s || s.mode === 'manual') return null
+  if (!s || s.mode === 'manual' || s.mode === 'event') return null
   if (s.mode === 'adhoc') { const d = new Date(s.at); return s.at && d > now ? d : null }
   if (s.mode === 'interval') { const ms = Math.max(1, s.every || 60) * 60000; return new Date((Math.floor(now.getTime() / ms) + 1) * ms) }
   const [h, m] = String(s.time || '09:00').split(':').map(Number)
@@ -251,4 +259,4 @@ async function call(ch, ...args) {
 const animT = () => `--t:${Math.round(performance.now())}`
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends }
+  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends, eventText }

@@ -84,6 +84,7 @@ Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave 
 ### And the rest
 
 - **Schedules.** Once, daily, weekly, monthly, or every N minutes. Runs missed while the Mac slept are caught up the same day.
+- **Event triggers.** Instead of a time, a bee can wait for something to happen: new commits on a branch (in its folder or on the remote), a GitHub event (new pull request, new comment, CI failure, through the `gh` CLI), or another bee finishing or failing. What happened is attached to its prompt. Its own commits and comments do not wake it, and a cooldown keeps bursts to one run.
 - **Sleep-safe.** Running bees stop when the lid closes and pick up where they left off when it opens, or when the app restarts.
 - **Permissions.** Approve each action from the app (Claude Code), auto-accept edits, allow everything, or plan first and change nothing. Switch at any time from the chat.
 - **Context.** A meter shows how full a Claude Code bee's session is. `/compact` summarises it on the spot, and `/new` starts over.
@@ -175,6 +176,7 @@ No build step and no framework: plain HTML, CSS and JS in the renderer, Electron
 | `team.js` | Relay-team graph helpers, shared by main and renderer |
 | `queen.js` | Queen's tools, dispatch rules and result parsing |
 | `garden.js` | Skills and memory files, Dreamer and Gardener prompts |
+| `events.js` | Event triggers: checking the settings, telling what is new on GitHub, matching a finished bee |
 | `update.js` | Upgrade: finding, downloading, verifying and installing a newer release |
 | `files.js` | File browser: listing, reading and locating paths inside a bee's folder |
 | `approve-mcp.js`, `hive-mcp.js` | Small MCP stdio servers that call back into the app |

@@ -70,7 +70,7 @@ function buildHive() {
 const scheduled = a => a.schedule && a.schedule.mode !== 'manual'
 const FILTERS = [['all', 'All', () => true], ['running', 'Running', a => a.status === 'running' || a.status === 'setup'], ['paused', 'Paused', a => a.status === 'paused' || a.status === 'sleeping'],
   ['sched', 'Scheduled', scheduled], ['error', 'Error', a => a.status === 'error'], ['stopped', 'Stopped', a => a.status === 'stopped']]
-const KINDS = [['adhoc', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval']]
+const KINDS = [['adhoc', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval'], ['event', 'On event']]
 const matches = a => !query || [a.name, a.task, a.workspace, eng(a.engine).label, a.engine, a.model].some(x => String(x || '').toLowerCase().includes(query))
 
 function renderHive() {
@@ -112,6 +112,7 @@ const subline = a => [eng(a.engine).label, a.model, a.queue && a.queue.length ? 
 const tailHtml = a => `<button class="tail" data-act="chat" data-id="${a.id}" title="Open chat">${a.tail && a.tail.length ? a.tail.map(l => `<div>${esc(l)}</div>`).join('') : '<div class="empty">No output yet</div>'}</button>`
 function schedMeta(a) {
   if (!scheduled(a)) return 'Manual'
+  if (a.schedule.mode === 'event') return eventText(a.schedule.event, id => (byId(id) || {}).name) + (a.status === 'paused' || a.status === 'stopped' ? ' · off' : '')
   const t = schedText(a.schedule)
   if (a.status === 'paused' || a.status === 'stopped') return t + ' · off'
   const d = nextRun(a.schedule)
@@ -221,13 +222,13 @@ function openHatch(pre = {}) {
   const usedColors = new Set(S.agents.map(x => x.color))
   F = a ? {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
-    sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}), asDaily: !!onlyOf(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : a.schedule) },
+    sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, event: { ...{ type: 'commit', branch: '', remote: false, what: ['pr'], ids: [], on: 'done', cooldown: 5 }, ...(a.schedule.event || {}) }, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}), asDaily: !!onlyOf(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : a.schedule) },
     sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [], noSkills: !!a.noSkills,
     after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
     mode: 'create', name: '', task: '', taskTouched: false, wsCustom: '', gitUrl: '', gitBranch: '',
     color: S.colors.find(c => !usedColors.has(c)) || S.colors[S.agents.length % S.colors.length], engine: firstInstalled(), model: '', template: '', prompt: '',
-    sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1 },
+    sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, event: { type: 'commit', branch: '', remote: false, what: ['pr'], ids: [], on: 'done', cooldown: 5 } },
     sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [], noSkills: false,
     after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false }, engineTouched: false,
   }
@@ -386,7 +387,22 @@ function updEngine() {
 }
 const updModelSeg = () => { const el = $('#model-seg'); if (el) el.innerHTML = [['', 'Default'], ...eng(F.engine).models.slice(0, 5).map(m => [m, m])].map(([v, l]) => `<button type="button" class="${F.model === v ? 'on' : ''}" data-act="f-model" data-m="${esc(v)}">${esc(l)}</button>`).join('') }
 
-const MODES = [['manual', 'Manual'], ['adhoc', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval']]
+const MODES = [['manual', 'Manual'], ['adhoc', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval'], ['event', 'Event']]
+const EV_TYPES = [['commit', 'Git commit'], ['github', 'GitHub'], ['bee', 'A bee finishes']], EV_WHAT = [['pr', 'New pull request'], ['comment', 'New comment'], ['ci', 'CI failure']], EV_ON = [['done', 'Finishes'], ['error', 'Fails'], ['any', 'Either']]
+// "On event": what the bee waits for
+function eventFormHtml(e) {
+  const seg = (list, cur, act) => `<div class="seg sm">${list.map(([k, l]) => `<button type="button" class="${cur === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${l}</button>`).join('')}</div>`
+  const others = S.agents.filter(a => !F.id || a.id !== F.id)
+  const body = {
+    commit: `<input type="text" data-input="f-ev-branch" value="${esc(e.branch)}" placeholder="Branch (current one if empty)" spellcheck="false" style="width:210px">${seg([['local', 'In this folder'], ['remote', 'On the remote']], e.remote ? 'remote' : 'local', 'f-ev-remote')}
+      <div class="hint" style="width:100%;margin:0">${e.remote ? 'Fetches origin every 5 minutes and runs when the branch has new commits.' : 'Runs when the branch in this bee\'s folder gets new commits.'} The bee's own commits do not count.</div>`,
+    github: `${EV_WHAT.map(([k, l]) => `<label class="check" style="align-items:center"><input type="checkbox" data-change="f-ev-what" data-k="${k}" ${e.what.includes(k) ? 'checked' : ''} style="margin:0">${l}</label>`).join('')}
+      <div class="hint${S.hasGh ? '' : ' warn'}" style="width:100%;margin:0">${S.hasGh ? 'Asks GitHub every 5 minutes through the gh CLI, for the repository in this bee\'s folder.' : 'Needs the gh CLI, which was not found on this Mac. Install it and run "gh auth login".'}</div>`,
+    bee: `${others.length ? `<div class="ev-bees">${others.map(a => `<label class="check" style="align-items:center"><input type="checkbox" data-change="f-ev-bee" data-k="${a.id}" ${e.ids.includes(a.id) ? 'checked' : ''} style="margin:0"><span class="dot" style="background:${esc(a.color)}"></span>${esc(a.name)}</label>`).join('')}</div>` : '<span class="hint" style="margin:0">No other bees yet</span>'}${seg(EV_ON, e.on, 'f-ev-on')}
+      <div class="hint" style="width:100%;margin:0">Runs with that bee's last reply attached. Works across folders and squads.</div>`,
+  }[e.type]
+  return `${seg(EV_TYPES, e.type, 'f-ev-type')}<div class="ev-body">${body}</div><div class="ev-cool">At most once every <input type="number" min="0" max="1440" data-input="f-ev-cool" value="${e.cooldown}" style="width:70px"> min</div>`
+}
 // Daily also covers "weekdays only" and "weekends only": stored as a weekly schedule with those days, shown under Daily
 const onlyOf = s => (s.mode !== 'weekly' ? '' : isWeekdays(s) ? 'weekdays' : isWeekends(s) ? 'weekends' : '')
 function updSched() {
@@ -398,6 +414,7 @@ function updSched() {
     weekly: `<div class="days">${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" class="${(s.days || []).includes(d) ? 'on' : ''}" data-act="f-day" data-d="${d}">${DAYS[d]}</button>`).join('')}<button type="button" class="wk" data-act="f-weekdays">Weekdays</button><button type="button" class="wk" data-act="f-weekends">Weekends</button></div>${time}`,
     monthly: `Day <input type="number" min="1" max="31" data-input="f-dom" value="${s.dom || 1}" style="width:70px"> ${time}<div class="hint" style="width:100%;margin:0">Shorter months run on their last day</div>`,
     interval: `Every <input type="number" min="5" max="1440" data-input="f-every" value="${s.every || 60}" style="width:84px"> min`,
+    event: eventFormHtml(s.event),
   }[shown]
   $('#sec-sched').innerHTML = `<div class="seg">${MODES.map(([k, l]) => `<button type="button" class="${shown === k ? 'on' : ''}" data-act="f-mode" data-k="${k}">${l}</button>`).join('')}</div><div class="sched-extra">${extra}</div>`
 }
@@ -440,7 +457,7 @@ async function submitForm() {
   const cfg = {
     name: F.name.trim(), task: (relay ? F.afterTask : F.task).trim(), workspace: relay ? '' : F.wsCustom, color: F.color, engine: F.engine, model: F.model.trim(), template: F.template,
     prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff, noSkills: F.noSkills,
-    schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom },
+    schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom, event: s.mode === 'event' ? s.event : undefined },
     git: relay || F.mode === 'edit' ? null : { url: F.gitUrl.trim(), branch: F.gitBranch.trim() },
     after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop } : null,
   }
@@ -481,6 +498,7 @@ const INPUT = {
   'f-template': v => { F.template = v; updPreview() },
   'f-prompt': v => { F.prompt = v },
   'f-after-prompt': v => { F.after.prompt = v; if (F.after.role && F.after.role !== 'custom' && v !== S.presets[F.after.role].prompt) { F.after.role = 'custom'; document.querySelectorAll('[data-act="f-role"]').forEach(b => b.classList.toggle('on', b.dataset.k === 'custom')) } },
+  'f-ev-branch': v => { F.sched.event.branch = v }, 'f-ev-cool': v => { F.sched.event.cooldown = Math.max(0, +v || 0) },
   'f-time': v => { F.sched.time = v }, 'f-at': v => { F.sched.at = v }, 'f-dom': v => { F.sched.dom = v }, 'f-every': v => { F.sched.every = v },
 }
 const CHANGE = {
@@ -489,6 +507,8 @@ const CHANGE = {
     setAfter(row); updRelay(); updWs(); updGit(); updEngine(); lockTask()
   },
   'f-loop': el => { F.after.loop = el.checked },
+  'f-ev-what': el => { const s = new Set(F.sched.event.what); el.checked ? s.add(el.dataset.k) : s.delete(el.dataset.k); F.sched.event.what = [...s] },
+  'f-ev-bee': el => { const s = new Set(F.sched.event.ids); el.checked ? s.add(el.dataset.k) : s.delete(el.dataset.k); F.sched.event.ids = [...s] },
   'f-sleep': el => { F.sleepResume = el.checked },
   'f-fresh': el => { F.freshSchedule = el.checked },
   'f-noskills': el => { F.noSkills = el.checked },
@@ -745,6 +765,9 @@ const ACT = {
   'f-day': el => { const d = +el.dataset.d, s = new Set(F.sched.days || []); s.has(d) ? s.delete(d) : s.add(d); F.sched.days = [...s].sort(); updSched() },
   'f-weekdays': () => { F.sched.days = [1, 2, 3, 4, 5]; updSched() },
   'f-weekends': () => { F.sched.days = [0, 6]; updSched() },
+  'f-ev-type': el => { F.sched.event.type = el.dataset.k; updSched() },
+  'f-ev-remote': el => { F.sched.event.remote = el.dataset.k === 'remote'; updSched() },
+  'f-ev-on': el => { F.sched.event.on = el.dataset.k; updSched() },
   'f-only': el => { const k = el.dataset.k; Object.assign(F.sched, k ? { mode: 'weekly', days: k === 'weekdays' ? [1, 2, 3, 4, 5] : [0, 6], asDaily: true } : { mode: 'daily', asDaily: false }); updSched() },
   'f-perm': el => { F.permission = el.dataset.k; updBeh() },
   // Garden

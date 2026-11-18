@@ -14,7 +14,7 @@ const isLead = () => Team.isLead(S.agents, A)
 const tl = $('#tl'), pane = $('#pane-chat')
 const nearBottom = () => pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120
 const toBottom = () => { pane.scrollTop = pane.scrollHeight }
-const WHY = { squad: e => `Squad job from ${e.from || 'the group'}`, queen: () => 'From Queen', room: () => 'From group', schedule: () => 'Scheduled', resume: () => 'Auto-resume', handoff: e => `Relay from ${e.from || 'upstream'}`, feedback: e => `Review from ${e.from || 'Reviewer'}` }
+const WHY = { event: () => 'Event', squad: e => `Squad job from ${e.from || 'the group'}`, queen: () => 'From Queen', room: () => 'From group', schedule: () => 'Scheduled', resume: () => 'Auto-resume', handoff: e => `Relay from ${e.from || 'upstream'}`, feedback: e => `Review from ${e.from || 'Reviewer'}` }
 const IMG_RE = /(?<![\w:/.~-])((?:~\/|\.{0,2}\/)?[\w\-.@\u4e00-\u9fa5]+(?:\/[\w\-.@\u4e00-\u9fa5]+)*\.(?:png|jpe?g|gif|webp|svg))(?![\w/])/gi
 
 function galleryOf(text, html, stamp) {

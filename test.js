@@ -53,6 +53,26 @@ const at = s => new Date(s)
     eq(slotKey(s, new Date(n.getTime() - 60000)) === slotKey(s, n), false)
   }
   eq(common.nextRun({ mode: 'interval', every: 30 }, now).getTime(), at('2026-11-17T10:30').getTime())
+  { // event triggers
+    const ev = require('./events'), bees = [{ id: 'a', name: 'Mochi' }, { id: 'b', name: 'Pip' }]
+    eq(ev.parseEvent({ type: 'commit', branch: ' main ', remote: 1 }), { type: 'commit', cooldown: 5, branch: 'main', remote: true }); assert.throws(() => ev.parseEvent({ type: 'commit', branch: '--upload-pack=x' }), /branch name/); assert.throws(() => ev.parseEvent({ type: 'commit', branch: 'a b' }), /branch name/)
+    eq(ev.parseEvent({ type: 'github', what: ['ci', 'pr', 'zz'], cooldown: 0 }), { type: 'github', cooldown: 0, what: ['pr', 'ci'] }); assert.throws(() => ev.parseEvent({ type: 'github', what: [] }), /at least one/)
+    eq(ev.parseEvent({ type: 'bee', ids: ['a', 'b', 'gone', 'a'], on: 'error', cooldown: 99999 }, bees, 'b'), { type: 'bee', cooldown: 1440, ids: ['a'], on: 'error' }); assert.throws(() => ev.parseEvent({ type: 'bee', ids: ['b'] }, bees, 'b'), /Pick the bee/)
+    eq([common.schedText({ mode: 'event', event: { type: 'commit', branch: 'main', remote: true } }), common.eventText({ type: 'github', what: ['pr', 'ci'] }), common.eventText({ type: 'bee', ids: ['a'], on: 'error' }, id => 'Mochi'), common.eventText({ type: 'bee', ids: ['a'], on: 'done' })], ['On commit to main (remote)', 'On GitHub: new PR, CI failure', 'When Mochi fails', 'When a bee finishes'])
+    eq(common.nextRun({ mode: 'event', event: {} }), null)
+    // GitHub: the first look only takes note; later looks report what is new, once
+    const what = ['pr', 'comment', 'ci'], t0 = Date.parse('2026-11-18T10:00:00Z')
+    const s1 = { prs: [{ number: 1, title: 'Old', url: 'u1' }], runs: [{ databaseId: 9, status: 'completed', conclusion: 'failure', name: 'test' }], comments: [{ created_at: '2026-11-18T09:00:00Z', body: 'old', user: { login: 'x' } }] }
+    const d1 = ev.ghDiff(undefined, s1, what, t0); eq([d1.lines, d1.st.prs, d1.st.runs, d1.st.since], [[], [1], [9], t0])
+    const s2 = { prs: [{ number: 1, title: 'Old' }, { number: 2, title: 'Add  export', author: { login: 'eve' }, url: 'u2' }], runs: [{ databaseId: 9, status: 'completed', conclusion: 'failure', name: 'test' }, { databaseId: 10, status: 'completed', conclusion: 'success', name: 'test' }, { databaseId: 11, status: 'completed', conclusion: 'failure', name: 'lint', headBranch: 'main', url: 'r11' }, { databaseId: 12, status: 'in_progress', conclusion: '' }],
+      comments: [{ created_at: '2026-11-18T09:00:00Z', body: 'old' }, { created_at: '2026-11-18T10:05:00Z', body: 'please\nfix this', user: { login: 'eve' }, html_url: 'c1' }] }
+    const d2 = ev.ghDiff(d1.st, s2, what, t0 + 1); eq(d2.lines, ['New pull request #2: Add export (by eve) u2', 'CI failed: lint on main r11', 'New comment by eve: please fix this c1'])
+    eq(ev.ghDiff(d2.st, s2, what, t0 + 2).lines, []); eq(ev.ghDiff(d1.st, s2, ['ci'], t0).lines, ['CI failed: lint on main r11'])
+    // another bee finishing
+    const w = { id: 'b', schedule: { mode: 'event', event: { type: 'bee', ids: ['a'], on: 'error' } } }
+    eq([ev.beeMatch(w, { id: 'a' }, 'error'), ev.beeMatch(w, { id: 'a' }, 'done'), ev.beeMatch(w, { id: 'c' }, 'error'), ev.beeMatch({ ...w, id: 'a' }, { id: 'a' }, 'error'), ev.beeMatch({ id: 'b', schedule: { mode: 'daily' } }, { id: 'a' }, 'error')], [true, false, false, false, false])
+    eq(ev.eventPrompt(' Review it ', 'New commits on main:', ['abc fix']), 'Review it\n\n--- What happened ---\nNew commits on main:\nabc fix')
+  }
   eq(common.schedText({ mode: 'weekly', time: '09:00', days: [1, 2, 3, 4, 5] }), 'Weekdays 09:00'); eq(common.schedText({ mode: 'weekly', time: '08:30', days: [6, 0] }), 'Weekends 08:30')
   eq(common.schedText({ mode: 'weekly', time: '09:00', days: [0, 1] }), 'Weekly Mo Su 09:00')
 }
