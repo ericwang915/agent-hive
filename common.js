@@ -145,13 +145,14 @@ function ago(t, now = Date.now()) {
 }
 
 const isWeekdays = s => s.mode === 'weekdays' || (s.mode === 'weekly' && (s.days || []).join() === '1,2,3,4,5')
+const isWeekends = s => s.mode === 'weekly' && [...(s.days || [])].sort().join() === '0,6'
 function schedText(s) {
   if (!s) return 'Manual'
   switch (s.mode) {
     case 'adhoc': return `Once · ${String(s.at || '').slice(5).replace('T', ' ')}`
     case 'daily': return `Daily ${s.time}`
     case 'weekdays': return `Weekdays ${s.time}`
-    case 'weekly': return isWeekdays(s) ? `Weekdays ${s.time}` : `Weekly ${[...(s.days || [])].sort((a, b) => (a || 7) - (b || 7)).map(d => DAYS[d]).join(' ')} ${s.time}`
+    case 'weekly': return isWeekdays(s) ? `Weekdays ${s.time}` : isWeekends(s) ? `Weekends ${s.time}` : `Weekly ${[...(s.days || [])].sort((a, b) => (a || 7) - (b || 7)).map(d => DAYS[d]).join(' ')} ${s.time}`
     case 'monthly': return `Monthly day ${s.dom} ${s.time}`
     case 'interval': return s.every % 60 === 0 ? `Every ${s.every / 60} h` : `Every ${s.every} min`
     default: return 'Manual'
@@ -250,4 +251,4 @@ async function call(ch, ...args) {
 const animT = () => `--t:${Math.round(performance.now())}`
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays }
+  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends }

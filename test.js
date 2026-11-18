@@ -53,7 +53,7 @@ const at = s => new Date(s)
     eq(slotKey(s, new Date(n.getTime() - 60000)) === slotKey(s, n), false)
   }
   eq(common.nextRun({ mode: 'interval', every: 30 }, now).getTime(), at('2026-11-17T10:30').getTime())
-  eq(common.schedText({ mode: 'weekly', time: '09:00', days: [1, 2, 3, 4, 5] }), 'Weekdays 09:00')
+  eq(common.schedText({ mode: 'weekly', time: '09:00', days: [1, 2, 3, 4, 5] }), 'Weekdays 09:00'); eq(common.schedText({ mode: 'weekly', time: '08:30', days: [6, 0] }), 'Weekends 08:30')
   eq(common.schedText({ mode: 'weekly', time: '09:00', days: [0, 1] }), 'Weekly Mo Su 09:00')
 }
 

@@ -208,7 +208,7 @@ function openHatch(pre = {}) {
   const usedColors = new Set(S.agents.map(x => x.color))
   F = a ? {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
-    sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}) },
+    sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}), asDaily: !!onlyOf(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : a.schedule) },
     sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [], noSkills: !!a.noSkills,
     after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
@@ -374,15 +374,19 @@ function updEngine() {
 const updModelSeg = () => { const el = $('#model-seg'); if (el) el.innerHTML = [['', 'Default'], ...eng(F.engine).models.slice(0, 5).map(m => [m, m])].map(([v, l]) => `<button type="button" class="${F.model === v ? 'on' : ''}" data-act="f-model" data-m="${esc(v)}">${esc(l)}</button>`).join('') }
 
 const MODES = [['manual', 'Manual'], ['adhoc', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval']]
+// Daily also covers "weekdays only" and "weekends only": stored as a weekly schedule with those days, shown under Daily
+const onlyOf = s => (s.mode !== 'weekly' ? '' : isWeekdays(s) ? 'weekdays' : isWeekends(s) ? 'weekends' : '')
 function updSched() {
   const s = F.sched, time = `<input type="time" data-input="f-time" value="${esc(s.time)}">`
+  const only = s.asDaily ? onlyOf(s) : '', shown = only ? 'daily' : s.mode
+  const which = `<div class="seg sm">${[['', 'Every day'], ['weekdays', 'Weekdays'], ['weekends', 'Weekends']].map(([k, l]) => `<button type="button" class="${only === k ? 'on' : ''}" data-act="f-only" data-k="${k}">${l}</button>`).join('')}</div>`
   const extra = {
-    manual: '', adhoc: `<input type="datetime-local" data-input="f-at" value="${esc(s.at)}">`, daily: time,
-    weekly: `<div class="days">${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" class="${(s.days || []).includes(d) ? 'on' : ''}" data-act="f-day" data-d="${d}">${DAYS[d]}</button>`).join('')}<button type="button" class="wk" data-act="f-weekdays">Weekdays</button></div>${time}`,
+    manual: '', adhoc: `<input type="datetime-local" data-input="f-at" value="${esc(s.at)}">`, daily: `${time}${which}`,
+    weekly: `<div class="days">${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" class="${(s.days || []).includes(d) ? 'on' : ''}" data-act="f-day" data-d="${d}">${DAYS[d]}</button>`).join('')}<button type="button" class="wk" data-act="f-weekdays">Weekdays</button><button type="button" class="wk" data-act="f-weekends">Weekends</button></div>${time}`,
     monthly: `Day <input type="number" min="1" max="31" data-input="f-dom" value="${s.dom || 1}" style="width:70px"> ${time}<div class="hint" style="width:100%;margin:0">Shorter months run on their last day</div>`,
     interval: `Every <input type="number" min="5" max="1440" data-input="f-every" value="${s.every || 60}" style="width:84px"> min`,
-  }[s.mode]
-  $('#sec-sched').innerHTML = `<div class="seg">${MODES.map(([k, l]) => `<button type="button" class="${s.mode === k ? 'on' : ''}" data-act="f-mode" data-k="${k}">${l}</button>`).join('')}</div><div class="sched-extra">${extra}</div>`
+  }[shown]
+  $('#sec-sched').innerHTML = `<div class="seg">${MODES.map(([k, l]) => `<button type="button" class="${shown === k ? 'on' : ''}" data-act="f-mode" data-k="${k}">${l}</button>`).join('')}</div><div class="sched-extra">${extra}</div>`
 }
 const PERM = {
   ask: ['Ask', 'Waits for your OK on every action'],
@@ -664,9 +668,11 @@ const ACT = {
   'f-role': el => { F.after.role = el.dataset.k; if (F.after.role !== 'custom') F.after.prompt = S.presets[F.after.role].prompt; if (F.after.role !== 'review') F.after.loop = false; updRelay() },
   'f-pick': async () => { const p = await call('pickFolder'); if (typeof p === 'string' && p) { F.wsCustom = p; F.task = p.replace(/\/+$/, '').split('/').pop(); F.taskTouched = true; $('#f-task').value = F.task; updWs(); updPreview() } },
   'f-unpick': () => { F.wsCustom = ''; updWs(); updPreview() },
-  'f-mode': el => { F.sched.mode = el.dataset.k; updSched() },
+  'f-mode': el => { F.sched.mode = el.dataset.k; F.sched.asDaily = false; updSched() },
   'f-day': el => { const d = +el.dataset.d, s = new Set(F.sched.days || []); s.has(d) ? s.delete(d) : s.add(d); F.sched.days = [...s].sort(); updSched() },
   'f-weekdays': () => { F.sched.days = [1, 2, 3, 4, 5]; updSched() },
+  'f-weekends': () => { F.sched.days = [0, 6]; updSched() },
+  'f-only': el => { const k = el.dataset.k; Object.assign(F.sched, k ? { mode: 'weekly', days: k === 'weekdays' ? [1, 2, 3, 4, 5] : [0, 6], asDaily: true } : { mode: 'daily', asDaily: false }); updSched() },
   'f-perm': el => { F.permission = el.dataset.k; updBeh() },
   // Garden
   'night-now': el => call('nightNow', el.dataset.k),

@@ -330,6 +330,7 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .days { display: flex; gap: 4px; flex-wrap: wrap; align-items: center }
 .days button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line2); background: var(--card); font-size: 12.5px; padding: 0 }
 .days button.on { background: var(--clay); border-color: var(--clay); color: #fff; font-weight: 600 }
+.seg.sm button { height: 24px; font-size: 12px; padding: 0 9px }
 .days button.wk { width: auto; border-radius: 999px; padding: 0 10px; color: var(--mute) }
 .sched-extra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px }
 .sched-extra:empty { display: none }
