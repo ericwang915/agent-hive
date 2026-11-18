@@ -10,6 +10,7 @@ const TOOLS = [
   { name: 'list_bees', description: 'List the card of every bee in the hive: name, folder, engine, status, whether it is busy, what it has been doing. Check this before dispatching.', inputSchema: obj({}) },
   { name: 'dispatch', description: 'Dispatch work to a bee. Returns at once without waiting for it to finish; you get a new message when it hands back its result. kind=ask is a short read-only question, kind=task is real work. Give one task to one bee only; fill in parallel_reason when you really want several bees to work on it in parallel for comparison.',
     inputSchema: obj({ bee: { type: 'string', description: 'Name of the bee' }, task: { type: 'string', description: 'A specific, actionable instruction with a clear goal and acceptance criteria' }, kind: { type: 'string', enum: ['task', 'ask'] }, parallel_reason: { type: 'string', description: 'Why, when giving the same task to several bees' } }, ['bee', 'task']) },
+  { name: 'run_squad', description: 'Hand a job to a squad: bees the user has already chained into a relay (for example write, then review, then test). The squad runs its whole chain on its own, review loops included, and you get ONE message when it is finished or stuck. Counts as one dispatch. Use it when a job fits what a squad is set up for; list_bees shows the squads.', inputSchema: obj({ squad: { type: 'string', description: 'The squad name from list_bees' }, task: { type: 'string', description: 'The job: goal, scope, acceptance criteria' } }, ['squad', 'task']) },
   { name: 'read', description: "Read a bee's full reply from its latest turn and a summary of its uncommitted changes. Does not wake it.", inputSchema: obj({ bee: { type: 'string' } }, ['bee']) },
   { name: 'propose_plan', description: 'When a job needs 3 or more bees, or hatching a new one, show the user the plan with this first and dispatch only after they agree. Waits for the user to confirm.',
     inputSchema: obj({ note: { type: 'string', description: 'The approach in one or two sentences' }, steps: { type: 'array', items: obj({ bee: { type: 'string' }, task: { type: 'string' } }, ['bee', 'task']) } }, ['steps']) },
@@ -21,13 +22,14 @@ const toolNames = () => TOOLS.map(t => 'mcp__hive__' + t.name)
 
 const SYS = `You are Queen, the lead of the Agent Hive hive. The hive holds a group of "bees", each a coding agent running in its own work folder. The user talks to you in a group chat, and you direct the bees to get things done.
 
-You do not write code or run commands yourself. You only use the hive tools: list_bees to see the cards, dispatch to hand out work, read to read results, propose_plan to show the user a plan, spawn to hatch a new bee, stop to stop one.
+You do not write code or run commands yourself. You only use the hive tools: list_bees to see the cards and the squads, dispatch to hand out work to one bee, run_squad to hand a job to a whole squad, read to read results, propose_plan to show the user a plan, spawn to hatch a new bee, stop to stop one.
 
 How to dispatch:
 - Dispatch as little as possible. If the cards, a read result or the conversation so far can answer the question, answer directly and wake no bee.
 - Pick only the best-suited bee (look at its folder, what it has been doing, whether it is busy). Do not give the same task to every bee.
 - Use kind=ask to just ask something; use kind=task to change things. Be specific: goal, scope, acceptance criteria.
 - Do not dispatch to a busy bee; pick another or wait for it to hand back. Dispatch to only one bee per folder at a time, unless they are on their own branches.
+- A squad is a chain of bees the user has already set up (for example write → review → test). When a job fits a squad, use run_squad instead of dispatching to its bees one by one: the squad passes the work along by itself and reports back once. Do not dispatch to a bee while its squad is running.
 - If a job needs 3 or more bees, or hatching a new one: propose_plan first, and dispatch after the user agrees.
 - dispatch does not wait for the bee to finish. After dispatching, end the turn and tell the user in a sentence or two whom you dispatched and for what. When bees hand back you get a "Bees handed back results" message; decide the next step then.
 
@@ -133,6 +135,69 @@ function wakeMessage(m) {
 }
 const notesText = m => (m.notes.length ? `(context) ${m.notes.join('\n(context) ')}` : '')
 
+// ───────── Squads ─────────
+// A squad is a relay team the user has chained together, addressed as one unit. Its name lives on the lead bee
+const squadName = lead => String((lead && lead.squadName) || '').trim() || `${lead.name} squad`
+const roleOf = a => (!Team.upIds(a).length ? 'lead' : a.after && a.after.loop ? 'reviewer' : Team.upIds(a).length > 1 ? 'merge' : 'next')
+function squadsOf(agents) {
+  return agents.filter(a => Team.isLead(agents, a)).map(lead => ({ lead, name: squadName(lead), members: Team.teamOf(agents, lead.id), layers: Team.layersOf(agents, lead.id) }))
+}
+const chainText = sq => sq.layers.map(l => l.map(a => a.name).join(' + ')).join(' → ')
+const squadCard = (sq, busy) => ({ name: sq.name, folder: sq.lead.task, chain: chainText(sq), steps: sq.layers.map(l => l.map(a => `${a.name} (${roleOf(a)})`).join(' + ')), busy: !!busy })
+const sqKey = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+// Queen names a squad: exact name first, then a name that contains what she wrote
+function findSquad(squads, ref) {
+  const k = sqKey(ref)
+  if (!k) return { error: 'Which squad?' }
+  const hit = squads.filter(s => sqKey(s.name) === k), part = hit.length ? hit : squads.filter(s => sqKey(s.name).includes(k) || sqKey(s.lead.name) === k)
+  return part.length === 1 ? { squad: part[0] } : { error: part.length ? `"${ref}" matches several squads: ${part.map(s => s.name).join(', ')}` : `No squad called "${ref}". Squads: ${squads.map(s => s.name).join(', ') || 'none'}` }
+}
+// "@Release squad ship 1.3.1" or "@Release-squad ship 1.3.1" → {squad, text}. A bare "@Mochi" stays a mention of the bee
+function parseSquad(text, squads) {
+  const s = String(text || '')
+  for (const mm of s.matchAll(/(^|\s)@(\S+)(?:(\s+)(\S+))?/g)) {
+    const two = mm[4] ? squads.find(q => sqKey(q.name) === sqKey(mm[2] + mm[4])) : null
+    const one = two ? null : squads.find(q => sqKey(q.name) === sqKey(mm[2]) && sqKey(q.name) !== sqKey(q.lead.name))
+    if (!two && !one) continue
+    const cut = mm.index + mm[1].length, len = two ? mm[0].length - mm[1].length : 1 + mm[2].length
+    return { squad: two || one, text: (s.slice(0, cut) + s.slice(cut + len)).replace(/\s+/g, ' ').trim() }
+  }
+  return null
+}
+// The record of one squad run. steps: id → {name, color, role, state: waiting | running | done | changes | failed, rounds, summary}
+function newSquadRun(sq, o) {
+  const steps = {}
+  for (const a of sq.members) steps[a.id] = { name: a.name, color: a.color, role: roleOf(a), state: a.id === sq.lead.id ? 'running' : 'waiting', rounds: 0, summary: '' }
+  return { flow: o.flow, name: sq.name, lead: sq.lead.id, task: String(o.task || ''), by: o.by, at: o.at || Date.now(), order: sq.layers.flat().map(a => a.id), active: [sq.lead.id], steps, notes: [], last: '' }
+}
+const STUCK = /stopped|No VERDICT|skipped|not sent/
+// A member of a running squad ended a round. steps: what relayPlan decided (null when the round did not end cleanly); forced: ERROR / STOPPED / INTERRUPTED.
+// Updates the record → {done, status} once nobody in the squad is working or waiting any more
+function squadTrack(q, a, steps, reply, forced) {
+  const st = q.steps[a.id]
+  if (!st) return null
+  q.active = q.active.filter(id => id !== a.id)
+  if (!steps) { st.state = 'failed'; q.failed = forced || 'ERROR'; q.notes.push(`${a.name}: ${LABEL[forced] || 'Error'}${reply ? '. ' + String(reply).trim().slice(-200) : ''}`) }
+  else {
+    st.state = 'done'; st.rounds++; q.last = a.id
+    st.summary = parseReport(reply, null, 500).summary
+    for (const s of steps) {
+      if (s.run && q.steps[s.run]) { q.steps[s.run].state = 'running'; if (!q.active.includes(s.run)) q.active.push(s.run); if (s.why === 'feedback') st.state = 'changes' }
+      else if (s.log && !s.quiet && STUCK.test(s.text)) q.notes.push(s.text)
+    }
+  }
+  if (q.active.length) return { done: false }
+  return { done: true, status: q.failed || (q.notes.length ? 'BLOCKED' : 'DONE') }
+}
+const SQ_STATE = { waiting: 'did not run', running: 'still running', done: 'done', changes: 'asked for changes', failed: 'failed' }
+// What Queen (and the group) get when the squad is finished: the last bee's result first, then one line per bee
+function squadReport(q) {
+  const last = q.steps[q.last]
+  return [last && last.summary ? `Result (from ${last.name}): ${last.summary}` : '', q.notes.length ? `Stuck: ${q.notes.join(' / ')}` : '',
+    'Steps:', ...q.order.map(id => q.steps[id]).filter(Boolean).map(s => `- ${s.name} (${s.role}): ${SQ_STATE[s.state]}${s.rounds > 1 ? `, ${s.rounds} rounds` : ''}`)].filter(Boolean).join('\n')
+}
+const squadPrompt = (q, chain, by) => `${by === 'queen' ? 'Queen, the lead of the hive,' : 'The user'} has a job for your squad (${chain}). You go first; when you are done your reply is passed along the chain.\n\n${q.task}`
+
 // ───────── @ mentions ─────────
 // "@Mochi @Pip take a look" → { bees: [Mochi, Pip], all: false, text: 'take a look' }; no @ means it goes to Queen
 function parseMentions(text, agents, lead = true) {
@@ -200,4 +265,4 @@ function splitSticker(text) {
   return { text: rest, sticker }
 }
 
-module.exports = { handoffs, routePrompt, parseRoute, isPass, splitSticker, STICKERS, groupPrompt, LIMITS, TOOLS, toolNames, SYS, LABEL, beeCard, findBee, newMission, dispatchCheck, noteDispatch, taskPrompt, parseReport, shouldWake, wakeMessage, notesText, parseMentions }
+module.exports = { squadName, squadsOf, squadCard, findSquad, parseSquad, newSquadRun, squadTrack, squadReport, squadPrompt, chainText, handoffs, routePrompt, parseRoute, isPass, splitSticker, STICKERS, groupPrompt, LIMITS, TOOLS, toolNames, SYS, LABEL, beeCard, findBee, newMission, dispatchCheck, noteDispatch, taskPrompt, parseReport, shouldWake, wakeMessage, notesText, parseMentions }

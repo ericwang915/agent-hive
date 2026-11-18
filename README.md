@@ -67,6 +67,8 @@ A group works without Queen too. `@mention` a bee and it starts right away. Leav
 
 Up to four bees share a folder and pass work down the line. A reviewer can send its findings back to the writer until it approves, for at most three rounds. Bees on the same step run in parallel, each in its own git worktree, and a final bee merges their results. The clip at the top is one such team.
 
+A relay team is also a **squad** with a name. Queen can hand it a whole job with one call and hears back once, when the chain is finished or stuck. You can start it yourself from any group: `@Shop-squad add an export button`. The group shows the chain and each bee's state as it runs.
+
 ### Read every step, then review the diff
 
 Each bee has its own chat window with the full conversation. Replies stream in as they are written, edits show as inline diffs, sub-agents are nested, and every round shows its cost. Type `@` to point at a file, `/` for commands, Shift-Tab to switch between Ask, Auto-edit and Plan. The bee's folder sits in a sidebar on the left, and file paths in the conversation are clickable: they open at the line mentioned. The Files tab is a small editor: create, rename and delete files and folders, edit and save, find in a file, and search the whole folder by name or text. The Changes tab shows the diff. Commit, discard, push and open a pull request from there, or keep a bee on its own branch and merge when you are happy.

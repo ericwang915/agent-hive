@@ -75,6 +75,7 @@ const matches = a => !query || [a.name, a.task, a.workspace, eng(a.engine).label
 
 function renderHive() {
   if (view !== 'hive') return
+  if (document.activeElement && document.activeElement.id === 'sq-input') return      // a squad is being renamed: leave the cards alone
   const A = S.agents, n = f => A.filter(FILTERS.find(x => x[0] === f)[2]).length
   $('#hello').textContent = 'Hive'
   $('#hive-sub').textContent = A.length ? [[n('running'), 'running'], [n('paused'), 'paused'], [n('error'), n('error') === 1 ? 'error' : 'errors']].filter(x => x[0]).map(x => `${x[0]} ${x[1]}`).join(' · ') || `${A.length} bee${A.length === 1 ? '' : 's'}, all idle` : 'No bees yet'
@@ -176,6 +177,18 @@ function miniHtml(a, tight) {
 </div>`
 }
 // Team box: 2 bees span 2 cells, 3 or more span 3 (capped at the column count); one column per layer
+// Squads: a relay team under one name (kept on its first bee). "@Mochi-squad" in a group starts the whole chain
+const squadNameOf = lead => String(lead.squadName || '').trim() || `${lead.name} squad`
+const squadList = () => S.agents.filter(a => Team.isLead(S.agents, a)).map(lead => ({ lead, name: squadNameOf(lead), team: Team.teamOf(S.agents, lead.id) }))
+function renameSquad(el) {
+  const id = el.dataset.id, lead = byId(id), inp = document.createElement('input')
+  inp.id = 'sq-input'; inp.type = 'text'; inp.maxLength = 30; inp.value = squadNameOf(lead); inp.spellcheck = false
+  el.replaceWith(inp); inp.focus(); inp.select()
+  let done = false
+  const end = async save => { if (done) return; done = true; const v = inp.value.trim(); inp.blur(); inp.id = ''; if (save && v !== squadNameOf(lead)) await call('squadName', id, v === `${lead.name} squad` ? '' : v); $('#grid')._h = ''; renderHive() }
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) end(true); else if (e.key === 'Escape') end(false) })
+  inp.addEventListener('blur', () => end(true))
+}
 function teamHtml(team, cols, colW) {
   const layers = Team.layersOf(S.agents, team[0].id), span = Math.min(cols, team.length === 2 ? 2 : 3)
   const W = span * colW + (span - 1) * GAP - 30, n = Math.max(1, Math.min(layers.length, Math.floor((W + 28) / (220 + 28))))
@@ -184,7 +197,7 @@ function teamHtml(team, cols, colW) {
   const busy = team.some(m => ['running', 'paused'].includes(m.status) || (m.queue && m.queue.length))
   const last = layers[layers.length - 1]
   return `<div class="team" style="grid-column:span ${span}">
-  <div class="team-head"><div class="chain grow">${chain}<span class="folder">· ${esc(team[0].task)}</span></div>
+  <div class="team-head"><button class="sq-name" data-act="squad-rename" data-id="${team[0].id}" title="The squad's name: Queen and @mentions use it. Click to rename">${esc(squadNameOf(team[0]))}</button><div class="chain grow">${chain}<span class="folder">· ${esc(team[0].task)}</span></div>
     ${busy ? `<button class="btn sm danger" data-act="team-stop" data-id="${team[0].id}">${ICON.stop}Stop</button>` : ''}
     ${team.length < S.teamMax ? `<button class="btn sm ghost" data-act="relay" data-id="${last.length === 1 ? last[0].id : team[0].id}">+ Relay ${team.length}/${S.teamMax}</button>` : `<span class="faint" style="font-size:12px">${team.length}/${S.teamMax}</span>`}</div>
   <div class="team-body${stacked ? ' stacked' : ''}${tight ? ' tight' : ''}${dag ? ' dag' : ''}" style="--cols:${n}">${layers.map(l => `<div class="layer">${l.map(m => miniHtml(m, tight)).join('')}</div>`).join('')}</div>
@@ -753,6 +766,7 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  'squad-rename': el => renameSquad(el),
   found: el => foundRun(+el.dataset.i),
   prefs: () => openPrefs(),
   'prefs-close': () => $('#prefs').close(),
@@ -928,13 +942,13 @@ function updAt() {
   const input = $('#room-input'), r = curRoom(), mm = input.value.slice(0, input.selectionStart).match(/(^|\s)@([^\s@]*)$/)
   if (!mm || !r) return void ($('#room-at').hidden = true)
   const q = mm[2].toLowerCase(), bees = roomBees(r)
-  atList = [...bees.filter(a => a.name.toLowerCase().startsWith(q)).map(a => ({ name: a.name, a })), ...('all'.startsWith(q) && bees.length > 1 ? [{ name: 'all' }] : [])]
+  atList = [...bees.filter(a => a.name.toLowerCase().startsWith(q)).map(a => ({ name: a.name, a })), ...squadList().filter(s => s.name.toLowerCase().replace(/\s+/g, '-').startsWith(q)).map(s => ({ name: s.name.replace(/\s+/g, '-'), sq: s })), ...('all'.startsWith(q) && bees.length > 1 ? [{ name: 'all' }] : [])]
   if (!atList.length) return void ($('#room-at').hidden = true)
   atSel = Math.min(atSel, atList.length - 1)
   renderAt()
 }
 function renderAt() {
-  $('#room-at').innerHTML = atList.map((x, i) => `<button class="${i === atSel ? 'on' : ''}" data-act="room-at" data-i="${i}">${x.a ? `<span class="dot" style="background:${esc(x.a.color)}"></span>${esc(x.a.name)}<span class="st">${STATUS[x.a.status]} · ${esc(x.a.task)}</span>` : `${ICON.hive}all<span class="st">Every bee in the group</span>`}</button>`).join('')
+  $('#room-at').innerHTML = atList.map((x, i) => `<button class="${i === atSel ? 'on' : ''}" data-act="room-at" data-i="${i}">${x.sq ? `${ICON.relay || ICON.hive}${esc(x.sq.name)}<span class="st">Squad · ${esc(x.sq.team.map(m => m.name).join(' → '))}</span>` : x.a ? `<span class="dot" style="background:${esc(x.a.color)}"></span>${esc(x.a.name)}<span class="st">${STATUS[x.a.status]} · ${esc(x.a.task)}</span>` : `${ICON.hive}all<span class="st">Every bee in the group</span>`}</button>`).join('')
   $('#room-at').hidden = false
 }
 function pickAt(i) {
@@ -947,10 +961,16 @@ function pickAt(i) {
   input.focus()
 }
 
+// A squad's chain with each bee's state. Live while it runs (from the room's state), frozen once it is over
+const SQ_MARK = { waiting: ['', 'Waiting'], running: ['run', 'Working'], done: ['ok', 'Done'], changes: ['chg', 'Asked for changes'], failed: ['bad', 'Failed'] }
+const liveSquad = flow => { const r = curRoom(), q = r && (r.squads || []).find(x => x.flow === flow); return q ? q.steps : null }
+const squadChain = (steps, plain) => steps.map(s => { const k = SQ_MARK[s.state] || SQ_MARK.waiting; return `<button class="sq-step ${plain ? '' : k[0]}" data-act="chat" data-id="${esc(s.id)}" title="${esc(s.name)} (${esc(s.role || '')})${plain ? '' : ': ' + k[1]}${s.rounds > 1 ? `, ${s.rounds} rounds` : ''}"><span class="dot${s.state === 'running' && !plain ? ' blink' : ''}" style="background:${esc(s.color || '#ccc')}"></span>${esc(s.name)}${plain ? '' : s.state === 'done' ? '<i>✓</i>' : s.state === 'changes' ? '<i>↺</i>' : s.state === 'failed' ? '<i>✕</i>' : ''}</button>` }).join('<span class="sq-arrow">→</span>')
 function roomEntryHtml(e) {
   const txt = esc(e.text || '')
   if (e.kind === 'system') return `<div class="rm-sys">${txt}</div>`
   if (e.kind === 'error') return `<div class="rm-sys err">${txt}</div>`
+  if (e.kind === 'squad') return `<div class="rm"><span class="av"></span><div class="rm-card squad col"><div class="hd">${e.by === 'queen' ? 'Queen' : 'You'} <span class="arrow">→</span>${ICON.hive}${esc(e.squad)}<span class="tagx">Squad</span><time style="margin-left:auto">${hm(e.t)}</time></div>${e.by === 'queen' ? `<div class="tx">${txt}</div>` : ''}<div class="sq-chain" data-flow="${esc(e.flow)}">${squadChain(liveSquad(e.flow) || e.steps || [], !liveSquad(e.flow))}</div></div></div>`
+  if (e.kind === 'squad-done') return `<div class="rm"><span class="av">${beeFace(byId(e.who) || { color: e.color || '#ccc' }, 28, e.status === 'DONE' ? 'grin' : 'sad')}</span><div class="rm-card result col${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd">${esc(e.name)}<span class="tagx s-${esc(e.status)}">${RLABEL[e.status] || esc(e.status)}</span>${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'} changed</span>` : ''}<time style="margin-left:auto">${hm(e.t)}</time></div><div class="sq-chain">${squadChain(e.steps || [])}</div><div class="tx">${txt}</div>${(e.notes || []).length ? `<div class="sq-note">${esc(e.notes.join(' · '))}</div>` : ''}</div></div>`
   if (e.who === 'user' && e.sticker && !e.text) return `<div class="rm me"><div class="sticker" title="${esc(STICKER[e.sticker] ? STICKER[e.sticker][0] : '')}">${stickerSvg(e.sticker)}</div><time>${hm(e.t)}</time></div>`
   if (e.who === 'user') return `<div class="rm me">${e.to && e.to.length ? `<span class="to">→ ${esc(e.to.join(', '))}</span>` : ''}<div class="bubble">${txt}</div><time>${hm(e.t)}</time></div>`
   if (e.kind === 'dispatch') return `<div class="rm"><span class="av"></span><button class="rm-card dispatch col" data-act="chat" data-id="${esc(e.to)}" title="Open ${esc(e.toName)}'s chat"><div class="hd">Queen <span class="arrow">→</span><span class="dot" style="background:${esc(e.toColor)}"></span>${esc(e.toName)}${e.ask ? '<span class="tagx">Ask</span>' : ''}<span class="grow"></span><time>${hm(e.t)}</time></div><div class="tx">${txt}</div></button></div>`
@@ -995,8 +1015,8 @@ function renderRoomMeta() {
   const running = r.status === 'running', pend = r.pending || [], bees = roomBees(r), busy = roomBusy(r)
   setHtml($('#room-bee'), roomIcon(r, 34))
   $('#room-name').textContent = r.name
-  $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}${ctxNote(r.context, ' · ')}`
-  $('#room-stop').hidden = !running && !pend.length && !busy.length && !r.routing
+  $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : (r.squads || []).length ? `${r.squads.map(q => q.name).join(', ')} running` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}${ctxNote(r.context, ' · ')}`
+  $('#room-stop').hidden = !running && !pend.length && !busy.length && !r.routing && !(r.squads || []).length
   $('#room-newbtn').hidden = !r.queen
   $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message the group, @ to mention'
   const think = $('#room-think')
@@ -1007,6 +1027,7 @@ function renderRoomMeta() {
     if (was && text) { const tl = $('#room-tl'); tl.scrollTop = tl.scrollHeight }
   }
   const task = id => (pend.find(p => p.id === id) || {}).task
+  for (const el of document.querySelectorAll('#room-tl .sq-chain[data-flow]')) { const live = liveSquad(el.dataset.flow); if (live) setHtml(el, squadChain(live)); else if (el._h) { const e0 = (R.entries[r.id] || []).find(x => x.kind === 'squad' && x.flow === el.dataset.flow); el._h = ''; el.innerHTML = squadChain((e0 && e0.steps) || [], true) } }
   setHtml($('#room-bees'), (r.queen ? `<span class="who">${queenSvg(24, 'happy', running ? 'running' : '')}Queen</span>` : '')
     + bees.map(a => `<button data-act="chat" data-id="${a.id}" title="${esc(task(a.id) || `Open ${a.name}'s chat${ctxNote(a.context, ' · session ')}`)}">${beeOf(a, 24)}${esc(a.name)}${ctxPct(a.context) >= 40 ? `<span class="ctx${ctxPct(a.context) >= 70 ? ' hot' : ''}">${ctxPct(a.context)}%</span>` : ''}${task(a.id) ? `<span class="task ell">${esc(String(task(a.id)).split('\n')[0])}</span>` : ''}</button>`).join('')
     + `<button class="add" data-act="group-edit">+ Add</button>`)

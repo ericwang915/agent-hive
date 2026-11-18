@@ -66,7 +66,7 @@ function load() {
   for (const a of state.agents) if (typeof a.xp !== 'number') a.xp = readLog(a.id).filter(e => e.role === 'run' && e.code === 0 && !e.interrupted).length      // bees from before ranks: count the rounds in their logs
   // Groups
   state.feed = (state.feed || []).filter(f => f.kind !== 'done' || /file|Finished/.test(f.text))      // older versions logged every finished reply
-  state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, batches: {}, seen: r.seen || {}, mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
+  state.rooms = (Array.isArray(s.rooms) ? s.rooms : []).map(r => ({ ...r, members: (r.members || []).filter(id => state.agents.some(a => a.id === id)), queue: [], asks: [], runStart: undefined, routing: 0, batches: {}, seen: r.seen || {}, squads: Object.fromEntries(Object.entries(r.squads || {}).filter(([, q]) => q && q.active && q.active.some(id => state.agents.some(x => x.id === id && ['running', 'paused', 'sleeping'].includes(x.status))))), mission: { ...qt.newMission(), ...r.mission, turnDispatch: [] } }))
   const old = path.join(LOGS, 'room.jsonl')                // there used to be a single group: migrate it into the first group with Queen
   if (!Array.isArray(s.rooms) && fs.existsSync(old)) {
     const r = { id: crypto.randomUUID(), name: 'Queen & bees', main: true, members: state.agents.map(a => a.id), queen: true, model: st.queenModel || '', sessionId: (s.queen || {}).sessionId || '', createdAt: Date.now(), queue: [], asks: [], mission: qt.newMission() }
@@ -304,6 +304,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
     }
     delete a.runStart; delete a.interrupted
     a.changes = quickChanges(a)
+    let planned = null                                   // what the relay decided after a clean round; a squad run follows it
     if (clean) {
       let reply = said.join('\n\n')
       if (!a.isolate && a.worktree && a.base && cwd.startsWith(a.worktree)) {      // parallel member: attach the changes from its own worktree
@@ -327,9 +328,11 @@ function run(a, prompt, why = 'manual', meta = {}) {
       if (n || !talk) event(a, text, 'done', alert)
       else if (alert && !silent) notify(a, a.name, text)
       doSteps(steps)
+      planned = steps
     }
     // dispatched by Queen / mentioned in a group: hand the result back to the group (a sleeping bee hands it in after it wakes and finishes)
-    if (a.status !== 'sleeping') teamResult(a, said.join('\n\n') || lastErr, p.interrupted ? 'INTERRUPTED' : a.status === 'stopped' ? 'STOPPED' : a.status === 'error' ? 'ERROR' : null)
+    const forced = p.interrupted ? 'INTERRUPTED' : a.status === 'stopped' ? 'STOPPED' : a.status === 'error' ? 'ERROR' : null
+    if (a.status !== 'sleeping') { teamResult(a, said.join('\n\n') || lastErr, forced); squadAfter(a, planned, said.join('\n\n') || lastErr, forced) }
     push()
     drainFolder(a)
   }
@@ -736,7 +739,7 @@ function readRoom(r, n = 400) {
 }
 const roomPublic = r => ({
   id: r.id, name: r.name, members: r.members, queen: !!r.queen, main: !!r.main, model: r.model || '', last: r.last || '', lastAt: r.lastAt || r.createdAt,
-  status: qprocs.has(r.id) ? 'running' : 'idle', context: r.sessionId && r.context && r.context.used ? r.context : null, routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
+  status: qprocs.has(r.id) ? 'running' : 'idle', context: r.sessionId && r.context && r.context.used ? r.context : null, squads: Object.values(r.squads || {}).map(q => ({ flow: q.flow, name: q.name, steps: q.order.map(id => ({ id, ...q.steps[id] })) })), routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
   pending: Object.entries(r.mission.pending).map(([id, p]) => ({ id, ...p })), installed: core.onPath('claude'),
 })
 let roomsTimer = null
@@ -745,7 +748,7 @@ function roomsPush() {
   if (roomsTimer) return
   roomsTimer = setTimeout(() => { roomsTimer = null; send('rooms', state.rooms.map(roomPublic)) }, 30)
 }
-const newRoom = o => ({ id: crypto.randomUUID(), name: 'Group', members: [], queen: false, model: '', sessionId: '', createdAt: Date.now(), ...o, queue: [], asks: [], routing: 0, batches: {}, seen: {}, mission: qt.newMission() })
+const newRoom = o => ({ id: crypto.randomUUID(), name: 'Group', members: [], queen: false, model: '', sessionId: '', createdAt: Date.now(), ...o, queue: [], asks: [], routing: 0, batches: {}, seen: {}, squads: {}, mission: qt.newMission() })
 
 // tidy: this run only compacts Queen's session; the prompt that was waiting runs right after it
 function queenRun(r, prompt, tidy) {
@@ -846,8 +849,51 @@ function teamResult(a, reply, forced) {
   }
   roomsPush()
 }
+// ───────── Squads ─────────
+// A squad run is a relay started from a group as one unit: r.squads[flow] records it until the chain ends
+const squadRunOf = id => { for (const r of state.rooms) for (const q of Object.values(r.squads || {})) if (q.steps[id]) return { r, q } ; return null }
+const beeBusy = b => procs.has(b.id) || b.status === 'running' || b.status === 'paused' || !!(b.queue && b.queue.length)
+const squadBusy = sq => sq.members.some(b => beeBusy(b) || squadRunOf(b.id))
+function squadCheck(sq) {
+  const run = sq.members.map(b => squadRunOf(b.id)).find(Boolean)
+  if (run) throw new Error(`${sq.name} is already running`)
+  const busy = sq.members.find(beeBusy), off = sq.members.find(b => b.status === 'setup' || b.needsSetup)
+  if (busy) throw new Error(`${busy.name} is busy, so ${sq.name} cannot start yet`)
+  if (off) throw new Error(`${off.name}'s repo is not ready yet`)
+}
+function squadStart(r, sq, task, by) {
+  squadCheck(sq)
+  const flow = crypto.randomBytes(4).toString('hex'), q = qt.newSquadRun(sq, { flow, task, by })
+  r.squads = { ...(r.squads || {}), [flow]: q }
+  roomLog(r, { ...(by === 'queen' ? QUEEN : { who: 'user', name: 'You' }), kind: 'squad', flow, squad: sq.name, text: task, by, steps: q.order.map(id => ({ id, name: q.steps[id].name, color: q.steps[id].color, role: q.steps[id].role })) })
+  run(sq.lead, qt.squadPrompt(q, qt.chainText(sq), by), 'squad', { from: by === 'queen' ? 'Queen' : 'You', room: r.id, flow, show: task })
+}
+// a member of a running squad ended a round
+function squadAfter(a, planned, reply, forced) {
+  const c = a.ctx || {}
+  if (!c.flow || !['squad', 'handoff', 'feedback'].includes(c.why)) return
+  const hit = state.rooms.map(r => ({ r, q: (r.squads || {})[c.flow] })).find(x => x.q)
+  if (!hit) return
+  const { r, q } = hit, res = qt.squadTrack(q, a, planned, reply, forced)
+  if (!res) return
+  if (!res.done) return roomsPush()
+  delete r.squads[q.flow]
+  const lead = byId(q.lead), files = lead && lead.changes ? lead.changes.files : 0, report = qt.squadReport(q), m = r.mission
+  const last = q.steps[q.last]
+  roomLog(r, { who: q.last || q.lead, name: q.name, color: (last || {}).color || '#F6C86B', kind: 'squad-done', flow: q.flow, status: res.status, text: (last && last.summary) || q.notes.join(' / ') || qt.LABEL[res.status], notes: q.notes, files, steps: q.order.map(id => ({ id, ...q.steps[id] })) })
+  if (q.by === 'queen' && m.pending[q.lead]) {
+    const p = m.pending[q.lead]
+    delete m.pending[q.lead]
+    m.got.push({ name: q.name, task: p.task, status: res.status, summary: report, files })
+    if (qt.shouldWake(m)) queenWake(r)
+  } else if (r.queen) m.notes.push(`The user ran ${q.name} directly in the group. Outcome (${qt.LABEL[res.status]}):\n${report.slice(0, 600)}`)
+  roomsPush()
+}
+
 // a bee stopped / deleted before it started: the result it owes Queen still has to be settled
 function settleOwed(a, text) {
+  const s = squadRunOf(a.id)
+  if (s && s.q.active.includes(a.id)) { a.ctx = { why: 'squad', flow: s.q.flow, room: s.r.id }; squadAfter(a, null, text, 'STOPPED') }
   for (const r of state.rooms) if (r.mission.pending[a.id]) { a.ctx = { why: 'queen', room: r.id }; teamResult(a, text, 'STOPPED') }
 }
 
@@ -869,11 +915,13 @@ async function queenTool(roomId, tool, args, onClose) {
     case 'list_bees':
       return { text: JSON.stringify({
         group: r.name, bees: A.map(a => qt.beeCard(a, state.agents, { busy: procs.has(a.id), memory: garden.readMemory(wsRoot(), a.id) })),
+        squads: qt.squadsOf(state.agents).map(sq => qt.squadCard(sq, squadBusy(sq))),
         waiting_on: Object.values(m.pending).map(p => p.name), hive_capacity: `${state.agents.length}/${MAX}`,
         engines_installed: enginesInfo().filter(e => e.installed && e.template === null).map(e => e.id), budget_used_up: overBudget(),
       }, null, 1) }
     case 'dispatch': {
       const bee = find(args.bee), kind = args.kind === 'ask' ? 'ask' : 'task', task = String(args.task || '').trim().slice(0, 20000)
+      if (squadRunOf(bee.id)) throw new Error(`${bee.name}'s squad is running; wait for the squad to report back`)
       const no = qt.dispatchCheck({ agents: state.agents, mission: m, isBusy: b => procs.has(b.id), overBudget: overBudget() }, bee, task, args)
       if (no) throw new Error(no)
       qt.noteDispatch(m, bee, task, kind)
@@ -881,6 +929,16 @@ async function queenTool(roomId, tool, args, onClose) {
       run(bee, qt.taskPrompt(task, kind), 'queen', { from: 'Queen', room: r.id, oneOff: kind === 'ask' && bee.engine === 'claude' && !!bee.context && bee.context.used >= core.BIG })
       push()
       return { text: `Dispatched to ${bee.name}. Its result will be sent to you automatically when it is done; do not wait now, and do not poll with read.` }
+    }
+    case 'run_squad': {
+      const x = qt.findSquad(qt.squadsOf(state.agents), args.squad), task = String(args.task || '').trim().slice(0, 20000)
+      if (x.error) throw new Error(x.error)
+      const no = qt.dispatchCheck({ agents: state.agents, mission: m, isBusy: b => procs.has(b.id), overBudget: overBudget() }, x.squad.lead, task, args)
+      if (no) throw new Error(no)
+      squadStart(r, x.squad, task, 'queen')
+      qt.noteDispatch(m, x.squad.lead, task, 'task'); m.pending[x.squad.lead.id].name = x.squad.name
+      push()
+      return { text: `${x.squad.name} has started (${qt.chainText(x.squad)}). You get one message when the whole chain is finished or stuck; do not wait now, and do not dispatch to its bees meanwhile.` }
     }
     case 'read': {
       const bee = find(args.bee), all = readLog(bee.id), at = all.map(e => e.role).lastIndexOf('user')
@@ -969,6 +1027,15 @@ function roomSend(r, text) {
   if (!text) return
   const only = qt.splitSticker(text)
   if (only.sticker && !only.text) return roomLog(r, { who: 'user', kind: 'say', text: '', sticker: only.sticker })      // a sticker on its own is just a reaction: no bee is woken for it
+  const sq = qt.parseSquad(text, qt.squadsOf(state.agents))
+  if (sq) {                                              // "@Release squad ship it": the whole chain runs, no Queen needed
+    if (!sq.text) throw new Error('Say what the squad should do after its name')
+    if (overBudget()) throw new Error('Today\'s budget is used up')
+    squadCheck(sq.squad)
+    roomLog(r, { who: 'user', kind: 'say', text, to: [sq.squad.name] })
+    squadStart(r, sq.squad, sq.text, 'user')
+    return push()
+  }
   const m = r.mission, mine = membersOf(r), mm = qt.parseMentions(text, mine)
   const outsider = mm.unknown.map(n => state.agents.find(a => a.name.toLowerCase() === n.toLowerCase())).find(Boolean)
   if (outsider) throw new Error(`${outsider.name} is not in this group. Add it in the group settings first`)
@@ -1008,6 +1075,8 @@ function roomSend(r, text) {
 }
 function roomStop(r) {
   const ids = new Set([...Object.keys(r.mission.pending), ...state.agents.filter(a => a.ctx && a.ctx.room === r.id && ['queen', 'room'].includes(a.ctx.why) && (procs.has(a.id) || (a.queue || []).some(q => q.room === r.id))).map(a => a.id)])
+  for (const q of Object.values(r.squads || {})) for (const id of q.active) ids.add(id)      // a running squad stops with the group
+  r.squads = {}
   r.queue = []; r.stopped = true; r.gen = (r.gen || 0) + 1; r.batches = {}
   r.mission = qt.newMission()                             // clear first, so the stopped bees do not wake Queen again
   const child = qprocs.get(r.id)
@@ -1440,6 +1509,7 @@ function ipc() {
   handle('feed', () => state.feed)
   handle('openChat', (id, tab, find) => openChat(id, tab === 'changes' || tab === 'files' ? tab : '', typeof find === 'string' ? find.slice(0, 100) : ''))
   handle('searchAll', q => searchAll(q))
+  handle('squadName', (id, name) => { const a = need(id); if (!Team.isLead(state.agents, a)) throw new Error('Only the first bee of a squad carries its name'); a.squadName = String(name || '').replace(/[@\n]/g, ' ').trim().slice(0, 30); if (!a.squadName) delete a.squadName; push() })
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: fs.existsSync(wsRoot()) ? wsRoot() : HOME })
     return r.canceled ? '' : r.filePaths[0]

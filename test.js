@@ -382,6 +382,29 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
 // ───────── Queen leading the team ─────────
 {
   const qt = require('./queen')
+  { // squads: a relay team addressed as one unit
+    const W = { id: 'w', name: 'Mochi', task: 'web', status: 'idle', color: '#111' }, Rv = { id: 'r', name: 'Pip', status: 'idle', after: { ids: ['w'], prompt: 'review', loop: true } }, T = { id: 't', name: 'Tofu', status: 'idle', after: { ids: ['r'], prompt: 'test' } }, solo = { id: 's', name: 'Solo', status: 'idle' }
+    const all = [W, Rv, T, solo], sqs = qt.squadsOf(all), sq = sqs[0]
+    eq([sqs.length, sq.name, qt.chainText(sq), qt.squadCard(sq, false).steps], [1, 'Mochi squad', 'Mochi → Pip → Tofu', ['Mochi (lead)', 'Pip (reviewer)', 'Tofu (next)']])
+    eq(qt.squadsOf([{ ...W, squadName: ' Release squad ' }, Rv, T])[0].name, 'Release squad')
+    eq([qt.findSquad(sqs, 'mochi squad').squad === sq, qt.findSquad(sqs, 'Mochi').squad === sq, /No squad called/.test(qt.findSquad(sqs, 'nope').error), /Which squad/.test(qt.findSquad(sqs, '').error)], [true, true, true, true])
+    eq(qt.parseSquad('@Mochi squad ship 1.3.1 today', sqs).text, 'ship 1.3.1 today'); eq(qt.parseSquad('please @mochi-squad ship it', sqs).text, 'please ship it'); eq(qt.parseSquad('@Mochi ship it', sqs), null); eq(qt.parseSquad('ship it', sqs), null)
+    // a run: writer → reviewer asks for changes → writer again → reviewer approves → tester
+    const q = qt.newSquadRun(sq, { flow: 'f1', task: 'ship it', by: 'queen', at: 1 })
+    const ctx = { why: 'squad', flow: 'f1', round: 0 }
+    const step = (a, reply, c) => { const st = core.relayPlan(all, a, reply, c); return [qt.squadTrack(q, a, st, reply, null), st] }
+    let [r1, s1] = step(W, 'wrote it', ctx); eq([r1.done, q.active, q.steps.w.state, q.steps.r.state], [false, ['r'], 'done', 'running'])
+    let [r2, s2] = step(Rv, 'needs work\nVERDICT: CHANGES', { why: 'handoff', flow: 'f1', round: 0 }); eq([r2.done, q.active, q.steps.r.state, q.steps.w.state, s2[0].why], [false, ['w'], 'changes', 'running', 'feedback'])
+    let [r3] = step(W, 'fixed', { why: 'feedback', flow: 'f1', round: 1 }); eq([r3.done, q.active], [false, ['r']])
+    let [r4] = step(Rv, 'good\nVERDICT: APPROVED', { why: 'handoff', flow: 'f1', round: 1 }); eq([r4.done, q.active, q.steps.r.state, q.steps.r.rounds], [false, ['t'], 'done', 2])
+    let [r5] = step(T, 'STATUS: DONE\nSUMMARY: all 12 tests pass', { why: 'handoff', flow: 'f1', round: 1 }); eq(r5, { done: true, status: 'DONE' })
+    assert.ok(/^Result \(from Tofu\): all 12 tests pass\nSteps:\n- Mochi \(lead\): done, 2 rounds\n- Pip \(reviewer\): done, 2 rounds\n- Tofu \(next\): done$/.test(qt.squadReport(q)), qt.squadReport(q))
+    // stuck: no verdict; failed: a bee errors
+    const q2 = qt.newSquadRun(sq, { flow: 'f2', task: 't', by: 'user' }); qt.squadTrack(q2, W, core.relayPlan(all, W, 'x', { why: 'squad', flow: 'f2' }), 'x', null)
+    const rep = 'looks fine'; eq(qt.squadTrack(q2, Rv, core.relayPlan(all, Rv, rep, { why: 'handoff', flow: 'f2', round: 0 }), rep, null), { done: true, status: 'BLOCKED' }); assert.ok(/Stuck: No VERDICT given/.test(qt.squadReport(q2)) && /Tofu \(next\): did not run/.test(qt.squadReport(q2)))
+    const q3 = qt.newSquadRun(sq, { flow: 'f3', task: 't', by: 'user' }); eq(qt.squadTrack(q3, W, null, 'boom', 'ERROR'), { done: true, status: 'ERROR' }); eq(qt.squadTrack(q3, solo, [], '', null), null)
+    assert.ok(qt.toolNames().includes('mcp__hive__run_squad') && /job for your squad \(Mochi → Pip → Tofu\)/.test(qt.squadPrompt(q, qt.chainText(sq), 'queen')))
+  }
   const bee = (id, name, o = {}) => ({ id, name, task: 'web', workspace: '/w/web', engine: 'claude', status: 'idle', ...o })
   const M = bee('m1aaaaaa', 'Mochi'), P = bee('p1aaaaaa', 'Pip', { task: 'api', workspace: '/w/api' }), K = bee('k1aaaaaa', 'Kiwi'), I = bee('i1aaaaaa', 'Iso', { isolate: true })
   const A = [M, P, K, I]
@@ -444,7 +467,7 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   const card = qt.beeCard({ ...M, model: 'haiku', tail: ['> fix login', 'Fixed'], prompt: 'maintain web', changes: { files: 3 }, queue: [] }, A, { memory: '- Use pnpm' })
   eq([card.name, card.folder, card.engine, card.busy, card.uncommitted_files, card.recent, card.memory], ['Mochi', 'web', 'claude (haiku)', false, 3, '> fix login / Fixed', '- Use pnpm'])
   eq(qt.beeCard({ ...M, status: 'running' }, A).busy, true)
-  eq(qt.toolNames(), ['mcp__hive__list_bees', 'mcp__hive__dispatch', 'mcp__hive__read', 'mcp__hive__propose_plan', 'mcp__hive__spawn', 'mcp__hive__stop'])
+  eq(qt.toolNames(), ['mcp__hive__list_bees', 'mcp__hive__dispatch', 'mcp__hive__run_squad', 'mcp__hive__read', 'mcp__hive__propose_plan', 'mcp__hive__spawn', 'mcp__hive__stop'])
   assert.ok(qt.TOOLS.every(t => t.description && t.inputSchema.type === 'object'))
   eq(qt.parseReport('x'.repeat(3000), null, 4000).summary.length, 3000)
   const gp = qt.groupPrompt('Login squad', [{ name: 'User', text: 'look at\nthe logs' }, { name: 'Pip', text: '8080' }], 'fix it', true)

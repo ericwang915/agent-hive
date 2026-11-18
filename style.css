@@ -461,6 +461,21 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .rm-card .hd .arrow { color: var(--faint); font-weight: 400 }
 .rm-card .tx { color: var(--ink2); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap }
 .rm-card.result .tx { -webkit-line-clamp: 7 }
+.rm-card.squad { background: var(--team); border-color: var(--team-line) }
+.rm-card.squad .hd .ic { width: 14px; height: 14px; color: var(--team-ink) }
+.sq-chain { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 7px }
+.rm-card.result .sq-chain { margin: 2px 0 7px }
+.sq-step { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font-size: 12px; font-weight: 600; color: var(--mute) }
+.sq-step:hover { border-color: var(--line2) }
+.sq-step i { font-style: normal; font-size: 11px }
+.sq-step.run { color: var(--ink); border-color: color-mix(in srgb, var(--green) 55%, var(--line)) }
+.sq-step.ok { color: var(--ink2) } .sq-step.ok i { color: var(--green-ink) }
+.sq-step.chg i { color: var(--clay-ink) } .sq-step.bad { color: var(--red-ink) }
+.sq-arrow { color: var(--faint); font-size: 12px }
+.sq-note { margin-top: 6px; font-size: 12px; color: var(--clay-ink) }
+.sq-name { border: 0; background: var(--team); color: var(--team-ink); font-weight: 700; font-size: 12.5px; height: 24px; padding: 0 10px; border-radius: 999px; white-space: nowrap; flex: none }
+.sq-name:hover { filter: brightness(.96) }
+#sq-input { height: 26px; min-height: 0; width: 170px; padding: 0 9px; font-size: 12.5px; font-weight: 600; border-radius: 999px; flex: none }
 .rm-card.dispatch { background: var(--honey-soft); border-color: color-mix(in srgb, var(--honey) 45%, var(--line)) }
 .tagx { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--line); color: var(--ink2); white-space: nowrap }
 .tagx.s-DONE { background: var(--green-soft); color: var(--green-ink) }
