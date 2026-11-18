@@ -463,6 +463,10 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .rm-card.result.direct { background: var(--card) }
 .rm-card.result.direct .md { max-height: 300px; overflow: hidden; font-size: 13.5px }
 .rm-card.result.direct.long .md { -webkit-mask-image: linear-gradient(#000 78%, transparent) }
+.rm-card.result.open .md { max-height: none; -webkit-mask-image: none }
+.rm-card.result.open .tx { -webkit-line-clamp: unset; display: block }
+.rm-more { display: block; border: 0; background: transparent; padding: 4px 0 0; margin-top: 2px; font-size: 12.5px; font-weight: 600; color: var(--clay-ink); cursor: pointer }
+.rm-more:hover { text-decoration: underline }
 
 /* ── Groups: Queen and the bees ── */
 #room { width: 420px; flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 18px; margin: 10px 10px 10px 0; display: flex; flex-direction: column; height: calc(100vh - 20px); min-width: 0; overflow: hidden; box-shadow: 0 1px 2px rgba(40, 30, 20, .04), 0 10px 30px rgba(40, 30, 20, .08); animation: room-in .22s cubic-bezier(.2, .8, .2, 1) }

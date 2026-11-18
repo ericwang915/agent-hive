@@ -917,6 +917,7 @@ const ACT = {
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
+  'rm-more': el => { const c = el.closest('.rm-card'), open = c.classList.toggle('open'); el.textContent = open ? 'Show less' : 'Show all'; if (!open) c.scrollIntoView({ block: 'nearest' }) },
   'hive-view': el => { hiveView = el.dataset.k; try { localStorage.setItem('hive-view', hiveView) } catch {} $('#grid')._h = ''; renderHive() },
   'comb-pick': el => { combSel = el.dataset.id; renderHive() },
   'out-type': el => { OUT.type = el.dataset.k; renderOutputs() },
@@ -1139,7 +1140,7 @@ function roomEntryHtml(e) {
     const body = e.direct ? `<div class="md">${renderMd(e.text || '')}</div>` : `<div class="tx">${txt}</div>`
     const stick = e.sticker ? `<div class="sticker" title="${esc(STICKER[e.sticker] ? STICKER[e.sticker][0] : '')}">${stickerSvg(e.sticker, e.color)}</div>` : ''
     if (stick && !e.text) return `<div class="rm"><span class="av">${beeFace(byId(e.who) || { color: e.color || '#ccc' })}</span><div class="col"><div class="nm"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button><time>${hm(e.t)}</time></div>${stick}</div></div>`
-    return `<div class="rm"><span class="av">${beeFace(byId(e.who) || { color: e.color || '#ccc' }, 28, e.status === 'ERROR' ? 'sad' : 'happy')}</span><div class="rm-card result col${e.direct ? ' direct' : ''}${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" title="Open ${esc(e.name)}'s full chat" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button>${tag}${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'}</span>` : ''}<span class="grow"></span><time>${hm(e.t)}</time></div>${body}${stick}</div></div>`
+    return `<div class="rm"><span class="av">${beeFace(byId(e.who) || { color: e.color || '#ccc' }, 28, e.status === 'ERROR' ? 'sad' : 'happy')}</span><div class="rm-card result col${e.direct ? ' direct' : ''}${(e.text || '').length > 700 ? ' long' : ''}"><div class="hd"><button class="btn sm ghost" data-act="chat" data-id="${esc(e.who)}" title="Open ${esc(e.name)}'s full chat" style="height:20px;padding:0 4px;margin-left:-4px;font-weight:700">${esc(e.name)}</button>${tag}${e.files ? `<span class="tagx">${e.files} file${e.files === 1 ? '' : 's'}</span>` : ''}<span class="grow"></span><time>${hm(e.t)}</time></div>${body}${(e.text || '').length > (e.direct ? 700 : 350) ? '<button class="rm-more" data-act="rm-more">Show all</button>' : ''}${stick}</div></div>`
   }
   return `<div class="rm"><span class="av">${queenSvg(28)}</span><div class="col"><div class="nm">Queen<time>${hm(e.t)}</time></div><div class="md">${renderMd(e.text || '')}</div></div></div>`
 }
