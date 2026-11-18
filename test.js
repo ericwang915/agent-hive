@@ -541,6 +541,9 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq(core.compactWhy(B, { compactAt: 70 }, 2000), '')
   assert.ok(/idle for 2 h/.test(core.compactWhy(B, { compactAt: 0 }, 1000 + 2 * 3600000)))
   eq([core.compactWhy(B, { compactAt: 0, compactCold: false }, 1e10), core.compactWhy({ ...B, context: { used: 50000, window: 1e6 } }, { compactAt: 50 }, 1e10)], ['', ''])
+  // a 1M window: the percentage counts against 200k at most
+  eq([core.compactWhy({ ...B, context: { used: 99000, window: 1e6 } }, { compactAt: 50 }, 2000), core.compactWhy({ ...B, context: { used: 101000, window: 1e6 } }, { compactAt: 50 }, 2000), core.compactWhy({ ...B, context: { used: 101000 } }, { compactAt: 50 }, 2000)],
+    ['', 'This session holds 101k tokens: compacting first', 'This session holds 101k tokens: compacting first'])
   eq([core.compactWhy({ ...B, engine: 'codex' }, { compactAt: 50 }), core.compactWhy({ ...B, sessionId: '' }, { compactAt: 50 }), core.compactWhy({ ...B, context: undefined }, { compactAt: 50 })], ['', '', ''])
   const args = x => core.command({ engine: 'claude', workspace: '/tmp', ...x }, 'hi', { mcp: '{"x":1}' }).args
   eq([core.mcpPrefix('claude.ai Google Drive'), core.mcpPrefix('plugin:engineering:slack'), core.mcpPrefix('audiee'), core.mcpPrefix('claude.ai Interactive Brokers (IBKR)')], ['mcp__claude_ai_Google_Drive', 'mcp__plugin_engineering_slack', 'mcp__audiee', 'mcp__claude_ai_Interactive_Brokers_IBKR'])

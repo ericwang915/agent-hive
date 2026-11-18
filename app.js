@@ -485,7 +485,7 @@ function buildDash() {
   $('#v-dash').innerHTML = `
   <div class="page-head"><div class="grow"><h1 class="round">Dashboard</h1></div>
     <div class="dash-ctl"><input type="date" id="d-date"> Budget $<input type="number" id="d-budget" min="0" step="1" placeholder="No limit"> Report <input type="time" id="d-time">
-    <span title="A Claude Code bee whose session is fuller than this is compacted before its next round. 0 turns it off">Compact at <input type="number" id="d-compact" min="0" max="95" step="5">%</span>
+    <span title="A Claude Code bee whose session is fuller than this is compacted before its next round. With a 1M-token window the percentage counts against 200k. 0 turns it off">Compact at <input type="number" id="d-compact" min="0" max="95" step="5">%</span>
     <label class="check" style="align-items:center" title="A session over 100k tokens that sat idle for an hour has lost its prompt cache; compact it before the next round instead of re-reading all of it"><input type="checkbox" id="d-cold">and when idle</label>
     <span title="Model for the daily report, Dreamer and Gardener">Chores <select id="d-chore"><option value="">Default</option><option value="haiku">haiku</option><option value="sonnet">sonnet</option><option value="opus">opus</option></select></span>
     <button class="btn primary" data-act="queen-report" id="d-go">Generate report</button></div></div>

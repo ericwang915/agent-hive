@@ -146,12 +146,14 @@ function resultText(c) {
 
 // Should this session be compacted before its next round? → the reason shown to the user, or ''.
 // st: {compactAt (percent, 0 = off), compactCold}. A big session that sat idle has lost its prompt cache, so the next round re-reads all of it at full price
-const BIG = 100000, COLD_MS = 3600000
+const BIG = 100000, COLD_MS = 3600000, WINDOW = 200000
 function compactWhy(a, st = {}, now = Date.now()) {
   const c = a.context
   if (a.engine !== 'claude' || !a.sessionId || !c || !c.used) return ''
   const pct = c.window ? c.used / c.window * 100 : 0
   if (st.compactAt > 0 && pct >= st.compactAt) return `Context is ${Math.round(pct)}% full (${kTok(c.used)} tokens): compacting first`
+  // a 1M-token window would let a session grow to hundreds of thousands of tokens before the percentage is reached: count against 200k at most
+  if (st.compactAt > 0 && c.used >= st.compactAt / 100 * Math.min(c.window || WINDOW, WINDOW)) return `This session holds ${kTok(c.used)} tokens: compacting first`
   const idle = now - (a.lastEndAt || a.lastRunAt || now)
   if (st.compactCold !== false && c.used >= BIG && idle > COLD_MS) return `This session holds ${kTok(c.used)} tokens and sat idle for ${Math.round(idle / 3600000)} h: compacting first so the round does not re-read all of it`
   return ''
