@@ -133,6 +133,10 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .md > :first-child { margin-top: 0 } .md > :last-child { margin-bottom: 0 }
 .md p { margin: .55em 0 }
 .md h1, .md h2, .md h3, .md h4 { font-family: var(--round); font-weight: 800; line-height: 1.3; margin: 1.1em 0 .45em }
+.md h3.rp-bee { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px }
+.md h3.rp-bee .dot { align-self: center }
+.md h3.rp-bee .proj { font: 500 12px var(--mono); color: var(--ink2); background: color-mix(in srgb, var(--ink) 7%, transparent); border-radius: 6px; padding: 1px 7px }
+.md h3.rp-bee .job { font: 400 13px var(--sans); color: var(--mute); letter-spacing: 0 }
 .md h1 { font-size: 1.35em } .md h2 { font-size: 1.18em } .md h3 { font-size: 1.06em } .md h4 { font-size: 1em }
 .md ul, .md ol { padding-left: 1.5em; margin: .5em 0 }
 .md li { margin: .2em 0 }

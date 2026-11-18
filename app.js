@@ -565,7 +565,7 @@ function renderDash() {
     ${kpi('Scheduled', A.filter(scheduled).length, '')}
     ${kpi('Needs you', need.length, need.length ? esc(need.map(a => a.name).join(', ')) : '', need.length ? 'alert' : '')}
   </div>
-  <div class="panel report"><h3 class="round">${queenSvg(26)}Report</h3>${d.report ? `<div class="md">${renderMd(d.report)}</div>` : `<div class="mute">${queenBusy ? 'Writing…' : 'None yet'}</div>`}</div>
+  <div class="panel report"><h3 class="round">${queenSvg(26)}Report</h3>${d.report ? `<div class="md">${reportHtml(d.report)}</div>` : `<div class="mute">${queenBusy ? 'Writing…' : 'None yet'}</div>`}</div>
   <div class="panel"><h3 class="round">Activity</h3>${rows.length ? `<div class="tl">${rows.map(a => `<div class="who"><span class="dot" style="background:${esc(a.color)}"></span><span class="ell">${esc(a.name)}</span></div><div class="track">${st(a.id).segs.map(g => `<i style="left:${pct(g[0])}%;width:${Math.max(.15, pct(g[1]) - pct(g[0]))}%"></i>`).join('')}${today ? `<span class="now" style="left:${pct(now)}%"></span>` : ''}</div>`).join('')}
     <div></div><div class="axis">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${h}:00</span>`).join('')}</div></div>` : '<div class="mute">No activity</div>'}</div>
   <div class="panel"><h3 class="round">Bees</h3>${A.length ? `<table class="atable"><thead><tr><th>Name</th><th>Task</th><th>Status</th><th>Runtime</th><th>Spend</th><th>7 days</th><th>Last message</th></tr></thead><tbody>${A.map(a => {
@@ -649,6 +649,13 @@ function openSkillEditor() {
 $('#editor').addEventListener('close', () => { skillEdit = null; if (view === 'skills') loadGarden() })
 $('#editor').addEventListener('keydown', e => { if (e.metaKey && e.key === 'Enter') { e.preventDefault(); $('#editor [data-act="skill-save"]').click() } })
 
+// The report's bee headings read "Name · project · what it does": the name stays bold, the rest steps back; a known bee gets its colour dot
+function reportHtml(md) {
+  return renderMd(md).replace(/<h3>([^<]*?) · ([^<]*)<\/h3>/g, (m, name, rest) => {
+    const bee = S.agents.find(a => a.name === name.trim()), parts = rest.split(' · ')
+    return `<h3 class="rp-bee">${bee ? `<span class="dot" style="background:${esc(bee.color)}"></span>` : ''}${name}<span class="proj">${parts[0]}</span>${parts.length > 1 ? `<span class="job">${parts.slice(1).join(' · ')}</span>` : ''}</h3>`
+  })
+}
 // ───────── Search everywhere ─────────
 // Beyond bee names: skills, memory, conversations and groups that mention the text. Used by the Hive search box and by ⌘K
 let FOUND = { q: '', items: [], busy: false }, foundSeq = 0, foundTimer = null
