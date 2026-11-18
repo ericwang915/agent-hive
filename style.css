@@ -424,6 +424,8 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .room-bees button, .room-bees .who { display: inline-flex; align-items: center; gap: 5px; height: 30px; border: 0; background: var(--soft); border-radius: 999px; padding: 0 11px 0 3px; color: var(--ink2); font-weight: 600; white-space: nowrap; flex: none; transition: background .12s }
 .room-bees button:hover { background: var(--line) }
 .room-bees .who { background: var(--honey-soft) }
+.room-bees .ctx { font-size: 11px; font-weight: 500; color: var(--mute) }
+.room-bees .ctx.hot { color: var(--clay-ink) }
 .room-bees .task { font-weight: 400; color: var(--mute); max-width: 120px }
 .room-tl { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 12px; min-height: 0 }
 .rm { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; min-width: 0 }

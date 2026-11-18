@@ -245,6 +245,8 @@ function run(a, prompt, why = 'manual', meta = {}) {
     if (reason) {                                        // compact now, then run this prompt right after
       enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, compacted: true, at: 0 })
       log(a, { role: 'system', text: reason })
+      const room = meta.room && state.rooms.find(x => x.id === meta.room)
+      if (room) roomLog(room, { who: a.id, name: a.name, color: a.color, kind: 'system', text: `${a.name}: ${reason[0].toLowerCase()}${reason.slice(1)}` })
       return run(a, '/compact', 'chat', { compacted: true, silent: true })
     }
   }
@@ -734,7 +736,7 @@ function readRoom(r, n = 400) {
 }
 const roomPublic = r => ({
   id: r.id, name: r.name, members: r.members, queen: !!r.queen, main: !!r.main, model: r.model || '', last: r.last || '', lastAt: r.lastAt || r.createdAt,
-  status: qprocs.has(r.id) ? 'running' : 'idle', routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
+  status: qprocs.has(r.id) ? 'running' : 'idle', context: r.sessionId && r.context && r.context.used ? r.context : null, routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
   pending: Object.entries(r.mission.pending).map(([id, p]) => ({ id, ...p })), installed: core.onPath('claude'),
 })
 let roomsTimer = null
@@ -745,12 +747,21 @@ function roomsPush() {
 }
 const newRoom = o => ({ id: crypto.randomUUID(), name: 'Group', members: [], queen: false, model: '', sessionId: '', createdAt: Date.now(), ...o, queue: [], asks: [], routing: 0, batches: {}, seen: {}, mission: qt.newMission() })
 
-function queenRun(r, prompt) {
+// tidy: this run only compacts Queen's session; the prompt that was waiting runs right after it
+function queenRun(r, prompt, tidy) {
   const m = r.mission
   if (qprocs.has(r.id)) { r.queue.push(prompt); return roomsPush() }
   if (!core.onPath('claude')) return roomLog(r, { ...QUEEN, kind: 'error', text: 'Queen needs the claude command installed on this machine' })
   if (m.turns >= qt.LIMITS.turns) return roomLog(r, { ...QUEEN, kind: 'system', text: `Queen has taken ${m.turns} turns on this task and stopped. Send a new message to continue.` })
-  m.turns++; m.turnDispatch = []
+  if (!tidy && !r.tidied && r.sessionId) {
+    const reason = core.compactWhy({ engine: 'claude', sessionId: r.sessionId, context: r.context, lastEndAt: r.lastEndAt }, state.settings)
+    if (reason) {
+      r.queue.unshift(prompt); r.tidied = true; r.before = r.context.used
+      roomLog(r, { ...QUEEN, kind: 'system', text: `Queen: ${reason[0].toLowerCase()}${reason.slice(1)}` })
+      return queenRun(r, '/compact', true)
+    }
+  }
+  if (!tidy) { r.tidied = false; m.turns++; m.turnDispatch = [] }
   const cfg = JSON.stringify({ mcpServers: { hive: { command: process.execPath, args: [path.join(__dirname, 'hive-mcp.js')], env: { ELECTRON_RUN_AS_NODE: '1', HIVE_PORT: String(approvePort), HIVE_TOKEN: approveToken, HIVE_ROOM: r.id } } } })
   const dir = path.join(DIR, 'queen', r.id)
   fs.mkdirSync(dir, { recursive: true })
@@ -762,10 +773,11 @@ function queenRun(r, prompt) {
   const use = { usd: 0, tin: 0, tout: 0 }
   let err = '', done = false
   const parser = core.makeParser(e => {
+    if (tidy) { if (e.role === 'error') err = e.text; return }
     if (e.role === 'assistant') roomLog(r, { ...QUEEN, kind: 'say', text: e.text })
     else if (e.role === 'error') roomLog(r, { ...QUEEN, kind: 'error', text: e.text })
     else if (e.role === 'tool' && /list_bees$/.test(e.name)) roomLog(r, { ...QUEEN, kind: 'system', text: 'Queen looked at the bees in the group' })
-  }, sid => { r.sessionId = sid }, u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout })
+  }, sid => { r.sessionId = sid }, u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout }, cx => { r.context = { ...(r.context || {}), ...cx }; roomsPush() })
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
   child.stdout.on('data', d => parser.feed(d))
   child.stderr.on('data', d => { err = (err + d).slice(-600) })
@@ -774,11 +786,14 @@ function queenRun(r, prompt) {
     done = true
     parser.end()
     qprocs.delete(r.id); delete r.runStart
+    r.lastEndAt = Date.now()
     addSpend(null, use)
     for (const k of [...r.asks]) { const f = asks.get(k.id); if (f) f(false) }
     r.asks = []
     if (state.rooms.includes(r)) {
       if (e) roomLog(r, { ...QUEEN, kind: 'error', text: `Queen failed to start: ${e.message}` })
+      else if (tidy && r.stopped) {}
+      else if (tidy) roomLog(r, { ...QUEEN, kind: 'system', text: r.context && r.before && r.context.used < r.before ? `Queen's conversation compacted: ${core.kTok(r.before)} → ${core.kTok(r.context.used)} tokens` : 'Queen could not compact her conversation; carrying on as it is' })
       else if (code && !r.stopped) roomLog(r, { ...QUEEN, kind: 'error', text: `Queen failed (exit code ${code})${err.trim() ? ': ' + first(err.trim().split('\n').pop(), 200) : ''}` })
       const next = r.queue.shift()
       if (next) queenRun(r, next)
@@ -1003,7 +1018,7 @@ function roomStop(r) {
 }
 function roomNew(r) {
   if (qprocs.has(r.id) || Object.keys(r.mission.pending).length) throw new Error('This task is still in progress. Stop it before starting a new conversation')
-  r.sessionId = ''; r.mission = qt.newMission()
+  r.sessionId = ''; r.mission = qt.newMission(); delete r.context; r.tidied = false
   roomLog(r, { ...QUEEN, kind: 'system', text: 'Started a new conversation. Queen no longer remembers the earlier one' })
 }
 function parseRoom(c, prev) {

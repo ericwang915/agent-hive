@@ -885,6 +885,9 @@ function addRoomEntry({ room, entry }) {
   think.insertAdjacentHTML('beforebegin', roomEntryHtml(entry))
   if (stick) tl.scrollTop = tl.scrollHeight
 }
+// How full a session is, once that is worth knowing: " · 42% full"
+const ctxPct = c => (c && c.used && c.window ? Math.round(c.used / c.window * 100) : 0)
+const ctxNote = (c, lead = '') => (ctxPct(c) >= 20 ? `${lead}${ctxPct(c)}% full` : '')
 // Header, member strip, and cards waiting for your OK
 function renderRoomMeta() {
   renderRooms()
@@ -893,7 +896,7 @@ function renderRoomMeta() {
   const running = r.status === 'running', pend = r.pending || [], bees = roomBees(r), busy = roomBusy(r)
   setHtml($('#room-bee'), roomIcon(r, 34))
   $('#room-name').textContent = r.name
-  $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}`
+  $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}${ctxNote(r.context, ' · ')}`
   $('#room-stop').hidden = !running && !pend.length && !busy.length && !r.routing
   $('#room-newbtn').hidden = !r.queen
   $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message the group, @ to mention'
@@ -906,7 +909,7 @@ function renderRoomMeta() {
   }
   const task = id => (pend.find(p => p.id === id) || {}).task
   setHtml($('#room-bees'), (r.queen ? `<span class="who">${queenSvg(24, 'happy', running ? 'running' : '')}Queen</span>` : '')
-    + bees.map(a => `<button data-act="chat" data-id="${a.id}" title="${esc(task(a.id) || `Open ${a.name}'s chat`)}">${beeOf(a, 24)}${esc(a.name)}${task(a.id) ? `<span class="task ell">${esc(String(task(a.id)).split('\n')[0])}</span>` : ''}</button>`).join('')
+    + bees.map(a => `<button data-act="chat" data-id="${a.id}" title="${esc(task(a.id) || `Open ${a.name}'s chat${ctxNote(a.context, ' · session ')}`)}">${beeOf(a, 24)}${esc(a.name)}${ctxPct(a.context) >= 40 ? `<span class="ctx${ctxPct(a.context) >= 70 ? ' hot' : ''}">${ctxPct(a.context)}%</span>` : ''}${task(a.id) ? `<span class="task ell">${esc(String(task(a.id)).split('\n')[0])}</span>` : ''}</button>`).join('')
     + `<button class="add" data-act="group-edit">+ Add</button>`)
   const asks = (r.asks || []).map(k => k.kind === 'plan'
     ? `<div class="ask-card"><div class="ttl">Queen's plan</div>${k.data.note ? `<div class="kv">${esc(k.data.note)}</div>` : ''}<ol>${k.data.steps.map(s => `<li><b>${esc(s.bee)}</b>: ${esc(s.task)}</li>`).join('')}</ol>

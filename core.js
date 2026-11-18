@@ -442,7 +442,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = { HEADLESS_OFF, BEE_SYS, mcpPrefix, parseInit,
-  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, BIG, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,
