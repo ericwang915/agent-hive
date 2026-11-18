@@ -568,14 +568,14 @@ function renderGarden() {
   if (view === 'skills') {
     const card = s => {
       const editing = skillEdit === s.name, open = skillOpen.has(s.name)
-      return `<div class="skill"><div class="top">${ICON.sprout}<span class="nm ell grow">${esc(s.name)}</span><span class="faint" style="font-size:11.5px">${dayKey(new Date(s.mtime)).slice(5)}</span></div>
+      return `<div class="skill${editing || open ? ' wide' : ''}"><div class="top">${ICON.sprout}<span class="nm ell grow">${esc(s.name)}</span><span class="faint" style="font-size:11.5px">${dayKey(new Date(s.mtime)).slice(5)}</span></div>
       ${editing ? `<textarea id="skill-text" spellcheck="false">${esc(s.raw)}</textarea><div class="acts"><button class="btn sm primary" data-act="skill-save" data-n="${esc(s.name)}">Save</button><button class="btn sm" data-act="skill-cancel">Cancel</button></div>`
     : `<div class="desc">${esc(s.description) || '<span class="faint">No description</span>'}</div>${open ? `<div class="body md">${renderMd(s.body)}</div>` : ''}
       <div class="acts"><button class="btn sm ghost" data-act="skill-open" data-n="${esc(s.name)}">${open ? 'Hide' : 'View'}</button><button class="btn sm ghost" data-act="skill-edit" data-n="${esc(s.name)}">Edit</button>
       <label class="check" style="font-size:12.5px;align-items:center" title="Symlinks it at ~/.claude/skills/hive-${esc(s.name)}"><input type="checkbox" data-link="${esc(s.name)}" ${s.linked ? 'checked' : ''} style="margin:0">Install in Claude Code</label><span class="sp"></span>
       <button class="btn sm icon ghost danger" data-act="skill-del" data-n="${esc(s.name)}" title="Delete">${ICON.trash}</button></div>`}</div>`
     }
-    const fresh = skillEdit === '+' ? `<div class="skill"><div class="top">${ICON.sprout}<input type="text" id="skill-name" class="grow mono" placeholder="skill-name" spellcheck="false"></div>
+    const fresh = skillEdit === '+' ? `<div class="skill wide"><div class="top">${ICON.sprout}<input type="text" id="skill-name" class="grow mono" placeholder="skill-name" spellcheck="false"></div>
       <textarea id="skill-text" spellcheck="false">---\nname: \ndescription: One line on when to use it\n---\n\n## Steps\n\n1. </textarea><div class="acts"><button class="btn sm primary" data-act="skill-save" data-n="+">Save</button><button class="btn sm" data-act="skill-cancel">Cancel</button></div></div>` : ''
     $('#v-skills').innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Skills</h1></div>
       <button class="btn" data-act="open-garden" data-k="skills">${ICON.folder}Folder</button><button class="btn primary" data-act="skill-new">${ICON.plus}New</button></div>

@@ -141,12 +141,21 @@ ${Object.entries(mem.agents || {}).map(([id, md]) => `## ${id}\n${md || '(empty)
 ${text}`
 }
 
+// The skills as Gardener sees them: name, description and the body, so that one can be extended instead of duplicated.
+// A body too long to show whole is left out, and that skill is locked: rewriting it from a cut copy would lose the rest
+const perSkill = (skills, each = 8000, total = 40000) => Math.min(each, Math.floor(total / Math.max(1, skills.length)))
+const lockedSkills = skills => skills.filter(s => String(s.body || '').trim().length > perSkill(skills)).map(s => s.name)
+function existing(skills) {
+  const locked = lockedSkills(skills)
+  return skills.map(s => `## ${s.name}\n${s.description}\n\n${locked.includes(s.name) ? '[body too long to show: leave this skill as it is]' : String(s.body || '').trim()}`).join('\n\n')
+}
 function gardenerPrompt(skills, text) {
   return `You are Gardener, the bee in Agent Hive that distills reusable skills from conversations. Below are the existing skills and each bee's new conversation logs since the last pass.
 
 Only plant practices that are truly reusable and have concrete steps: the steps for a kind of task, this project's build / test / release flow, pitfalls hit and the right way around them.
 - Do not turn one-off matters or generic common sense into skills. Fewer is better, usually 0 to 3; if nothing is worth writing, output an empty array.
-- You may improve an existing skill by reusing its name (output the full improved body).
+- Update before you plant. First check the existing skills below: when one already covers the same task, tool or workflow, even partly, extend that one instead of planting a sibling. Reuse its exact name and output its full body with the new steps and pitfalls merged in; keep what is still valid, correct what the logs show to be wrong.
+- Plant a new skill only when no existing one fits. Never create a second skill for a topic that an existing one covers.
 - name uses only lowercase letters, digits and hyphens; description says in one sentence when to use it; body is Markdown with the concrete steps and commands.
 - Write only what the logs support; do not make things up. Never write keys, tokens or passwords.
 - Write in the language the user uses in the conversations.
@@ -156,7 +165,7 @@ Reply with ONLY a JSON object and no other text:
 {"skills": [{"name": "kebab-case-name", "description": "one sentence", "body": "Markdown body"}], "summary": "one or two sentences on what you planted and why"}
 
 # Existing skills
-${skills.map(s => `- ${s.name}: ${s.description}`).join('\n') || '(none yet)'}
+${existing(skills) || '(none yet)'}
 
 # New conversation logs
 ${text}`
@@ -181,10 +190,10 @@ function applyMemory(root, res, agents) {
 }
 
 // Validates names, drops empty bodies, 8 at most; returns which skills changed
-function applySkills(root, res) {
+function applySkills(root, res, locked = []) {
   const changed = []
   for (const s of (Array.isArray(res && res.skills) ? res.skills : []).slice(0, 8)) {
-    if (!s || !SKILL_NAME.test(String(s.name)) || typeof s.body !== 'string' || !s.body.trim()) continue
+    if (!s || !SKILL_NAME.test(String(s.name)) || typeof s.body !== 'string' || !s.body.trim() || locked.includes(s.name)) continue
     if (saveSkill(root, s.name, formatSkill(s.name, s.description, s.body))) changed.push(s.name)
   }
   return changed
@@ -209,5 +218,5 @@ function preamble(root, agent) {
 
 module.exports = {
   NIGHT, SKILL_NAME, parseSkill, formatSkill, saveSkill, deleteSkill, listSkills, linkSkill, isLinked, linkPath,
-  readMemory, writeMemory, memFile, transcript, dreamerPrompt, gardenerPrompt, parseJson, applyMemory, applySkills, writeDream, preamble,
+  readMemory, writeMemory, memFile, transcript, dreamerPrompt, gardenerPrompt, lockedSkills, parseJson, applyMemory, applySkills, writeDream, preamble,
 }

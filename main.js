@@ -1057,8 +1057,9 @@ async function nightRun(k, manual) {
       const res = garden.parseJson(await once(garden.dreamerPrompt(mem, text), chore()))
       changed = garden.applyMemory(root, res, state.agents); summary = res.summary
     } else {
-      const res = garden.parseJson(await once(garden.gardenerPrompt(garden.listSkills(root), text), chore()))
-      changed = garden.applySkills(root, res); summary = res.summary
+      const have = garden.listSkills(root)
+      const res = garden.parseJson(await once(garden.gardenerPrompt(have, text), chore()))
+      changed = garden.applySkills(root, res, garden.lockedSkills(have)); summary = res.summary
     }
     summary = String(summary || '').slice(0, 600)
     garden.writeDream(root, today(), meta.name, summary, changed)

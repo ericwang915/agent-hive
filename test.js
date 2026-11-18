@@ -373,7 +373,10 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   assert.ok(tr.startsWith('## Mochi (a1; folder web; claude)\n[user] fix bug\n[tool] Bash(') && tr.endsWith('[assistant] fixed') && !tr.includes('[run]') && tr.length < 400)
   eq(garden.parseJson('OK:\n```json\n{"skills": [], "summary": "none"}\n```'), { skills: [], summary: 'none' })
   assert.throws(() => garden.parseJson('nothing'))
-  assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.gardenerPrompt(sk, 'T').includes('- release-flow: New description'))
+  { const big = [{ name: 'big-one', description: 'D', body: 'x'.repeat(9000) }, { name: 'small-one', description: 'd', body: 'steps' }]
+    eq(garden.lockedSkills(big), ['big-one'])
+    assert.ok(garden.gardenerPrompt(big, 'T').includes('## big-one\nD\n\n[body too long to show') && garden.gardenerPrompt(big, 'T').includes('## small-one\nd\n\nsteps')) }
+  assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.gardenerPrompt(sk, 'T').includes('## release-flow\nNew description') && /Update before you plant/.test(garden.gardenerPrompt(sk, 'T')))
 }
 
 // ───────── Queen leading the team ─────────
