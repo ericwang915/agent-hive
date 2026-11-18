@@ -121,6 +121,33 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .vbar .sz { color: var(--c-faint); font-size: 11.5px; flex: none }
 .vbody { flex: 1; min-height: 0; overflow: auto }
 .code { position: relative; display: flex; min-width: max-content; font: 12px/19px var(--mono) }
+.code textarea { flex: 1; field-sizing: content; min-width: 300px; margin: 0; padding: 10px 18px 24px 0; border: 0; outline: 0 !important; box-shadow: none !important; background: transparent; color: inherit; font: inherit; white-space: pre; tab-size: 2; resize: none; overflow: hidden; border-radius: 0; min-height: 0 }
+.code .fhl { position: absolute; height: 19px; background: color-mix(in srgb, var(--c-wait) 45%, transparent); border-radius: 3px; pointer-events: none }
+.vdot { color: var(--c-accent); font-size: 11px; flex: none; margin-right: -4px }
+.vfind { flex: none; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 14px; border-bottom: 1px solid var(--c-line); background: var(--c-head) }
+.vfind input { flex: 1; max-width: 320px; height: 26px; min-height: 0; padding: 0 8px; font: 12.5px var(--mono); border-radius: 7px }
+.vfind #f-n { font-size: 11.5px; color: var(--c-dim); min-width: 70px; padding-left: 6px }
+.thead .btn.sm.icon { width: 24px; height: 24px; padding: 0; color: var(--c-dim) }
+.thead .btn.on { background: color-mix(in srgb, var(--c-accent) 16%, transparent); color: var(--c-text) }
+.tn.edit { cursor: default; background: none }
+.tn.edit input, .tsearch input { flex: 1; min-width: 0; width: 100%; height: 22px; min-height: 0; padding: 0 6px; font-size: 12.5px; border-radius: 5px }
+.tsearch { padding: 2px 2px 6px }
+.tsearch input { height: 26px }
+.tnote { padding: 10px 8px; color: var(--c-faint); font-size: 12px; line-height: 1.5 }
+.tsec { padding: 10px 8px 3px; color: var(--c-dim); font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase }
+#t-found .tn { padding-left: 8px }
+.tdir { color: var(--c-faint); font-size: 11.5px; flex: 1; min-width: 0 }
+.tfile { font-weight: 600 }
+.tcount { flex: none; font-size: 11px; font-weight: 500; color: var(--c-dim); background: var(--c-line); border-radius: 999px; padding: 0 6px; line-height: 16px }
+.thit { font: 11.5px var(--mono); color: var(--c-dim); padding-left: 14px !important }
+.thit .tl { flex: none; color: var(--c-faint); min-width: 22px; text-align: right }
+.thit b { color: var(--c-text); background: color-mix(in srgb, var(--c-wait) 35%, transparent); border-radius: 2px; font-weight: 600 }
+#ctx { position: fixed; z-index: 50; min-width: 190px; background: var(--c-box); border: 1px solid var(--c-line); border-radius: 10px; box-shadow: 0 10px 34px rgba(0, 0, 0, .18); padding: 5px }
+#ctx button { display: flex; align-items: center; width: 100%; height: 27px; padding: 0 10px; border: 0; background: transparent; border-radius: 6px; font-size: 13px; color: var(--c-text); text-align: left }
+#ctx button:hover { background: var(--c-user) }
+#ctx button.danger { color: var(--c-err) }
+#ctx button span { margin-left: auto; padding-left: 18px; color: var(--c-faint); font-size: 12px }
+#ctx hr { border: 0; border-top: 1px solid var(--c-line); margin: 4px 6px }
 .code .ln { flex: none; padding: 10px 12px 24px 14px; text-align: right; color: var(--c-faint); white-space: pre; user-select: none }
 .code pre { margin: 0; padding: 10px 18px 24px 0; white-space: pre; tab-size: 2; user-select: text; cursor: text; font: inherit; position: relative }
 .code .hl { position: absolute; left: 0; right: 0; height: 19px; background: color-mix(in srgb, var(--c-wait) 22%, transparent); pointer-events: none }

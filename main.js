@@ -1410,6 +1410,12 @@ function ipc() {
     if (!l) throw new Error('Nothing at that path')
     return files.readAt(l.abs)
   })
+  // Editing from the file browser: everything stays inside the bee's folder; deleting goes to the Trash
+  handle('newPath', (id, rel, dir) => files.create(filesRoot(need(id)), String(rel || '').slice(0, 1024), !!dir))
+  handle('renamePath', (id, from, to) => files.rename(filesRoot(need(id)), String(from || '').slice(0, 1024), String(to || '').slice(0, 1024)))
+  handle('writeFile', (id, rel, text, o) => files.write(filesRoot(need(id)), String(rel || '').slice(0, 1024), text, { mtime: +(o && o.mtime) || 0, force: !!(o && o.force) }))
+  handle('trashPath', async (id, rel) => { await shell.trashItem(files.entry(filesRoot(need(id)), String(rel || '').slice(0, 1024))) })
+  handle('grepFiles', (id, q) => files.grep(filesRoot(need(id)), String(q || '').slice(0, 200)))
   handle('locate', (id, list) => { const root = filesRoot(need(id)); return (Array.isArray(list) ? list.slice(0, 400) : []).map(p => files.locate(root, p, HOME)) })
   handle('revealPath', (id, p) => {
     const l = files.locate(filesRoot(need(id)), p, HOME)

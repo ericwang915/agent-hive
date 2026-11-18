@@ -247,49 +247,131 @@ $('#changes').addEventListener('click', async e => {
 $('#changes').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'c-msg' && !e.isComposing) $('[data-c="commit"]').click() })
 
 // ───────── Files ─────────
-const F = { kids: new Map(), open: new Set(), sel: '', line: 0, ready: false, cur: null }
+// input: a name being typed in the tree ({kind: file | folder | rename, dir, from}); mode: tree | search
+const F = { kids: new Map(), open: new Set(), sel: '', selDir: false, line: 0, ready: false, cur: null, input: null, mode: 'tree', q: '', found: null }
 const parentOf = p => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+const baseOf = p => p.slice(p.lastIndexOf('/') + 1)
 const fmtSize = n => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB' : (n / 1048576).toFixed(1) + ' MB')
+const ed = () => $('#ed')
+const dirty = () => !!(F.cur && F.cur.kind === 'text' && ed() && ed().value !== F.cur.text)
 async function loadDir(rel, quiet) {
   const r = quiet ? await hive.call('ls', ID, rel) : await call('ls', ID, rel)
   if (r && r.items) F.kids.set(rel, r)
   else { F.kids.delete(rel); F.open.delete(rel) }
   return !!(r && r.items)
 }
+const padOf = depth => `style="padding-left:${6 + depth * 14}px"`
+const nameInput = depth => `<div class="tn edit" ${padOf(depth)}><span class="tw"></span>${F.input.kind === 'folder' ? ICON.folder : ''}<input type="text" id="t-name" spellcheck="false" autocomplete="off" value="${esc(F.input.kind === 'rename' ? baseOf(F.input.from) : '')}" placeholder="${F.input.kind === 'folder' ? 'Folder name' : F.input.kind === 'file' ? 'File name' : ''}"></div>`
 function treeHtml(rel, depth) {
   const k = F.kids.get(rel)
   if (!k) return ''
-  const pad = `style="padding-left:${6 + depth * 14}px"`
-  return k.items.map(it => {
+  const pad = padOf(depth), inp = F.input
+  return (inp && inp.kind !== 'rename' && inp.dir === rel ? nameInput(depth) : '') + k.items.map(it => {
     const p = rel ? rel + '/' + it.name : it.name, open = it.dir && F.open.has(p)
+    if (inp && inp.kind === 'rename' && inp.from === p) return nameInput(depth) + (open ? treeHtml(p, depth + 1) : '')
     return `<div class="tn${p === F.sel ? ' on' : ''}" data-p="${esc(p)}"${it.dir ? ' data-d="1"' : ''} ${pad} title="${esc(p)}"><span class="tw">${it.dir ? (open ? '▾' : '▸') : ''}</span>${it.dir ? ICON.folder : ''}<span class="ell">${esc(it.name)}</span></div>${open ? treeHtml(p, depth + 1) : ''}`
   }).join('') + (k.more ? `<div class="tn more" ${pad}><span class="tw"></span>${k.more} more not shown</div>` : '')
 }
+const tbtn = (t, icon, title, on) => `<button class="btn sm icon ghost${on ? ' on' : ''}" data-t="${t}" title="${title}">${icon}</button>`
 function renderTree() {
-  const k = F.kids.get('')
-  $('#tree').innerHTML = `<div class="thead"><span class="grow ell">${esc(A.task)}</span><button class="btn sm icon ghost" data-t="refresh" title="Refresh">${ICON.refresh}</button><button class="btn sm icon ghost" data-t="reveal" title="Show in Finder">${ICON.finder}</button></div>`
-    + (k && !k.items.length ? '<div class="tn more"><span class="tw"></span>Empty folder</div>' : treeHtml('', 0))
+  const k = F.kids.get(''), head = `<div class="thead"><span class="grow ell">${esc(A.task)}</span>${tbtn('file', ICON.newFile, 'New file')}${tbtn('folder', ICON.newFolder, 'New folder')}${tbtn('search', ICON.search, 'Search in files ⇧⌘F', F.mode === 'search')}${tbtn('refresh', ICON.refresh, 'Refresh')}</div>`
+  if (F.mode === 'search') {
+    const keep = $('#t-q') ? [$('#t-q').selectionStart, $('#t-q').selectionEnd] : null
+    $('#tree').innerHTML = head + `<div class="tsearch"><input type="text" id="t-q" spellcheck="false" autocomplete="off" placeholder="File name or text" value="${esc(F.q)}"></div><div id="t-found">${foundHtml()}</div>`
+    if (keep) { $('#t-q').focus(); $('#t-q').setSelectionRange(keep[0], keep[1]) }
+    return
+  }
+  $('#tree').innerHTML = head + (k && !k.items.length && !F.input ? '<div class="tn more"><span class="tw"></span>Empty folder</div>' : treeHtml('', 0))
+  const inp = $('#t-name')
+  if (inp) { inp.focus(); const dot = inp.value.lastIndexOf('.'); inp.setSelectionRange(0, dot > 0 ? dot : inp.value.length); inp.scrollIntoView({ block: 'nearest' }) }
 }
+// Search: file names first, then lines that contain the text
+const markHit = h => `${esc(h.text.slice(0, h.col))}<b>${esc(h.text.slice(h.col, h.col + F.q.length))}</b>${esc(h.text.slice(h.col + F.q.length))}`
+function foundHtml() {
+  const f = F.found
+  if (!F.q.trim()) return '<div class="tnote">Type to find files by name and lines by text. A capital letter makes it case-sensitive.</div>'
+  if (!f) return '<div class="tnote">Searching…</div>'
+  if (!f.names.length && !f.hits.length) return '<div class="tnote">Nothing found</div>'
+  const groups = new Map()
+  for (const h of f.hits) (groups.get(h.rel) || groups.set(h.rel, []).get(h.rel)).push(h)
+  return (f.names.length ? '<div class="tsec">Files</div>' + f.names.map(p => `<div class="tn" data-p="${esc(p.replace(/\/$/, ''))}"${p.endsWith('/') ? ' data-d="1"' : ''} title="${esc(p)}">${p.endsWith('/') ? ICON.folder : ''}<span class="ell">${esc(baseOf(p.replace(/\/$/, '')))}</span><span class="tdir ell">${esc(parentOf(p.replace(/\/$/, '')))}</span></div>`).join('') : '')
+    + (f.hits.length ? `<div class="tsec">Text${f.more ? ' · first 200 shown' : ` · ${f.hits.length}`}</div>` + [...groups].map(([rel, hs]) => `<div class="tn tfile" data-p="${esc(rel)}" title="${esc(rel)}"><span class="ell">${esc(baseOf(rel))}</span><span class="tdir ell">${esc(parentOf(rel))}</span><span class="tcount">${hs.length}</span></div>`
+      + hs.map(h => `<div class="tn thit" data-p="${esc(rel)}" data-line="${h.line}"><span class="tl">${h.line}</span><span class="ell">${markHit(h)}</span></div>`).join('')).join('') : '')
+}
+let searchSeq = 0, searchTimer = null
+function runSearch() {
+  clearTimeout(searchTimer)
+  const q = F.q, seq = ++searchSeq
+  F.found = null
+  if ($('#t-found')) $('#t-found').innerHTML = foundHtml()
+  if (!q.trim()) return
+  searchTimer = setTimeout(async () => {
+    const [names, g] = await Promise.all([hive.call('findFiles', ID, q.trim()), hive.call('grepFiles', ID, q)])
+    if (seq !== searchSeq) return
+    F.found = { names: Array.isArray(names) ? names : [], hits: (g && g.hits) || [], more: !!(g && g.more) }
+    if ($('#t-found')) $('#t-found').innerHTML = foundHtml()
+  }, 180)
+}
+function setSearch(on, q) {
+  setSide(true)
+  F.mode = on ? 'search' : 'tree'; F.input = null
+  if (on && typeof q === 'string' && q) { F.q = q; runSearch() }
+  renderTree()
+  if (on) { $('#t-q').focus(); $('#t-q').select() }
+}
+
+// The viewer is an editor for text files inside the folder. Line numbers and the text scroll together
+const lineCount = t => t.split('\n').length
 function renderView() {
   const v = $('#view'), c = F.cur
-  if (!c) { v.innerHTML = '<div class="note">Pick a file to read it</div>'; return }
-  const bar = `<div class="vbar"><span class="grow ell" title="${esc(c.abs)}">${esc(c.rel)}</span><span class="sz">${fmtSize(c.size)}${c.cut ? ' · first 400 KB shown' : ''}</span><button class="btn sm icon ghost" data-v="reveal" title="Show in Finder">${ICON.finder}</button></div>`
+  if (!c) { v.innerHTML = '<div class="note">Pick a file to read or edit it</div>'; return }
+  const canEdit = c.kind === 'text' && !c.cut && !c.outside
+  const bar = `<div class="vbar"><span class="vdot" id="v-dot" hidden title="Unsaved changes">●</span><span class="grow ell" title="${esc(c.abs)}">${esc(c.rel)}</span><span class="sz" id="v-sz">${fmtSize(c.size)}${c.cut ? ' · first 400 KB shown, read-only' : c.kind === 'text' && c.outside ? ' · outside the folder, read-only' : ''}</span>`
+    + (c.kind === 'text' ? `<button class="btn sm icon ghost" data-v="find" title="Find ⌘F">${ICON.search}</button>` : '') + (canEdit ? `<button class="btn sm" data-v="save" id="v-save" disabled title="Save ⌘S">Save</button>` : '')
+    + `<button class="btn sm icon ghost" data-v="reveal" title="Show in Finder">${ICON.finder}</button></div>`
   if (c.kind === 'image') v.innerHTML = `${bar}<div class="vbody"><div class="vimg"><img src="${esc(fileUrl(c.abs))}" alt=""></div></div>`
   else if (c.kind === 'binary') v.innerHTML = `${bar}<div class="vbody"><div class="note">Binary file, not shown</div></div>`
   else {
-    const n = c.text.split('\n').length - (c.text.endsWith('\n') ? 1 : 0) || 1
-    const hl = F.line > 0 && F.line <= n ? `<div class="hl" style="top:${10 + (F.line - 1) * 19}px"></div>` : ''
-    v.innerHTML = `${bar}<div class="vbody"><div class="code">${hl}<div class="ln">${Array.from({ length: n }, (_, i) => i + 1).join('\n')}</div><pre>${esc(c.text)}</pre></div></div>`
+    const n = lineCount(c.text)
+    const hl = F.line > 0 && F.line <= n ? `<div class="hl" id="v-hl" style="top:${10 + (F.line - 1) * 19}px"></div>` : ''
+    v.innerHTML = `${bar}<div class="vfind" id="v-find" hidden><input type="text" id="f-q" spellcheck="false" autocomplete="off" placeholder="Find"><span id="f-n"></span><button class="btn sm icon ghost" data-v="prev" title="Previous ⇧↩">↑</button><button class="btn sm icon ghost" data-v="next" title="Next ↩">↓</button><button class="btn sm icon ghost" data-v="find-x" title="Close Esc">${ICON.x}</button></div>
+      <div class="vbody"><div class="code">${hl}<div class="fhl" id="v-fhl" hidden></div><div class="ln" id="v-ln">${Array.from({ length: n }, (_, i) => i + 1).join('\n')}</div><textarea id="ed" spellcheck="false" wrap="off" autocomplete="off" autocapitalize="off"${canEdit ? '' : ' readonly'}></textarea></div></div>`
+    ed().value = c.text
     if (hl) v.querySelector('.vbody').scrollTop = Math.max(0, (F.line - 6) * 19)
   }
 }
+function markDirty() {
+  const d = dirty()
+  if ($('#v-dot')) $('#v-dot').hidden = !d
+  if ($('#v-save')) $('#v-save').disabled = !d
+  const n = lineCount(ed().value), ln = $('#v-ln')
+  if (ln && ln.childElementCount === 0 && ln.textContent.split('\n').length !== n) ln.textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n')
+  if ($('#v-hl')) $('#v-hl').remove()
+}
+async function saveFile(force) {
+  const c = F.cur
+  if (!c || !dirty()) return
+  const text = ed().value, r = await call('writeFile', ID, c.rel, text, { mtime: c.mtime, force: !!force })
+  if (!r) return
+  if (r.changed) { if (confirm(`${baseOf(c.rel)} was changed on disk since you opened it, probably by the bee.\n\nSave your version over it?`)) return saveFile(true); return }
+  c.text = text; c.size = r.size; c.mtime = r.mtime
+  if ($('#v-sz')) $('#v-sz').textContent = fmtSize(c.size)
+  markDirty(); toast('Saved')
+  if (typeof loadChanges === 'function' && tab === 'changes') loadChanges(true)
+}
+// Leaving a file with unsaved edits asks first
+const leaveOk = () => !dirty() || confirm(`Discard the unsaved changes to ${baseOf(F.cur.rel)}?`)
 async function openFile(rel, line, quiet) {
+  if (!quiet && F.cur && F.cur.rel !== rel && !leaveOk()) return false
+  if (quiet && dirty()) return false                     // a round ended while you were typing: your text stays
   const r = quiet ? await hive.call('readFile', ID, rel) : await call('readFile', ID, rel)
-  if (!r || r.error) { if (quiet) { if (F.sel === rel) F.sel = ''; F.cur = null; renderView() } return }
+  if (!r || r.error) { if (quiet) { if (F.sel === rel) F.sel = ''; F.cur = null; renderView() } return false }
+  if (!quiet && F.cur && F.cur.rel === rel && dirty()) { F.line = line || 0; return true }      // same file, edits in progress: keep them
   const top = quiet && $('#view .vbody') ? $('#view .vbody').scrollTop : 0
-  F.sel = rel; F.line = line || 0; F.cur = { ...r, rel }
+  F.sel = rel; F.selDir = false; F.line = line || 0; F.cur = { ...r, rel, outside: /^(\/|~)/.test(rel) }
   renderView()
   if (quiet && $('#view .vbody')) $('#view .vbody').scrollTop = top
+  return true
 }
 async function openFiles() {
   if (F.ready) return
@@ -311,7 +393,7 @@ async function showPath(rel, dir, line) {
   const chain = []
   for (let p = dir ? rel : parentOf(rel); p; p = parentOf(p)) chain.unshift(p)
   for (const p of chain) { if (!F.kids.has(p) && !(await loadDir(p))) break; F.open.add(p) }
-  if (dir) F.sel = rel
+  if (dir) { F.sel = rel; F.selDir = true }
   else await openFile(rel, line)
   renderTree()
   const on = $('#tree .tn.on')
@@ -322,22 +404,179 @@ async function refreshFiles() {
   if (!F.ready) return
   await loadDir('', true)
   for (const p of [...F.open].sort()) await loadDir(p, true)
-  if (F.cur) { const keep = F.sel; await openFile(F.cur.rel, F.line, true); if (F.cur) F.sel = keep }
+  if (F.cur && !F.cur.outside) { const keep = F.sel, kd = F.selDir; await openFile(F.cur.rel, F.line, true); if (F.cur) { F.sel = keep; F.selDir = kd } }
+  if (F.input) return
+  renderTree()
+  if (F.mode === 'search' && F.q.trim()) runSearch()
+}
+
+// New file / new folder / rename: a name typed right in the tree
+const targetDir = () => (F.sel && !F.sel.startsWith('/') ? (F.selDir ? F.sel : parentOf(F.sel)) : '')
+async function startNew(kind, dir = targetDir()) {
+  setSide(true); F.mode = 'tree'
+  if (dir && !F.kids.has(dir) && !(await loadDir(dir))) dir = ''
+  for (let p = dir; p; p = parentOf(p)) { if (!F.kids.has(p)) await loadDir(p); F.open.add(p) }
+  F.input = { kind, dir }
   renderTree()
 }
+function startRename(p) { F.mode = 'tree'; F.input = { kind: 'rename', from: p, dir: parentOf(p) }; renderTree() }
+// Paths under a renamed or deleted entry: remap(from, to) rewrites them, to === null drops them
+function remap(from, to) {
+  const fix = p => (p === from || p.startsWith(from + '/') ? (to === null ? null : to + p.slice(from.length)) : p)
+  F.open = new Set([...F.open].map(fix).filter(x => x !== null))
+  for (const k of [...F.kids.keys()]) if (fix(k) !== k) F.kids.delete(k)
+  if (F.sel) { const s = fix(F.sel); if (s === null) { F.sel = ''; F.selDir = false } else F.sel = s }
+  if (F.cur) { const c = fix(F.cur.rel); if (c === null) { F.cur = null; renderView() } else if (c !== F.cur.rel) { F.cur.rel = c; F.cur.abs = ''; const bar = $('#view .vbar .ell'); if (bar) { bar.textContent = c; bar.title = c } } }
+}
+let committing = false
+async function commitName(ok) {
+  const inp = F.input, el = $('#t-name')
+  if (!inp || committing) return
+  const name = el ? el.value.trim() : ''
+  F.input = null
+  if (!ok || !name || (inp.kind === 'rename' && name === baseOf(inp.from))) return renderTree()
+  committing = true
+  try {
+    const to = (inp.dir ? inp.dir + '/' : '') + name
+    if (inp.kind === 'rename') {
+      const r = await call('renamePath', ID, inp.from, to)
+      if (r) remap(inp.from, r.rel)
+    } else {
+      const r = await call('newPath', ID, to, inp.kind === 'folder')
+      if (r) {
+        for (let p = parentOf(r.rel); p; p = parentOf(p)) F.open.add(p)       // "a/b/c.txt" typed as a name is refused by the backend; this covers the folder it went into
+        if (r.dir) { F.sel = r.rel; F.selDir = true; F.open.add(r.rel) }
+        else { await refreshFiles(); setTab('files'); await openFile(r.rel); renderTree(); if (ed()) ed().focus(); return }
+      }
+    }
+    await refreshFiles()
+  } finally { committing = false; renderTree() }
+}
+async function trashPath(p, isDir) {
+  if (!confirm(`Move ${baseOf(p)}${isDir ? ' and everything in it' : ''} to the Trash?`)) return
+  if (F.cur && (F.cur.rel === p || F.cur.rel.startsWith(p + '/')) && dirty() && !confirm(`${baseOf(F.cur.rel)} has unsaved changes. Delete anyway?`)) return
+  if (!(await call('trashPath', ID, p))) return
+  remap(p, null)
+  await refreshFiles()
+}
+async function copyPath(p, abs) {
+  let text = p
+  if (abs) { const l = await hive.call('locate', ID, [p]); text = (Array.isArray(l) && l[0] && l[0].abs) || p }
+  try { await navigator.clipboard.writeText(text); toast('Copied') } catch { toast('Could not copy', 'err') }
+}
+
+// Right-click menu
+function popMenu(x, y, items) {
+  closeMenu()
+  const m = document.createElement('div')
+  m.id = 'ctx'
+  m.innerHTML = items.map((it, i) => (it ? `<button data-i="${i}"${it.danger ? ' class="danger"' : ''}>${esc(it.label)}${it.key ? `<span>${esc(it.key)}</span>` : ''}</button>` : '<hr>')).join('')
+  document.body.appendChild(m)
+  m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + 'px'; m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + 'px'
+  m.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (!b) return; closeMenu(); items[+b.dataset.i].run() })
+}
+function closeMenu() { const m = $('#ctx'); if (m) m.remove() }
+document.addEventListener('mousedown', e => { if (!e.target.closest('#ctx')) closeMenu() })
+window.addEventListener('blur', closeMenu)
+$('#tree').addEventListener('contextmenu', e => {
+  if (e.target.closest('input')) return
+  e.preventDefault()
+  const n = e.target.closest('.tn[data-p]'), p = n ? n.dataset.p : '', isDir = !n || !!n.dataset.d, dir = n ? (isDir ? p : parentOf(p)) : ''
+  if (n && F.mode === 'tree') { F.sel = p; F.selDir = isDir; renderTree() }
+  popMenu(e.clientX, e.clientY, [
+    { label: 'New file', run: () => startNew('file', dir) }, { label: 'New folder', run: () => startNew('folder', dir) },
+    ...(n ? [null, { label: 'Rename', run: () => startRename(p) }, { label: 'Move to Trash', key: '⌘⌫', danger: true, run: () => trashPath(p, isDir) }] : []),
+    null, { label: 'Search in files', key: '⇧⌘F', run: () => setSearch(true) },
+    { label: 'Copy path', run: () => copyPath(p, true) }, ...(n ? [{ label: 'Copy relative path', run: () => copyPath(p) }] : []),
+    { label: 'Show in Finder', run: () => (n ? call('revealPath', ID, p) : call('reveal', ID)) },
+  ])
+})
 $('#tree').addEventListener('click', async e => {
+  if (e.target.closest('input')) return
   const t = e.target.closest('[data-t]')
-  if (t) return t.dataset.t === 'reveal' ? call('reveal', ID) : refreshFiles()
+  if (t) { const k = t.dataset.t; return k === 'file' || k === 'folder' ? startNew(k) : k === 'search' ? setSearch(F.mode !== 'search') : refreshFiles() }
   const n = e.target.closest('.tn[data-p]')
   if (!n) return
   const p = n.dataset.p
   if (e.metaKey) return call('revealPath', ID, p)
+  if (F.mode === 'search') return n.dataset.d ? (F.mode = 'tree', showPath(p, true)) : (setTab('files'), void openFile(p, +n.dataset.line || 0))
   if (!n.dataset.d) { setTab('files'); await openFile(p); return renderTree() }
+  F.sel = p; F.selDir = true
   if (F.open.has(p)) F.open.delete(p)
   else if (F.kids.has(p) || await loadDir(p)) F.open.add(p)
   renderTree()
 })
-$('#view').addEventListener('click', e => { if (e.target.closest('[data-v="reveal"]') && F.cur) call('revealPath', ID, F.cur.rel) })
+$('#tree').addEventListener('keydown', e => {
+  if (e.target.id === 't-name') { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); commitName(true) } else if (e.key === 'Escape') { e.preventDefault(); commitName(false) } }
+  if (e.target.id === 't-q' && e.key === 'Escape') { e.preventDefault(); setSearch(false) }
+})
+$('#tree').addEventListener('focusout', e => { if (e.target.id === 't-name') setTimeout(() => { if (F.input && document.activeElement !== $('#t-name')) commitName(true) }, 0) })
+$('#tree').addEventListener('input', e => { if (e.target.id === 't-q') { F.q = e.target.value; runSearch() } })
+
+// Find in the open file: the match is drawn over the text, and the caret is placed on it
+const FIND = { hits: [], at: -1 }
+let meter = null
+function textWidth(s) {
+  if (!meter) { meter = document.createElement('canvas').getContext('2d'); meter.font = getComputedStyle(ed()).font }
+  let out = ''
+  for (const ch of s) out += ch === '\t' ? ' '.repeat(2 - (out.length % 2)) : ch
+  return meter.measureText(out).width
+}
+function findAll() {
+  const q = $('#f-q').value, text = ed().value, strict = /[A-Z]/.test(q), hay = strict ? text : text.toLowerCase(), needle = strict ? q : q.toLowerCase()
+  FIND.hits = []
+  if (needle) for (let i = hay.indexOf(needle); i >= 0 && FIND.hits.length < 5000; i = hay.indexOf(needle, i + needle.length)) FIND.hits.push(i)
+  return needle.length
+}
+function showHit(step, keepFocus) {
+  const len = findAll(), box = $('#v-fhl'), n = FIND.hits.length
+  if (!n) { FIND.at = -1; box.hidden = true; $('#f-n').textContent = $('#f-q').value ? 'No results' : ''; return }
+  if (step === 0) { const caret = ed().selectionStart; FIND.at = Math.max(0, FIND.hits.findIndex(i => i >= caret)) }
+  else FIND.at = ((FIND.at < 0 ? 0 : FIND.at + step) % n + n) % n
+  const i = FIND.hits[FIND.at], text = ed().value, start = text.lastIndexOf('\n', i - 1) + 1, row = text.slice(0, i).split('\n').length - 1
+  const left = $('#v-ln').offsetWidth + textWidth(text.slice(start, i)), width = Math.max(4, textWidth(text.slice(start, i + len)) - textWidth(text.slice(start, i)))
+  box.hidden = false; box.style.cssText = `top:${10 + row * 19}px;left:${left}px;width:${width}px`
+  $('#f-n').textContent = `${FIND.at + 1} of ${n}${n >= 5000 ? '+' : ''}`
+  const body = $('#view .vbody')
+  if (10 + row * 19 < body.scrollTop + 30 || 10 + row * 19 > body.scrollTop + body.clientHeight - 50) body.scrollTop = Math.max(0, row * 19 - body.clientHeight / 3)
+  if (left < body.scrollLeft + 60 || left + width > body.scrollLeft + body.clientWidth - 20) body.scrollLeft = Math.max(0, left - body.clientWidth / 2)
+  ed().setSelectionRange(i, i + len)
+  if (!keepFocus) $('#f-q').focus()
+}
+function openFind() {
+  if (!F.cur || F.cur.kind !== 'text' || !ed()) return
+  const sel = ed().value.slice(ed().selectionStart, ed().selectionEnd)
+  $('#v-find').hidden = false
+  if (sel && !sel.includes('\n') && sel.length < 200) $('#f-q').value = sel
+  $('#f-q').focus(); $('#f-q').select()
+  showHit(0)
+}
+function closeFind() { if ($('#v-find')) { $('#v-find').hidden = true; $('#v-fhl').hidden = true; ed().focus() } }
+$('#view').addEventListener('click', e => {
+  const b = e.target.closest('[data-v]')
+  if (!b || !F.cur) return
+  const k = b.dataset.v
+  if (k === 'reveal') call('revealPath', ID, F.cur.rel)
+  else if (k === 'save') saveFile()
+  else if (k === 'find') ($('#v-find').hidden ? openFind() : closeFind())
+  else if (k === 'next') showHit(1)
+  else if (k === 'prev') showHit(-1)
+  else if (k === 'find-x') closeFind()
+})
+$('#view').addEventListener('input', e => {
+  if (e.target.id === 'ed') { markDirty(); if ($('#v-find') && !$('#v-find').hidden) $('#v-fhl').hidden = true }
+  if (e.target.id === 'f-q') showHit(0)
+})
+$('#view').addEventListener('keydown', e => {
+  if (e.target.id === 'f-q') {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); showHit(e.shiftKey ? -1 : 1) }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
+  }
+  if (e.target.id === 'ed') {
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.readOnly) { e.preventDefault(); document.execCommand('insertText', false, '  ') }
+    else if (e.key === 'Escape' && $('#v-find') && !$('#v-find').hidden) closeFind()
+  }
+})
 
 // ───────── Approvals ─────────
 function renderApprovals() {
@@ -592,6 +831,10 @@ document.addEventListener('keydown', e => {
   if (e.metaKey && e.key === '2') { e.preventDefault(); setTab('changes') }
   if (e.metaKey && e.key === '3') { e.preventDefault(); setTab('files') }
   if (e.metaKey && e.key === 'b') { e.preventDefault(); setSide($('#tree').hidden) }
+  if (e.metaKey && !e.shiftKey && e.key === 's' && tab === 'files') { e.preventDefault(); saveFile() }
+  if (e.metaKey && !e.shiftKey && e.key === 'f' && tab === 'files' && F.cur && F.cur.kind === 'text') { e.preventDefault(); openFind() }
+  if (e.metaKey && ((e.shiftKey && e.key.toLowerCase() === 'f') || (!e.shiftKey && e.key === 'p'))) { e.preventDefault(); setSearch(true) }
+  if (e.metaKey && e.key === 'Backspace' && F.sel && !F.sel.startsWith('/') && F.mode === 'tree' && !$('#tree').hidden && !e.target.closest('input, textarea, [contenteditable]')) { e.preventDefault(); trashPath(F.sel, F.selDir) }
 })
 
 // ───────── Boot ─────────

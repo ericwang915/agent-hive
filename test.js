@@ -522,7 +522,7 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(files.list(root, '').items.map(i => i.name), ['src', 'a2.js', 'a10.js', 'b.txt', 'blob.bin', 'leak.txt', 'p.png'])
   eq(files.list(root, 'src'), { items: [{ name: 'deep', dir: true }], more: 0 })
   assert.throws(() => files.list(root, '..'), /Not inside/); assert.throws(() => files.list(root, 'nope'), /Not inside/)
-  eq(files.read(root, 'b.txt'), { kind: 'text', abs: path.join(R, 'b.txt'), size: 8, cut: false, text: 'one\ntwo\n' })
+  { const { mtime, ...got } = files.read(root, 'b.txt'); eq(got, { kind: 'text', abs: path.join(R, 'b.txt'), size: 8, cut: false, text: 'one\ntwo\n' }); assert.ok(mtime > 0) }
   eq([files.read(root, 'blob.bin').kind, files.read(root, 'p.png').kind], ['binary', 'image'])
   assert.throws(() => files.read(root, 'leak.txt'), /Not inside/); assert.throws(() => files.read(root, '../fb-out/secret.txt'), /Not inside/); assert.throws(() => files.read(root, 'src'), /folder/)
   eq(files.locate(root, 'src/deep/m.js:12:3'), { abs: path.join(R, 'src/deep/m.js'), rel: 'src/deep/m.js', dir: false, line: 12 })
@@ -535,6 +535,22 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(files.search(root, 'm', 10, 1), ['src/deep/m.js'])
   eq(files.search(root, 'A', 10, 1).slice(0, 2), ['a2.js', 'a10.js'])
   eq(files.search(root, '', 3, 1), ['src/', 'a2.js', 'b.txt']); eq(files.search(root, 'deep/m', 10, 1), ['src/deep/m.js']); eq(files.search(root, 'zzz', 10, 1), [])
+  // text search: case-insensitive unless the query has a capital; binaries and images are skipped
+  eq(files.grep(root, 'TWO').hits, []); eq(files.grep(root, 'two').hits, [{ rel: 'b.txt', line: 2, col: 0, text: 'two' }]); eq(files.grep(root, 'let').hits.map(h => h.rel + ':' + h.line), ['src/deep/m.js:1']); eq(files.grep(root, ' '), { hits: [], more: false })
+  // editing: create, rename, save. Nothing leaves the folder, nothing is replaced
+  eq(files.create(root, 'src/new.txt'), { rel: 'src/new.txt', dir: false }); eq(files.create(root, 'docs', true), { rel: 'docs', dir: true })
+  assert.throws(() => files.create(root, 'src/new.txt'), /already there/); assert.throws(() => files.create(root, '../x.txt'), /Not inside/); assert.throws(() => files.create(root, 'nope/x.txt'), /Not inside/); assert.throws(() => files.create(root, 'src/..'), /cannot be used/)
+  eq(files.rename(root, 'src/new.txt', 'docs/n.txt'), { rel: 'docs/n.txt' }); assert.ok(!fs.existsSync(path.join(root, 'src', 'new.txt')))
+  assert.throws(() => files.rename(root, 'docs/n.txt', 'b.txt'), /already there/); assert.throws(() => files.rename(root, 'docs', 'docs/sub'), /into itself/); assert.throws(() => files.rename(root, '', 'x'), /itself/); assert.throws(() => files.rename(root, 'docs/n.txt', '../n.txt'), /Not inside/)
+  eq(files.rename(root, 'leak.txt', 'link.txt'), { rel: 'link.txt' }); assert.ok(fs.lstatSync(path.join(root, 'link.txt')).isSymbolicLink() && fs.existsSync(path.join(out, 'secret.txt')))      // the link moved, not its target
+  eq(files.entry(root, 'link.txt'), path.join(R, 'link.txt')); assert.throws(() => files.entry(root, ''), /itself/); assert.throws(() => files.entry(root, 'gone'), /Nothing/)
+  const was = files.read(root, 'docs/n.txt'); eq([was.kind, was.text], ['text', ''])
+  const w = files.write(root, 'docs/n.txt', 'héllo\n', { mtime: was.mtime }); eq([w.size, fs.readFileSync(path.join(root, 'docs', 'n.txt'), 'utf8')], [7, 'héllo\n'])
+  fs.utimesSync(path.join(root, 'docs', 'n.txt'), new Date(), new Date(Date.now() + 5000))                                   // changed on disk since it was read
+  eq(files.write(root, 'docs/n.txt', 'mine', { mtime: w.mtime }), { changed: true }); eq(fs.readFileSync(path.join(root, 'docs', 'n.txt'), 'utf8'), 'héllo\n')
+  assert.ok(files.write(root, 'docs/n.txt', 'mine', { mtime: w.mtime, force: true }).size === 4)
+  assert.throws(() => files.write(root, 'link.txt', 'x'), /Not inside/); assert.throws(() => files.write(root, 'docs', 'x'), /regular file/); assert.throws(() => files.write(root, '../fb-out/secret.txt', 'x'), /Not inside/)
+  eq(fs.readFileSync(path.join(out, 'secret.txt'), 'utf8'), 's')
 }
 
 fs.rmSync(tmp, { recursive: true, force: true })

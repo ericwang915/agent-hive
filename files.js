@@ -42,7 +42,84 @@ function readAt(file) {
   const fd = fs.openSync(file, 'r')
   try { fs.readSync(fd, buf, 0, buf.length, 0) } finally { fs.closeSync(fd) }
   if (buf.subarray(0, 8000).includes(0)) return { kind: 'binary', abs: file, size: st.size }
-  return { kind: 'text', abs: file, size: st.size, cut: st.size > MAX_TEXT, text: buf.toString('utf8') }
+  return { kind: 'text', abs: file, size: st.size, mtime: st.mtimeMs, cut: st.size > MAX_TEXT, text: buf.toString('utf8') }
+}
+
+// Where a new entry (or a renamed one) would go: its folder must exist inside root, and the name must be a plain name
+function insideNew(root, rel) {
+  rel = String(rel || '').replace(/\/+$/, '')
+  const name = path.basename(rel)
+  if (!name || name === '.' || name === '..' || name.length > 255 || /[\0/\\]/.test(name)) throw new Error('That name cannot be used')
+  return path.join(inside(root, path.dirname(rel) === '.' ? '' : path.dirname(rel)), name)
+}
+const exists = p => { try { fs.lstatSync(p); return true } catch { return false } }
+const relOf = (root, abs) => path.relative(real(root), abs).split(path.sep).join('/')
+
+// An existing entry under root, as it is named there: a symlink stays the link, not what it points at. The root itself is refused
+function entry(root, rel) {
+  rel = String(rel || '').replace(/\/+$/, '')
+  if (!rel || rel === '.') throw new Error('The bee\'s folder itself cannot be changed here')
+  const p = path.join(inside(root, path.dirname(rel) === '.' ? '' : path.dirname(rel)), path.basename(rel))
+  if (path.basename(rel) === '..' || !exists(p)) throw new Error('Nothing at that path')
+  return p
+}
+// New empty file or folder. → its path relative to root
+function create(root, rel, dir) {
+  const p = insideNew(root, rel)
+  if (exists(p)) throw new Error('Something with that name is already there')
+  if (dir) fs.mkdirSync(p); else fs.writeFileSync(p, '', { flag: 'wx' })
+  memo.at = 0
+  return { rel: relOf(root, p), dir: !!dir }
+}
+// Rename or move inside root. Never replaces what is already there
+function rename(root, from, to) {
+  const src = entry(root, from)
+  const dst = insideNew(root, to)
+  if (dst === src) return { rel: relOf(root, src) }
+  if (exists(dst) && !(dst.toLowerCase() === src.toLowerCase())) throw new Error('Something with that name is already there')
+  if (within(src, path.dirname(dst))) throw new Error('A folder cannot be moved into itself')
+  fs.renameSync(src, dst)
+  memo.at = 0
+  return { rel: relOf(root, dst) }
+}
+// Save a text file. mtime: what the editor read; when the file changed on disk since, nothing is written unless force
+function write(root, rel, text, o = {}) {
+  const p = inside(root, rel), st = fs.statSync(p)
+  if (!st.isFile()) throw new Error('Not a regular file')
+  if (st.size > MAX_TEXT) throw new Error('This file is too large to edit here')
+  if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_TEXT * 2) throw new Error('Too much text to save')
+  if (o.mtime && !o.force && Math.abs(st.mtimeMs - o.mtime) > 1) return { changed: true }
+  fs.writeFileSync(p, text)
+  const now = fs.statSync(p)
+  return { size: now.size, mtime: now.mtimeMs }
+}
+
+// Find text in the files under root. → {hits: [{rel, line, text, col}], more}. Plain text, case-insensitive unless the query has an upper-case letter
+function grep(root, q, o = {}) {
+  const r = real(root), max = o.max || 200
+  q = String(q || '')
+  if (!r || !q.trim()) return { hits: [], more: false }
+  const strict = /[A-Z]/.test(q), needle = strict ? q : q.toLowerCase(), hits = []
+  let scanned = 0
+  for (const rel of walk(r, 8000)) {
+    if (rel.endsWith('/') || IMG.test(rel)) continue
+    const file = path.join(r, rel)
+    let st; try { st = fs.statSync(file) } catch { continue }
+    if (!st.isFile() || st.size > 1024 * 1024 || !st.size) continue
+    if ((scanned += st.size) > 64 * 1024 * 1024) return { hits, more: true }
+    let text; try { text = fs.readFileSync(file, 'utf8') } catch { continue }
+    if (text.slice(0, 8000).includes('\0')) continue
+    if (!(strict ? text : text.toLowerCase()).includes(needle)) continue
+    const lines = text.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const col = (strict ? lines[i] : lines[i].toLowerCase()).indexOf(needle)
+      if (col < 0) continue
+      const from = Math.max(0, col - 40)
+      hits.push({ rel, line: i + 1, col: col - from, text: lines[i].slice(from, from + 200) })
+      if (hits.length >= max) return { hits, more: true }
+    }
+  }
+  return { hits, more: false }
 }
 
 // A path as written in a conversation → where it is. rel is null when it lies outside root; null when nothing is there
@@ -99,4 +176,4 @@ function search(root, q, max = 10, now = Date.now()) {
   return hits.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].length - b[2].length || a[2].localeCompare(b[2])).slice(0, max).map(h => h[2])
 }
 
-module.exports = { search, list, read, readAt, locate, inside, MAX_TEXT, MAX_LIST }
+module.exports = { search, list, read, readAt, locate, inside, entry, create, rename, write, grep, MAX_TEXT, MAX_LIST }

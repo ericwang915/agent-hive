@@ -105,6 +105,8 @@ const ICON = {
   branch: ic('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 2.5-3 2.5-7 3.5"/>'),
   folder: ic('<path d="M2 4.5a1 1 0 0 1 1-1h3l1.4 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>'),
   plus: ic('<path d="M8 3.2v9.6M3.2 8h9.6"/>'),
+  newFile: ic('<path d="M9 2H4.5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M9 2l3.5 3.5V8M9 2v3.5h3.5M12 10.2v4M10 12.2h4"/>'),
+  newFolder: ic('<path d="M14 8V5.5a1 1 0 0 0-1-1H7.4L6 3H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h5.5M12 10.2v4M10 12.2h4"/>'),
   x: ic('<path d="M4 4l8 8M12 4l-8 8"/>'),
   check: ic('<path d="M3.2 8.4l3 3 6.6-6.8"/>'),
   search: ic('<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/>'),
