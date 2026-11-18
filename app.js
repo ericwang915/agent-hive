@@ -137,7 +137,7 @@ function combPlace(layers) {
 }
 function combCell(a, p) {
   const live = a.status === 'running', mood = a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy'
-  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(a.task)}"><div class="hx-in">
+  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px;--bee:${esc(a.color)}" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(a.task)}"><div class="hx-in">
     ${beeFace(a, 38, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}</div><div class="hx-task ell">${esc(scheduled(a) ? schedText(a.schedule) : a.task)}</div>${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
 }
 const combLink = (p, q, sym, label) => `<div class="hx-link" style="left:${(p.x + q.x) / 2 + HX.W / 2}px;top:${(p.y + q.y) / 2 + HX.H / 2}px"><span style="transform:rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg)">${sym}</span>${label ? `<em>${label}</em>` : ''}</div>`
@@ -219,7 +219,7 @@ const iconBtns = a => `<button class="btn sm icon ghost" data-act="edit" data-id
 
 function cardHtml(a) {
   const g = a.git ? `<div class="gitline">${ICON.branch}<span class="ell">${esc(a.git.url.replace(/^.*[:/]([^/:]+\/[^/]+?)(\.git)?$/, '$1'))}${a.git.branch ? '@' + esc(a.git.branch) : ''}</span></div>` : ''
-  return `<div class="card${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}">
+  return `<div class="card${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}" style="--bee:${esc(a.color)}">
   <div class="card-head">${beeOf(a, 44)}<div class="grow"><div class="nmrow"><span class="nm round ell">${esc(a.name)}</span>${rankChip(a)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a)}</div>
@@ -243,7 +243,7 @@ function relHtml(a, A) {
   return out.map(t => `<span class="badge rel">${t}</span>`).join('')
 }
 function miniHtml(a, tight) {
-  return `<div class="mini${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}">
+  return `<div class="mini${a.status === 'running' ? ' running' : ''}" data-bee="${a.id}" style="--bee:${esc(a.color)}">
   <div class="card-head">${beeOf(a, 30)}<div class="grow"><div class="nmrow"><span class="nm round ell">${esc(a.name)}</span>${rankChip(a)}</div><div class="eng ell">${esc(subline(a))}</div></div>${pill(a.status, tight)}</div>
   ${tailHtml(a)}
   <div class="badges">${badgesHtml(a, true)}${relHtml(a, S.agents)}</div>
