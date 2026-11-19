@@ -1,7 +1,7 @@
 // Main window: sidebar, Hive, Dashboard, Skills, Memory, hatch/settings dialog, ⌘K palette
 'use strict'
 const $ = s => document.querySelector(s)
-let S = { agents: [], engines: [], settings: {}, max: 40, home: '', names: [], colors: [], presets: {}, maxRounds: 3, teamMax: 4, feed: [], spend: {}, night: {} }
+let S = { agents: [], engines: [], settings: {}, max: 40, home: '', names: [], colors: [], presets: {}, maxRounds: 3, teamMax: 6, feed: [], spend: {}, night: {} }
 let view = 'hive', filter = 'all', sub = 'all', query = '', queenLine = '', queenBusy = false
 let F = null                      // hatch / settings form state
 let G = null, skillOpen = new Set(), skillEdit = null, memOpen = new Set(), memEdit = null   // Skills / Memory
@@ -184,7 +184,7 @@ function combPlace(layers) {
     }
     taken.add(key(xh, row)); at.set(id, { xh, row })
   }
-  const FAN = [[1, -1], [1, 1], [2, 0], [1, -3], [1, 3], [2, -2], [2, 2]]           // where the 1st, 2nd, 3rd… follower of one bee goes
+  const FAN = [[1, -1], [1, 1], [2, 0], [-1, -1], [-1, 1], [1, -3], [1, 3]]           // where the 1st, 2nd, 3rd… follower of one bee goes
   const fanned = new Map()
   layers.forEach((layer, li) => layer.forEach((b, i) => {
     const ups = Team.upIds(b).filter(id => at.has(id)).map(id => at.get(id))
@@ -254,7 +254,7 @@ function combHtml(list, width) {
   const hatch = filter === 'all' && !query && A.length < S.max
   if (!shown.length && !hatch) return query ? '' : '<div class="guide">No bees match</div>'
   const team = sel ? Team.teamOf(A, sel.id) : []
-  const side = sel ? `<div class="hx-side">${cardHtml(sel)}${team.length > 1 ? `<div class="hx-where">${esc(squadNameOf(team[0]))} · ${squadLine(team, m => (m.id === sel.id ? `<b>${esc(m.name)}</b>` : esc(m.name)))}</div>` : ''}<div class="hx-hint">Click a cell to see it here · drag it onto another bee to follow that one · double-click opens its chat</div></div>` : ''
+  const side = sel ? `<div class="hx-side">${cardHtml(sel)}${team.length > 1 ? `<div class="hx-where">${esc(squadNameOf(team[0]))} · ${squadLine(team, m => (m.id === sel.id ? `<b>${esc(m.name)}</b>` : esc(m.name)))}</div>` : ''}<div class="hx-hint">Click a cell to see it here · drag it onto another bee to follow that one (onto a second one to merge both) · double-click opens its chat</div></div>` : ''
   return `<div class="hx-page${narrow ? ' narrow' : ''}"><div class="hx-left">${squads.map(combSquad).join('')}${solo.length || hatch ? combSolo(solo, Math.max(HX.W * 2 + HX_HALF, leftW), hatch, squads.length > 0 && solo.length + (hatch ? 1 : 0) <= 6) : ''}</div>${side}</div>`
 }
 
@@ -1487,10 +1487,10 @@ document.addEventListener('scroll', closeCtx, true)
 let dragBee = null
 function joinWhy(b, u) {
   if (!b || !u || b.id === u.id) return 'x'
-  const team = Team.teamOf(S.agents, u.id), sq = Team.teamOf(S.agents, b.id)
-  if (team.includes(b)) return `${b.name} is already in this squad`
-  if (Team.upIds(b).length) return `${b.name} already follows another bee`
-  if (team.length + sq.length > S.teamMax) return `A squad has at most ${S.teamMax} bees`
+  const team = Team.teamOf(S.agents, u.id), sq = Team.teamOf(S.agents, b.id), also = team.includes(b)
+  if (also && Team.alsoWhy(S.agents, b, u)) return Team.alsoWhy(S.agents, b, u)          // same squad: b takes u as one more bee to wait for
+  if (!also && Team.upIds(b).length) return `${b.name} already follows ${Team.upIds(b).map(byId).filter(Boolean).map(x => x.name).join(' and ') || 'another bee'}. Remove that link first`
+  if (!also && team.length + sq.length > S.teamMax) return `A squad has at most ${S.teamMax} bees`
   if ([...team, ...sq].some(m => m.isolate)) return 'Own-branch bees cannot be in a relay'
   if ([...team, ...sq].some(m => m.status === 'setup')) return 'The repo is still setting up'
   if ([...team, ...sq].some(m => ['running', 'paused'].includes(m.status))) return 'Not while one of them is at work'
@@ -1511,18 +1511,20 @@ document.addEventListener('dragover', e => {
   const hx = e.target.closest && e.target.closest('.hx[data-bee]'), b = byId(dragBee), u = hx && byId(hx.dataset.bee)
   document.querySelectorAll('.hx.drop-on, .hx.drop-no').forEach(x => x !== hx && x.classList.remove('drop-on', 'drop-no'))
   if (!u || !b || u.id === b.id) return dragTip(e, b ? `Drop ${esc(b.name)} on the bee it should follow` : '')
-  const why = joinWhy(b, u), n = Team.teamOf(S.agents, b.id).length - 1
+  const why = joinWhy(b, u), also = Team.teamOf(S.agents, u.id).includes(b), n = also ? 0 : Team.teamOf(S.agents, b.id).length - 1
+  const had = also ? Team.upIds(b).map(byId).filter(Boolean) : []
   hx.classList.toggle('drop-on', !why); hx.classList.toggle('drop-no', !!why)
   if (!why) { e.preventDefault(); e.dataTransfer.dropEffect = 'link' }
-  dragTip(e, why ? esc(why) : `<div><b>${esc(u.name)}</b> → <b>${esc(b.name)}</b>${n ? ` and its squad` : ''}</div><div class="sub">${esc(b.name)} picks up when ${esc(u.name)} is done${b.workspace !== u.workspace ? `, in the folder ${esc(u.task)}` : ''}</div>`, !!why)
+  dragTip(e, why ? esc(why) : had.length ? `<div><b>${had.map(p => esc(p.name)).join('</b> + <b>')}</b> + <b>${esc(u.name)}</b> → <b>${esc(b.name)}</b></div><div class="sub">${esc(b.name)} also waits for ${esc(u.name)} and starts when all of them are done</div>` : `<div><b>${esc(u.name)}</b> → <b>${esc(b.name)}</b>${n ? ` and its squad` : ''}</div><div class="sub">${esc(b.name)} picks up when ${esc(u.name)} is done${b.workspace !== u.workspace ? `, in the folder ${esc(u.task)}` : ''}</div>`, !!why)
 })
 document.addEventListener('drop', async e => {
   const hx = e.target.closest && e.target.closest('.hx[data-bee]'), b = byId(dragBee), u = hx && byId(hx.dataset.bee)
   dragClear(); dragBee = null
   if (!b || !u || joinWhy(b, u)) return
   e.preventDefault()
-  const same = b.workspace === u.workspace
-  if (await call('joinRelay', b.id, u.id)) toast(same ? `${b.name} now follows ${u.name}` : `${b.name} now follows ${u.name} and works in ${u.task}`)
+  const same = b.workspace === u.workspace, r = await call('joinRelay', b.id, u.id)
+  if (r && r.also) return toast(`${b.name} now waits for ${u.name} too`)
+  if (r) toast(same ? `${b.name} now follows ${u.name}` : `${b.name} now follows ${u.name} and works in ${u.task}`)
 })
 document.addEventListener('dragend', () => { dragClear(); dragBee = null })
 document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && R.cur) renameRoom(R.cur); const hx = e.target.closest && e.target.closest('.hx[data-id]'); if (hx) call('openChat', hx.dataset.id) })

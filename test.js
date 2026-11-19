@@ -772,4 +772,17 @@ fs.rmSync(tmp, { recursive: true, force: true })
   up.latest(fake({ tag_name: 'nightly' })).then(r => eq(r, null))
   up.latest(async () => ({ status: 404 })).then(r => eq(r, null))
 }
+{ // a bee takes a second bee of its squad to wait for
+  const Team = require('./team.js')
+  const g = [{ id: '1', name: 'One' }, { id: '2', name: 'Two', after: { ids: ['1'] } }, { id: '3', name: 'Three', after: { ids: ['1'] } }, { id: '4', name: 'Four', after: { ids: ['2'] } }]
+  const by = id => g.find(x => x.id === id), why = (b, u) => Team.alsoWhy(g, by(b), by(u))
+  eq(why('4', '3'), '')                                                     // 2 + 3 → 4
+  eq(why('4', '2'), 'Four already follows Two')
+  eq(why('4', '1'), '')                                                     // a bee and the bee that worked on its result
+  eq(why('1', '4'), 'Four comes after One: that would be a circle')
+  eq(why('2', '4'), 'Four comes after Two: that would be a circle')
+  eq(why('3', '4'), '')
+  eq([Team.comesAfter(g, '4', '1'), Team.comesAfter(g, '1', '4'), Team.comesAfter(g, '3', '2')], [true, false, false])
+  eq(core.TEAM_MAX, 6)
+}
 console.log('ok')

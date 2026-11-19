@@ -1466,7 +1466,8 @@ function joinRelay(id, upId) {
   const a = byId(id), u = byId(upId)
   if (!a || !u) throw new Error('This bee no longer exists')
   const mine = Team.teamOf(state.agents, a.id), team = Team.teamOf(state.agents, u.id)
-  if (team.includes(a)) throw new Error(a === u ? 'A bee cannot follow itself' : `${a.name} is already in this relay`)
+  if (a === u) throw new Error('A bee cannot follow itself')
+  if (team.includes(a)) return alsoAfter(a, u)
   if (upIds(a).length) throw new Error(`${a.name} already follows another bee. Take it out of that relay first`)
   if (team.length + mine.length > core.TEAM_MAX) throw new Error(`A team can have at most ${core.TEAM_MAX} bees`)
   if ([...mine, ...team].some(t => t.isolate)) throw new Error('A bee on its own branch cannot be part of a relay')
@@ -1485,6 +1486,30 @@ function joinRelay(id, upId) {
   tidyWorktrees()
   push()
   return { id: a.id }
+}
+// A step that became parallel cannot send work back (every round would double): switched off, and said in the chat
+function loopsOff(team) {
+  for (const layer of Team.layersOf(state.agents, team[0].id)) if (layer.length > 1) for (const p of layer) if (p.after && p.after.loop) { p.after = { ...p.after, loop: false }; log(p, { role: 'system', text: '"Send feedback back" was switched off: this step now has bees working in parallel' }) }
+}
+// A bee of the squad waits for one more bee of the same squad: 2 → 4 plus 3 → 4 makes 4 the bee that merges both
+function alsoAfter(a, u) {
+  const why = Team.alsoWhy(state.agents, a, u)
+  if (why) throw new Error(why)
+  squadAtRest(a)
+  const ids = [...upIds(a).filter(byId), u.id], had = ids.length - 1
+  let prompt = a.after && a.after.prompt
+  const swap = had === 1 && (!prompt || prompt === core.PRESETS.review.prompt)          // an untouched review prompt would have it review one of the two
+  if (!had) prompt = core.PRESETS.review.prompt
+  else if (swap) prompt = core.PRESETS.merge.prompt
+  a.after = { ...(a.after || { loop: true }), ids, id: undefined, prompt, ...(swap ? { loop: false } : {}) }        // the merge preset has no verdict to send back
+  delete a.inbox
+  const names = ids.map(id => byId(id).name)
+  log(a, { role: 'system', text: had ? `${a.name} now waits for ${names.slice(0, -1).join(', ')} and ${u.name}, and starts when all of them are done${swap ? '. It now merges their results instead of reviewing one (no feedback sent back); the prompt is in its settings' : ''}` : `${a.name} now picks up when ${u.name} is done` })
+  log(u, { role: 'system', text: `${a.name} now picks up when ${u.name} is done` })
+  loopsOff(Team.teamOf(state.agents, a.id))
+  tidyWorktrees()
+  push()
+  return { id: a.id, also: had > 0 }
 }
 // One link: `down` no longer follows `up`. A bee left without any link works on its own again
 function unlink(downId, upId) {

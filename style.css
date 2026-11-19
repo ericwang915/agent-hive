@@ -173,7 +173,7 @@ label.check.off { opacity: .5; cursor: not-allowed }
 
 /* ══════════ Main window layout ══════════ */
 #app { display: flex; height: 100vh }
-#side { width: 276px; flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 46px 10px 12px; -webkit-app-region: drag; overflow: hidden }
+#side { width: 276px; flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 46px 10px 12px; -webkit-app-region: drag; overflow: hidden auto; scrollbar-width: none }
 #side > * { -webkit-app-region: no-drag }
 .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 18px; font-size: 20px; -webkit-app-region: drag !important }
 .brand { gap: 8px; padding-left: 4px }
@@ -190,7 +190,8 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .side-h { font-size: 12.5px; font-weight: 600; color: var(--mute); letter-spacing: .03em; padding: 18px 10px 6px }
 /* Chats: every bee and squad, one calm row each: who it is and what it is for */
 #side-chats-h .n { margin-left: 7px; font-weight: 500; color: var(--faint); font-size: 11.5px; letter-spacing: 0 }
-#side-chats { display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 80px; overflow-y: auto }
+#side-chats { display: flex; flex-direction: column; gap: 2px; flex: 1 1 96px; min-height: 64px; overflow-y: auto }
+#side > .brand, #side > .nav, #side > .side-h, #upd, #cap { flex: none }      /* in a short window the lists give way, never the upgrade card */
 .ch-row { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: 12px; min-width: 0; transition: background .12s }
 .ch-row:hover, .ch-sqh:hover { background: rgba(0, 0, 0, .045) }
 .ch-av { flex: none; position: relative; border-radius: 50%; background: color-mix(in srgb, var(--c) 20%, var(--card)); display: flex; align-items: center; justify-content: center }
@@ -213,7 +214,7 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .side-chat { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; font-size: 14.5px; border: 0; background: transparent; border-radius: 8px; text-align: left; color: var(--ink2) }
 .side-chat:hover { background: rgba(0, 0, 0, .045) }
 .side-empty { padding: 3px 10px; font-size: 13.5px; color: var(--faint) }
-#side-feed { flex: none; max-height: 22%; overflow-y: auto; display: flex; flex-direction: column; gap: 1px }
+#side-feed { flex: 0 1 auto; min-height: 0; max-height: min(9%, 124px); overflow-y: auto; display: flex; flex-direction: column; gap: 1px }
 .feed-item { display: flex; gap: 9px; padding: 8px 10px; border: 0; background: transparent; border-radius: 8px; text-align: left; align-items: flex-start; width: 100% }
 .feed-item:hover { background: rgba(0, 0, 0, .045) }
 .feed-item .dot { margin-top: 6px }
@@ -230,8 +231,9 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .upd-card .t i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--clay); animation: upd-pulse 1.8s ease-out infinite }
 @keyframes upd-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--clay) 55%, transparent) } 100% { box-shadow: 0 0 0 9px transparent } }
 @media (prefers-reduced-motion: reduce) { .upd-card .t i { animation: none } }
-.upd-card .s { font-size: 12px; color: var(--ink2); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.upd-card .s { font-size: 12px; color: var(--ink2); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden }
 .upd-card .btn { width: 100%; justify-content: center; margin-top: 3px; height: 32px }
+@media (max-height: 760px) { #side-feed, #side-feed-h { display: none } .upd-card .s { display: none } }      /* a short window: chats before activity; below that the sidebar scrolls */
 .upd-btn { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; margin-top: 10px; padding: 0 12px; border: 1px solid color-mix(in srgb, var(--honey) 55%, var(--line)); background: var(--honey-soft); color: var(--ink); border-radius: 10px; font-weight: 600; font-size: 13px; text-align: left }
 .upd-btn:hover:not(:disabled) { border-color: var(--honey) }
 .upd-btn:disabled { opacity: .7; cursor: default }
@@ -516,7 +518,7 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .side-h { display: flex; align-items: center }
 .side-add { margin-left: auto; border: 0; background: transparent; color: var(--mute); width: 22px; height: 22px; border-radius: 7px; font-size: 16px; line-height: 1; padding: 0 }
 .side-add:hover { background: rgba(0, 0, 0, .07); color: var(--ink) }
-#side-rooms { display: flex; flex-direction: column; gap: 2px; max-height: 34%; overflow-y: auto; flex: none }
+#side-rooms { display: flex; flex-direction: column; gap: 2px; max-height: 26%; min-height: 48px; overflow-y: auto; flex: 0 1 auto }
 .side-room { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; background: transparent; border-radius: 10px; text-align: left; width: 100%; min-width: 0 }
 .side-room:hover { background: rgba(0, 0, 0, .045) }
 .side-room.on { background: var(--card) }

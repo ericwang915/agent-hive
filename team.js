@@ -46,5 +46,19 @@
   const isLead = (agents, a) => !!a && !upIds(a).length && downOf(agents, a.id).length > 0
   const leadOf = (agents, id) => teamOf(agents, id)[0]
 
-  return { upIds, depthMap, teamOf, layersOf, layerOf, isParallel, downOf, inTeam, isLead, leadOf }
+  // Does `id` come somewhere after `anc` (directly or through other bees)?
+  function comesAfter(agents, id, anc, seen = new Set()) {
+    if (seen.has(id)) return false
+    seen.add(id)
+    return upIds(agents.find(a => a.id === id)).some(u => u === anc || comesAfter(agents, u, anc, seen))
+  }
+  // A bee of a squad takes one more bee of the same squad to wait for (a merge). Why not, in words; '' when it can.
+  // Only a circle is refused: waiting for a bee and for the bee that reviews it is a shape people build on purpose
+  function alsoWhy(agents, b, u) {
+    if (upIds(b).includes(u.id)) return `${b.name} already follows ${u.name}`
+    if (comesAfter(agents, u.id, b.id)) return `${u.name} comes after ${b.name}: that would be a circle`
+    return ''
+  }
+
+  return { upIds, depthMap, teamOf, layersOf, layerOf, isParallel, downOf, inTeam, isLead, leadOf, comesAfter, alsoWhy }
 })

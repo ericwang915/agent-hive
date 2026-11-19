@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), { execFileSync } = require('ch
 const Team = require('./team')
 const { upIds } = Team
 
-const MAX_ROUNDS = 3, TEAM_MAX = 4
+const MAX_ROUNDS = 3, TEAM_MAX = 6
 const pad = n => String(n).padStart(2, '0')
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`

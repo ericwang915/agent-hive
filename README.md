@@ -66,7 +66,7 @@ A group works without Queen too. `@mention` a bee and it starts right away. Leav
 
 ### Chain bees into a relay team
 
-Up to four bees share a folder and pass work down the line. A reviewer can send its findings back to the writer until it approves, for at most three rounds. Bees on the same step run in parallel, each in its own git worktree, and a final bee merges their results. A bee that is already in the hive can join a team too: pick it from the Relay menu, or drag it onto the bee it should follow (it moves into the team's folder and goes back to its own when it leaves), and a link between two bees can be taken out without deleting either. The clip at the top is one such team.
+Up to six bees share a folder and pass work down the line. A reviewer can send its findings back to the writer until it approves, for at most three rounds. Bees on the same step run in parallel, each in its own git worktree, and a final bee merges their results. A bee that is already in the hive can join a team too: pick it from the Relay menu, or drag it onto the bee it should follow, and onto a second one to have it merge both (it moves into the team's folder and goes back to its own when it leaves), and a link between two bees can be taken out without deleting either. The clip at the top is one such team.
 
 A relay team is also a **squad** with a name. Queen can hand it a whole job with one call and hears back once, when the chain is finished or stuck. You can start it yourself from any group: `@Shop-squad add an export button`. The group shows the chain and each bee's state as it runs.
 
