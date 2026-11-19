@@ -18,7 +18,7 @@ A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI, Antigravi
 
 <p align="center"><i>Every agent is a bee with a name, a face and a job. They bob while they work, doze when they are idle,<br>and earn a new look as they climb from Bronze to Master.</i></p>
 
-![Agent Hive running a relay team of coding agents: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
+![Agent Hive's honeycomb running a relay team of coding agents: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
 
 <p align="center">If the bees make you smile, a ⭐ helps other people find the hive.</p>
 
@@ -68,13 +68,17 @@ npm start
 
 Pull bees into a group and tell Queen what you want. She picks the right bees, dispatches the work, waits for the results and sums them up. She only wakes the bees she needs, and she asks before hatching new ones.
 
-![Queen dispatches two bees and reports back](docs/queen.gif)
+![Queen dispatches two bees from the group chat beside the honeycomb and reports back](docs/queen.gif)
 
 A group works without Queen too. `@mention` a bee and it starts right away. Leave the name out and a small, cheap model picks the bee the message is for, so the others stay asleep; a bee with nothing to add stays quiet. Stickers work both ways. A bee can hand part of the job to another by `@mentioning` it, for at most three hops.
 
 ### Chain bees into a relay team
 
 Up to six bees share a folder and pass work down the line. A reviewer can send its findings back to the writer until it approves, for at most three rounds. Bees on the same step run in parallel, each in its own git worktree, and a final bee merges their results. A bee that is already in the hive can join a team too: pick it from the Relay menu, or drag it onto the bee it should follow, and onto a second one to have it merge both (it moves into the team's folder and goes back to its own when it leaves), and a link between two bees can be taken out without deleting either. The clip at the top is one such team.
+
+**Build one by dragging.** Drag a bee onto the bee it should follow. Drop two bees on the same one and they work in parallel; drag a bee onto a second one and it waits for both and merges their work.
+
+![Four bees dragged into a squad: Buzz and Mochi follow Hazel, Puff merges both, then the squad runs](docs/drag.gif)
 
 A relay team is also a **squad** with a name. Queen can hand it a whole job with one call and hears back once, when the chain is finished or stuck. You can start it yourself from any group: `@Shop-squad add an export button`. The group shows the chain and each bee's state as it runs.
 
