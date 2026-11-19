@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Hive: your coding agents, working as a hive</title>
+<meta name="description" content="A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI and Cursor Agent into a team you can watch, schedule and steer.">
+<meta property="og:title" content="Agent Hive">
+<meta property="og:description" content="One Queen. Many bees. Your coding agents, working as a hive. Free and open source for macOS.">
+<meta property="og:image" content="https://ericwang915.github.io/agent-hive/honeycomb.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="icon.png">
+<style>
+:root {
+  --bg: #FBFAF7; --card: #FFFFFF; --ink: #2B241C; --ink2: #5C5246; --mute: #8A8175; --line: #ECE6DC;
+  --honey: #F0A93B; --honey-soft: #FFF3D9; --honey-ink: #B9741A; --clay: #D97757; --clay-ink: #B5543A;
+  --shadow: 0 10px 30px rgba(70, 50, 20, .10);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1C1814; --card: #26211B; --ink: #F3EEE6; --ink2: #CFC6B8; --mute: #9A9084; --line: #3A332A; --honey-soft: #3A2E18; --honey-ink: #F3BE5A; --clay-ink: #F0A088; --shadow: 0 10px 30px rgba(0, 0, 0, .35); color-scheme: dark }
+}
+* { box-sizing: border-box }
+html { scroll-behavior: smooth }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 ui-rounded, "SF Pro Rounded", "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased }
+a { color: var(--clay-ink) }
+.wrap { max-width: 1020px; margin: 0 auto; padding: 0 max(18px, env(safe-area-inset-right, 0px)) 0 max(18px, env(safe-area-inset-left, 0px)) }
+nav { display: flex; align-items: center; gap: 18px; padding-block: 18px; font-size: 15px }
+nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; color: var(--ink); text-decoration: none; margin-right: auto }
+nav .brand img { width: 34px; height: 34px }
+nav a { color: var(--ink2); text-decoration: none; font-weight: 600 }
+nav a:hover { color: var(--clay-ink) }
+.hero { text-align: center; padding: 34px 0 18px }
+.hero h1 { font-size: clamp(34px, 6.4vw, 60px); line-height: 1.08; margin: 0 0 14px; letter-spacing: -.02em; text-wrap: balance }
+.hero h1 em { font-style: normal; color: var(--honey-ink) }
+.hero p.lead { max-width: 660px; margin: 0 auto 26px; color: var(--ink2); font-size: clamp(17px, 2.2vw, 20px); text-wrap: balance }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center }
+.btn { display: inline-flex; align-items: center; gap: 9px; padding: 13px 22px; border-radius: 999px; font-weight: 700; font-size: 16.5px; text-decoration: none; border: 1.5px solid transparent; transition: transform .12s, box-shadow .12s }
+.btn:hover { transform: translateY(-2px) }
+.btn.primary { background: var(--clay); color: #fff; box-shadow: 0 8px 20px rgba(217, 119, 87, .35) }
+.btn.ghost { background: var(--card); color: var(--ink); border-color: var(--line) }
+.sub { margin-top: 12px; font-size: 14px; color: var(--mute) }
+.sub a { color: var(--mute) }
+.bees { display: block; width: 100%; max-width: 860px; margin: 30px auto 4px }
+.shot { display: block; width: 100%; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--card) }
+section { padding: 46px 0 }
+h2 { font-size: clamp(25px, 3.6vw, 34px); line-height: 1.2; margin: 0 0 10px; letter-spacing: -.01em; text-wrap: balance }
+.eyebrow { font-size: 13.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--honey-ink); margin-bottom: 6px }
+.row { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 34px; align-items: center }
+.row.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr) } .row.flip > :first-child { order: 2 }
+.row p { color: var(--ink2); margin: 0 0 10px }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 22px }
+.cell { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px }
+.cell b { display: block; font-size: 17px; margin-bottom: 4px }
+.cell span { color: var(--ink2); font-size: 15.5px }
+.cell i { font-style: normal; font-size: 24px; display: block; margin-bottom: 6px }
+.install { background: var(--honey-soft); border: 1px solid var(--line); border-radius: 20px; padding: 26px; text-align: center }
+.code { position: relative; margin: 12px auto 0; max-width: 760px; text-align: left; background: #2B241C; color: #F6EFE3; border-radius: 12px; padding: 13px 92px 13px 16px; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-x: auto; white-space: nowrap }
+.code button { position: absolute; right: 8px; top: 8px; border: 0; border-radius: 8px; padding: 6px 11px; font: 700 12.5px/1 inherit; font-family: inherit; background: #F0A93B; color: #2B241C; cursor: pointer }
+.label { font-size: 14px; color: var(--ink2); margin-top: 18px; font-weight: 700 }
+.engines { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px }
+.engines span { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 14.5px; font-weight: 600; color: var(--ink2) }
+footer { border-top: 1px solid var(--line); margin-top: 30px; padding: 26px 0 40px; text-align: center; color: var(--mute); font-size: 14.5px }
+footer a { color: var(--ink2) }
+@media (max-width: 860px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr) } .row, .row.flip { grid-template-columns: minmax(0, 1fr); gap: 16px } .row.flip > :first-child { order: 0 } nav a.hide { display: none } section { padding: 32px 0 } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="./"><img src="icon.png" alt="">Agent Hive</a>
+    <a class="hide" href="#features">Features</a>
+    <a class="hide" href="#install">Install</a>
+    <a href="https://github.com/ericwang915/agent-hive">GitHub</a>
+  </nav>
+
+  <header class="hero">
+    <h1>One Queen. Many bees.<br><em>Your coding agents, working as a hive.</em></h1>
+    <p class="lead">A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI and Cursor Agent into a small, friendly team you can watch, schedule and steer.</p>
+    <div class="cta">
+      <a class="btn primary" id="dl" href="https://github.com/ericwang915/agent-hive/releases/latest">⬇ Download for Mac</a>
+      <a class="btn ghost" href="https://github.com/ericwang915/agent-hive">⭐ Star on GitHub</a>
+    </div>
+    <div class="sub">macOS 12 or later · <a href="https://github.com/ericwang915/agent-hive/releases/latest/download/Agent-Hive-arm64.dmg">Apple silicon</a> · <a href="https://github.com/ericwang915/agent-hive/releases/latest/download/Agent-Hive-x64.dmg">Intel</a> · signed and notarized by Apple · MIT licensed</div>
+    <img class="bees" src="bees.svg" alt="Seven cartoon bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job">
+  </header>
+
+  <img class="shot" src="relay.gif" alt="The honeycomb view while a relay team works: one bee writes, another reviews and sends it back, a third tests" loading="lazy">
+
+  <section id="features">
+    <div class="row">
+      <div>
+        <div class="eyebrow">Squads</div>
+        <h2>Drag bees into a team</h2>
+        <p>Drag a bee onto the bee it should follow. Drop two on the same one and they work in parallel; drag a bee onto a second one and it waits for both and merges their work.</p>
+        <p>A reviewer can send its findings back to the writer until it approves, for at most three rounds.</p>
+      </div>
+      <img class="shot" src="drag.gif" alt="Four bees dragged into a squad, which then runs" loading="lazy">
+    </div>
+  </section>
+
+  <section>
+    <div class="row flip">
+      <div>
+        <div class="eyebrow">Queen</div>
+        <h2>A lead agent instead of ten terminals</h2>
+        <p>Tell Queen what you want. She picks the bees, hands out the work, waits for the results and sums them up. She only wakes the bees she needs.</p>
+      </div>
+      <img class="shot" src="queen.gif" alt="Queen dispatches two bees from a group chat and reports back" loading="lazy">
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">And more</div>
+    <h2>Everything a hive needs</h2>
+    <div class="grid">
+      <div class="cell"><i>🐝</i><b>Any agent, mixed</b><span>Claude Code writes, Codex reviews, Gemini tests. Any CLI that takes a prompt can be a bee.</span></div>
+      <div class="cell"><i>🌙</i><b>Works while you are away</b><span>Schedules and event triggers, catch-up after sleep, and a daily budget for automatic runs.</span></div>
+      <div class="cell"><i>🔁</i><b>Review in the flow</b><span>Review loops across engines, and a diff view with commit, push and pull request for every bee.</span></div>
+      <div class="cell"><i>🍯</i><b>Fewer tokens</b><span>Sessions are compacted before they get expensive. About 30% less context per round in a measured task.</span></div>
+      <div class="cell"><i>🧠</i><b>It remembers</b><span>Overnight, two helper bees turn the day's conversations into memory and reusable skills.</span></div>
+      <div class="cell"><i>🔒</i><b>Yours alone</b><span>No API keys, no account, no server, no telemetry. It uses the CLIs and logins you already have.</span></div>
+    </div>
+    <div class="engines"><span>Claude Code</span><span>Codex</span><span>Gemini CLI</span><span>Cursor Agent</span><span>Antigravity</span><span>DeepSeek Harness</span><span>any CLI</span></div>
+  </section>
+
+  <section id="install">
+    <div class="install">
+      <div class="eyebrow">Install</div>
+      <h2>Up and buzzing in a minute</h2>
+      <div class="label">One line in Terminal</div>
+      <div class="code"><span>curl -fsSL https://raw.githubusercontent.com/ericwang915/agent-hive/main/install.sh | bash</span><button type="button">Copy</button></div>
+      <div class="label">Or with Homebrew</div>
+      <div class="code"><span>brew install --cask ericwang915/tap/agent-hive</span><button type="button">Copy</button></div>
+      <div class="sub" style="margin-top:18px">Or download the <a href="https://github.com/ericwang915/agent-hive/releases/latest">.dmg</a>. You need at least one agent CLI installed, such as <code>claude</code>, <code>codex</code> or <code>gemini</code>.</div>
+    </div>
+  </section>
+
+  <footer>
+    Made with 🍯 · <a href="https://github.com/ericwang915/agent-hive">GitHub</a> · <a href="https://github.com/ericwang915/agent-hive/blob/main/README.zh-CN.md">中文</a> · <a href="https://github.com/ericwang915/agent-hive/releases">Releases</a> · <a href="https://github.com/ericwang915/agent-hive/issues">Issues</a> · MIT license
+    <div style="margin-top:6px">If the bees made you smile, a ⭐ helps other people find the hive.</div>
+  </footer>
+</div>
+<script>
+// Point the download button at the right disk image where the browser tells us the chip
+(async () => {
+  try {
+    const d = navigator.userAgentData && await navigator.userAgentData.getHighEntropyValues(['architecture'])
+    if (d && navigator.userAgentData.platform === 'macOS') document.getElementById('dl').href = 'https://github.com/ericwang915/agent-hive/releases/latest/download/Agent-Hive-' + (d.architecture === 'arm' ? 'arm64' : 'x64') + '.dmg'
+  } catch {}
+})()
+document.querySelectorAll('.code button').forEach(b => b.addEventListener('click', async () => {
+  const t = b.previousElementSibling
+  try { await navigator.clipboard.writeText(t.textContent); b.textContent = 'Copied' } catch { const r = document.createRange(); r.selectNodeContents(t); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected' }
+  setTimeout(() => { b.textContent = 'Copy' }, 1600)
+}))
+</script>
+</body>
+</html>
