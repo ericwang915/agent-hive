@@ -1,18 +1,26 @@
 <p align="center"><img src="icon.png" width="112" alt="Agent Hive logo: a queen bee on a honeycomb"></p>
-<h1 align="center">Agent Hive</h1>
+<h1 align="center">Agent Hive 🐝</h1>
 <p align="center"><b>One Queen. Many bees. Your coding agents, working as a hive.</b><br>
-A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI, Antigravity, DeepSeek Harness and Cursor Agent into a team you can watch, schedule and steer.</p>
+A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI, Antigravity, DeepSeek Harness and Cursor Agent<br>into a small, friendly team you can watch, schedule and steer.</p>
 <p align="center">
-  <a href="https://github.com/ericwang915/agent-hive/releases/latest"><img src="https://img.shields.io/github/v/release/ericwang915/agent-hive?label=release" alt="latest release"></a>
+  <a href="https://github.com/ericwang915/agent-hive/releases/latest"><img src="https://img.shields.io/github/v/release/ericwang915/agent-hive?label=release&color=F0A93B" alt="latest release"></a>
+  <a href="https://github.com/ericwang915/agent-hive/releases"><img src="https://img.shields.io/github/downloads/ericwang915/agent-hive/total?label=downloads&color=F0A93B" alt="total downloads"></a>
+  <a href="https://github.com/ericwang915/agent-hive/stargazers"><img src="https://img.shields.io/github/stars/ericwang915/agent-hive?label=stars&color=F0A93B" alt="GitHub stars"></a>
   <a href="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml"><img src="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml/badge.svg" alt="tests"></a>
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B-lightgrey" alt="macOS 12 or later">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 <p align="center">
-  <a href="#install">Install</a> · <a href="#what-you-can-do-with-it">Features</a> · <a href="#how-it-compares">How it compares</a> · <a href="#faq">FAQ</a>
+  <a href="https://github.com/ericwang915/agent-hive/releases/latest"><b>⬇️ Download for Mac</b></a> · <a href="#install">Install</a> · <a href="#what-you-can-do-with-it">Features</a> · <a href="#how-it-compares">How it compares</a> · <a href="#faq">FAQ</a>
 </p>
 
+<p align="center"><img src="docs/bees.svg" width="860" alt="Seven cartoon bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job"></p>
+
+<p align="center"><i>Every agent is a bee with a name, a face and a job. They bob while they work, doze when they are idle,<br>and earn a new look as they climb from Bronze to Master.</i></p>
+
 ![Agent Hive running a relay team of coding agents: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
+
+<p align="center">If the bees make you smile, a ⭐ helps other people find the hive.</p>
 
 ## What is Agent Hive?
 
@@ -22,14 +30,14 @@ It uses the CLIs and logins you already have, including a Claude or ChatGPT subs
 
 ## Highlights
 
-- **Any agent, mixed in one team.** Claude Code writes, Codex reviews, Gemini tests. Any CLI that takes a prompt can be a bee.
-- **Agents that work while you are away.** Schedules (once, daily, weekdays, weekends, weekly, monthly, every N minutes) and event triggers (new commits, GitHub pull requests, comments and CI failures, another bee finishing), catch-up for runs missed while the Mac slept, and a daily budget that stops automatic runs when it is used up.
-- **A lead agent instead of ten terminals.** Tell Queen what you want; she picks the bees, dispatches the work, waits for the results and sums them up.
-- **Everything they made, in one place.** A Files page lists every PDF, deck, chart and link the bees produced, by bee and project. Search finds bees, skills, memory and anything said in a conversation.
-- **Review built into the flow.** Relay teams send a reviewer's findings back to the writer until it approves. Every bee has a diff view with commit, push and pull request.
-- **Spends fewer tokens than the CLI on its own.** Sessions are compacted before they get expensive, scheduled runs start fresh, unused tools and MCP servers are left out. In a measured three-round task a bee carried about 30% less context per round than plain `claude -p` on the same machine with the same setup (29k against 44k tokens).
-- **It remembers.** Overnight, two helper bees turn the day's conversations into long-term memory and reusable skills. New sessions start with both.
-- **Nothing to trust but your own machine.** MIT licensed, no build step, no telemetry; the only request the app makes on its own is a check for new releases on GitHub. The app is signed and notarized by Apple and updates itself if you let it.
+- 🐝 **Any agent, mixed in one team.** Claude Code writes, Codex reviews, Gemini tests. Any CLI that takes a prompt can be a bee.
+- 🌙 **Agents that work while you are away.** Schedules (once, daily, weekdays, weekends, weekly, monthly, every N minutes) and event triggers (new commits, GitHub pull requests, comments and CI failures, another bee finishing), catch-up for runs missed while the Mac slept, and a daily budget that stops automatic runs when it is used up.
+- 👑 **A lead agent instead of ten terminals.** Tell Queen what you want; she picks the bees, dispatches the work, waits for the results and sums them up.
+- 🔁 **Review built into the flow.** Relay teams of up to six bees send a reviewer's findings back to the writer until it approves. Build a team by dragging one bee onto another. Every bee has a diff view with commit, push and pull request.
+- 🗂️ **Everything they made, in one place.** A Files page lists every PDF, deck, chart and link the bees produced, by bee and project. Search finds bees, skills, memory and anything said in a conversation.
+- 🍯 **Spends fewer tokens than the CLI on its own.** Sessions are compacted before they get expensive, scheduled runs start fresh, unused tools and MCP servers are left out. In a measured three-round task a bee carried about 30% less context per round than plain `claude -p` on the same machine with the same setup (29k against 44k tokens).
+- 🧠 **It remembers.** Overnight, two helper bees turn the day's conversations into long-term memory and reusable skills. New sessions start with both.
+- 🔒 **Nothing to trust but your own machine.** MIT licensed, no build step, no telemetry; the only request the app makes on its own is a check for new releases on GitHub. The app is signed and notarized by Apple and updates itself if you let it.
 
 ## Install
 
@@ -78,7 +86,7 @@ Each bee has its own chat window with the full conversation. Replies stream in a
 
 ### See the whole hive at a glance
 
-The Hive page opens as a honeycomb; a switch takes you to the classic cards. Each squad is a cluster shaped by its relay: a chain sits in a row, a review loop is marked on the shared edge, and bees that work in parallel fan out and meet again at the merge. Click a cell and its full card, with every button, shows beside the comb.
+The Hive page opens as a honeycomb; a switch takes you to the classic cards. Each squad is a cluster shaped by its relay: a chain sits in a row, a review loop is marked on the shared edge, and bees that work in parallel fan out and meet again at the merge. Click a cell and its full card, with every button, shows beside the comb. Drag a bee onto another and it joins that bee's squad; click the badge on a link to take the link out.
 
 ![The honeycomb view: a squad with a review loop, a squad with two bees in parallel and a merge, and three bees on their own](docs/honeycomb.png)
 
@@ -202,7 +210,7 @@ npm run dist:signed  # the same, signed and notarized (needs CSC_NAME and NOTARY
 
 ## Contributing
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out and how to add an engine.
+Issues and pull requests are welcome, and so are stars: they are how other people find the hive. 🐝 See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out and how to add an engine.
 
 ## License
 

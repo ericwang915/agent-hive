@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="168" viewBox="0 0 860 168" role="img" aria-label="Seven cartoon bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job">
+<style>
+.f{animation:bob 2.6s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(2px)}50%{transform:translateY(-4px)}}
+.s{animation:br 3.6s ease-in-out infinite}
+@keyframes br{0%,100%{transform:translateY(1px)}50%{transform:translateY(-1px)}}
+.zzz text{animation:z 2.4s ease-in-out infinite}.zzz .z2{animation-delay:.6s}
+@keyframes z{0%,100%{opacity:.25}50%{opacity:1}}
+.n{font:700 15px ui-rounded,"SF Pro Rounded","Nunito",-apple-system,"Segoe UI",sans-serif;fill:#B9741A}
+.r{font:500 11.5px -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;fill:#8A8175}
+@media (prefers-reduced-motion:reduce){.f,.s,.zzz text{animation:none}}
+</style>
+<g class="f" style="animation-delay:0.00s"><svg x="23.4" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#BFE6F7" fill-opacity=".9" stroke="#8CC4DE" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#BFE6F7" fill-opacity=".9" stroke="#8CC4DE" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#3A2E22"/><circle cx="31" cy="5.8" r="1.7" fill="#3A2E22"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#F3BE5A"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M12.6 21.6q2.2-2.6 4.4 0M23 21.6q2.2-2.6 4.4 0" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M16 25.4q4 4.6 8 0" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<path d="M13.5 12.5l-1.2-6.2 4.3 3 3.4-4.6 3.4 4.6 4.3-3-1.2 6.2z" fill="#F0A93B" stroke="#B9741A" stroke-width=".9" stroke-linejoin="round"/>
+
+</g>
+</svg></g>
+<text class="n" x="61.4" y="122" text-anchor="middle">Queen</text><text class="r" x="61.4" y="141" text-anchor="middle">hands out the work</text>
+<g class="f" style="animation-delay:-0.37s"><svg x="146.3" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#fff" fill-opacity=".82" stroke="#B4C0CC" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#fff" fill-opacity=".82" stroke="#B4C0CC" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#8E9BAA"/><circle cx="31" cy="5.8" r="1.7" fill="#8E9BAA"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#9CC9F0"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<circle cx="14.8" cy="21" r="2" fill="#3A2E22"/><circle cx="25.2" cy="21" r="2" fill="#3A2E22"/><circle cx="15.5" cy="20.3" r=".6" fill="#fff"/><circle cx="25.9" cy="20.3" r=".6" fill="#fff"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M17 26q3 3 6 0" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+
+<path d="M20 31.4l-3.6-2.1v4.2zM20 31.4l3.6-2.1v4.2z" fill="#AEB9C6" stroke="#6F7C8B" stroke-width=".7" stroke-linejoin="round"/><circle cx="20" cy="31.4" r="1.1" fill="#6F7C8B"/>
+</g>
+</svg></g>
+<text class="n" x="184.3" y="122" text-anchor="middle">Hazel</text><text class="r" x="184.3" y="141" text-anchor="middle">writes the code</text>
+<g class="f" style="animation-delay:-0.74s"><svg x="269.1" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#FFF6DC" fill-opacity=".82" stroke="#E2B95A" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#FFF6DC" fill-opacity=".82" stroke="#E2B95A" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#E2A93A"/><circle cx="31" cy="5.8" r="1.7" fill="#E2A93A"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#F7CF6B"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<circle cx="14.8" cy="21" r="2" fill="#3A2E22"/><circle cx="25.2" cy="21" r="2" fill="#3A2E22"/><circle cx="15.5" cy="20.3" r=".6" fill="#fff"/><circle cx="25.9" cy="20.3" r=".6" fill="#fff"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M17.2 27h5.6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+
+<path d="M20 28.3l1 2.2 2.4.3-1.8 1.6.5 2.4-2.1-1.2-2.1 1.2.5-2.4-1.8-1.6 2.4-.3z" fill="#F4C445" stroke="#B9741A" stroke-width=".7" stroke-linejoin="round"/>
+</g>
+</svg></g>
+<text class="n" x="307.1" y="122" text-anchor="middle">Buzz</text><text class="r" x="307.1" y="141" text-anchor="middle">reviews it</text>
+<g class="f" style="animation-delay:-1.11s"><svg x="392.0" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#DDF5F1" fill-opacity=".82" stroke="#5FB8B0" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#DDF5F1" fill-opacity=".82" stroke="#5FB8B0" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#3FA79C"/><circle cx="31" cy="5.8" r="1.7" fill="#3FA79C"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#A9D8B8"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<circle cx="14.8" cy="21" r="2" fill="#3A2E22"/><circle cx="25.2" cy="21" r="2" fill="#3A2E22"/><circle cx="15.5" cy="20.3" r=".6" fill="#fff"/><circle cx="25.9" cy="20.3" r=".6" fill="#fff"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M20 25.2a1.7 2 0 1 0 .01 0" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+
+<path d="M9 16.4q11-5 22 0" stroke="#3FA79C" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="13.9" r="1.9" fill="#BFF3EC" stroke="#2A857B" stroke-width=".7"/>
+</g>
+</svg></g>
+<text class="n" x="430.0" y="122" text-anchor="middle">Mochi</text><text class="r" x="430.0" y="141" text-anchor="middle">runs the tests</text>
+<g class="f" style="animation-delay:-1.48s"><svg x="514.9" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#D9E9FF" fill-opacity=".82" stroke="#5AA2EE" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#D9E9FF" fill-opacity=".82" stroke="#5AA2EE" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#3F8FE6"/><circle cx="31" cy="5.8" r="1.7" fill="#3F8FE6"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#B8A4E8"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<path transform="translate(14.8 21.4) scale(0.62)" d="M0 3C-5-1-2.6-4.6 0-2 2.6-4.6 5-1 0 3z" fill="#E5484D"/><path transform="translate(25.2 21.4) scale(0.62)" d="M0 3C-5-1-2.6-4.6 0-2 2.6-4.6 5-1 0 3z" fill="#E5484D"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M17 26q3 3 6 0" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+
+<path d="M20 10.6l3 3.4-3 4-3-4z" fill="#8CCBFF" stroke="#2F7FD6" stroke-width=".8" stroke-linejoin="round"/><path d="M17 14h6" stroke="#fff" stroke-opacity=".8" stroke-width=".7"/><path transform="translate(34 26) scale(0.55)" d="M0-4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#5AA2EE"/><path transform="translate(5 27) scale(0.4)" d="M0-4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#5AA2EE"/>
+</g>
+</svg></g>
+<text class="n" x="552.9" y="122" text-anchor="middle">Puff</text><text class="r" x="552.9" y="141" text-anchor="middle">works at 9 every day</text>
+<g class="f" style="animation-delay:-1.85s"><svg x="637.7" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#EBDDFB" fill-opacity=".82" stroke="#A56BE0" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#EBDDFB" fill-opacity=".82" stroke="#A56BE0" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#9A5BDD"/><circle cx="31" cy="5.8" r="1.7" fill="#9A5BDD"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#F5B8CF"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M12.6 21.6q2.2-2.6 4.4 0M23 21.6q2.2-2.6 4.4 0" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M16 25.4q4 4.6 8 0" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+
+<ellipse cx="20" cy="7.6" rx="7.4" ry="2.1" stroke="#F0A93B" stroke-width="1.5"/><path d="M20 11l2.6 3-2.6 3.6-2.6-3.6z" fill="#C79BF2" stroke="#7B3FC4" stroke-width=".8" stroke-linejoin="round"/><path transform="translate(35 25) scale(0.6)" d="M0-4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#F0A93B"/><path transform="translate(4.5 26) scale(0.45)" d="M0-4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#A56BE0"/><path transform="translate(33 4) scale(0.4)" d="M0-4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#A56BE0"/>
+</g>
+</svg></g>
+<text class="n" x="675.7" y="122" text-anchor="middle">Nori</text><text class="r" x="675.7" y="141" text-anchor="middle">made it to Master</text>
+<g class="s" style="animation-delay:-2.22s"><svg x="760.6" y="14" width="76" height="76" viewBox="0 0 40 40" fill="none">
+<g class="bee-all">
+<ellipse class="wing wing-l" cx="6.2" cy="16" rx="6.4" ry="4.1" transform="rotate(-28 6.2 16)" fill="#BFE6F7" fill-opacity=".9" stroke="#8CC4DE" stroke-width=".9"/>
+<ellipse class="wing wing-r" cx="33.8" cy="16" rx="6.4" ry="4.1" transform="rotate(28 33.8 16)" fill="#BFE6F7" fill-opacity=".9" stroke="#8CC4DE" stroke-width=".9"/>
+<g class="antennae"><path d="M15 12.5C14 8.5 12 6.5 9.5 6M25 12.5C26 8.5 28 6.5 30.5 6" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="9" cy="5.8" r="1.7" fill="#3A2E22"/><circle cx="31" cy="5.8" r="1.7" fill="#3A2E22"/></g>
+<rect class="bee-body" x="6.5" y="10.5" width="27" height="25" rx="11.5" fill="#F2A97E"/>
+<path d="M9.5 31.2q10.5 3.6 21 0" stroke="#fff" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M12.6 21.5h4.4M23 21.5h4.4" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>
+<circle cx="11.6" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/><circle cx="28.4" cy="25.6" r="2.3" fill="#F28B82" fill-opacity=".5"/>
+<path d="M17 26q3 3 6 0" stroke="#3A2E22" stroke-width="1.5" stroke-linecap="round"/>
+
+
+</g>
+<g class="zzz" fill="#7C83C9" font-family="Nunito, sans-serif" font-weight="800"><text class="z1" x="30" y="9" font-size="7">z</text><text class="z2" x="34.5" y="4.5" font-size="5">z</text></g>
+</svg></g>
+<text class="n" x="798.6" y="122" text-anchor="middle">Olive</text><text class="r" x="798.6" y="141" text-anchor="middle">asleep until needed</text>
+</svg>
