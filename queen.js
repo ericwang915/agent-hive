@@ -142,7 +142,15 @@ const roleOf = a => (!Team.upIds(a).length ? 'lead' : a.after && a.after.loop ? 
 function squadsOf(agents) {
   return agents.filter(a => Team.isLead(agents, a)).map(lead => ({ lead, name: squadName(lead), members: Team.teamOf(agents, lead.id), layers: Team.layersOf(agents, lead.id) }))
 }
-const chainText = sq => sq.layers.map(l => l.map(a => a.name).join(' + ')).join(' → ')
+// "A → B + C → D" when every bee of a step follows every bee of the step before; a squad that branches is told branch by branch
+// ("A → B → R; A → C"), or the lead and Queen would read a bee as following bees it does not follow
+function chainText(sq) {
+  const L = sq.layers, ups = m => Team.upIds(m).filter(id => sq.members.some(x => x.id === id))
+  if (L.every((l, i) => !i || l.every(m => ups(m).length === L[i - 1].length && L[i - 1].every(p => ups(m).includes(p.id))))) return L.map(l => l.map(a => a.name).join(' + ')).join(' → ')
+  const paths = [], walk = (m, path) => { const d = path.includes(m) ? [] : sq.members.filter(x => Team.upIds(x).includes(m.id)); if (!d.length) paths.push([...path, m]); else d.forEach(x => walk(x, [...path, m])) }
+  L[0].forEach(r => walk(r, []))
+  return paths.slice(0, 6).map(p => p.map(a => a.name).join(' → ')).join('; ')
+}
 const squadCard = (sq, busy) => ({ name: sq.name, folder: sq.lead.task, chain: chainText(sq), steps: sq.layers.map(l => l.map(a => `${a.name} (${roleOf(a)})`).join(' + ')), busy: !!busy })
 const sqKey = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
 // Queen names a squad: exact name first, then a name that contains what she wrote

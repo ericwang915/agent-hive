@@ -315,12 +315,49 @@ const X = { id: 'X', name: 'Loner', status: 'idle' }
   eq(s[0], { inbox: 'D', value: null })
   eq([s[1].run, s[1].from], ['D', 'P, Q'])
   assert.ok(s[1].prompt.includes("### P's result\n\nP answer") && s[1].prompt.includes("### Q's result\n\nQ answer") && s[1].prompt.startsWith('P, Q have all finished'))
-  // stale: the inbox already holds a higher round of the same flow → the late old result is dropped
+  // what is handed over: a long reply keeps its end; with a worktree diff attached, the summary and the diff's file list both survive a tight cut
+  { const diff = "\n\n--- P's changes in its own worktree (/w/p) ---\n a.js | 2 +-\n" + 'x'.repeat(9000), long = 'intro ' + 'y'.repeat(3000) + ' SUMMARY-END' + diff
+    const c = core.clipReply(long, 5000)
+    assert.ok(c.includes('SUMMARY-END') && c.includes(' a.js | 2 +-') && c.endsWith('[diff cut short here]') && c.length < 5100)
+    eq(core.clipReply('a'.repeat(50) + 'END', 10), 'aaaaaaaEND')
+    assert.ok(/without a written summary/.test(core.clipReply('  ', 100)))
+    const lp = { prompt: 'Review {reply}', loop: true }
+    assert.ok(!/round/.test(core.relayPrompt(lp, 'A', 'x', 0)) && /This is round 2 of 3/.test(core.relayPrompt(lp, 'A', 'x', 1)) && /last round/.test(core.relayPrompt(lp, 'A', 'x', 2)) && !/round/.test(core.relayPrompt({ prompt: '{reply}' }, 'A', 'x', 2))) }
+  // a slow bee hands in after the others are already rounds further: it did not run again, so its result still counts, and the merge runs at the later round
   const D3 = { ...D, inbox: { flow: 'f2', round: 2, got: { P: { name: 'P', reply: 'new' } } } }
-  eq(relayPlan([A, P, Q, D3], Q, 'old', { why: 'handoff', round: 1, flow: 'f2' }), [])
+  s = relayPlan([A, P, Q, D3], Q, 'late', { why: 'handoff', round: 1, flow: 'f2' })
+  eq([s[1].run, s[1].round], ['D', 2])
+  assert.ok(s[1].prompt.includes('new') && s[1].prompt.includes('late'))
+  // a merge that waits off the reviewer's path still gets the newer result of a bee that ran again
+  { const X = { id: 'X', name: 'X', status: 'idle', after: { ids: ['A'], prompt: '{reply}' } }, R = { id: 'R', name: 'R', status: 'idle', after: { ids: ['X'], prompt: '{reply}', loop: true } }
+    const M = { id: 'M', name: 'M', status: 'idle', after: { ids: ['X', 'R'], prompt: '{reply}' }, inbox: { flow: 'f2', round: 0, got: { X: { name: 'X', reply: 'first' } } } }
+    const t = relayPlan([A, X, R, M], X, 'second', { why: 'handoff', round: 1, flow: 'f2', only: 'R' })
+    eq(t.find(x => x.inbox === 'M').value.got.X.reply, 'second')
+    eq(t.filter(x => x.run).map(x => x.run), ['R']) }
   // different flow: the old inbox is void, collect afresh
   s = relayPlan([A, P, Q, D3], Q, 'new round', { why: 'handoff', round: 0, flow: 'f9' })
   eq([s[0].value.flow, Object.keys(s[0].value.got)], ['f9', ['Q']])
+  // a fork with a reviewer on one branch: A → B → R (sends work back) and A → C. R's feedback reruns A and B, not C
+  { const B2 = { id: 'B2', name: 'B2', status: 'idle', after: { ids: ['A'], prompt: 'Do {reply}' } }, C2 = { id: 'C2', name: 'C2', status: 'idle', after: { ids: ['A'], prompt: 'Do {reply}' } }
+    const R = { id: 'R', name: 'R', status: 'idle', after: { ids: ['B2'], prompt: 'Review {reply}', loop: true } }, fork = [A, B2, C2, R]
+    eq(relayPlan(fork, A, 'task', { why: 'manual', flow: 'f5' }).filter(x => x.run).map(x => x.run), ['B2', 'C2'])
+    let t = relayPlan(fork, R, 'VERDICT: CHANGES', { why: 'handoff', round: 0, flow: 'f5' })
+    eq([t[0].run, t[0].why, t[0].round, t[0].only], ['A', 'feedback', 1, 'R'])
+    t = relayPlan(fork, A, 'fixed', { why: 'feedback', round: 1, flow: 'f5', only: 'R' })
+    eq(t.filter(x => x.run).map(x => [x.run, x.only]), [['B2', 'R']])
+    t = relayPlan(fork, B2, 'redone', { why: 'handoff', round: 1, flow: 'f5', only: 'R' })
+    eq(t.filter(x => x.run).map(x => [x.run, x.round, x.only]), [['R', 1, 'R']])
+    // the reviewer is reached: what follows it runs as usual, with no "only" left
+    const E = { id: 'E', name: 'E', status: 'idle', after: { ids: ['R'], prompt: 'Ship {reply}' } }
+    t = relayPlan([...fork, E], R, 'VERDICT: APPROVE', { why: 'handoff', round: 1, flow: 'f5', only: 'R' })
+    eq(t.filter(x => x.run).map(x => [x.run, 'only' in x]), [['E', false]])
+    // a reviewer that is gone does not hold the relay back
+    eq(relayPlan([A, B2, C2], A, 'fixed', { why: 'feedback', round: 1, flow: 'f5', only: 'R' }).filter(x => x.run).map(x => x.run), ['B2', 'C2'])
+    // a merge after the reviewer and the other branch: C2 handed in during round 0 and does not run again, its result still counts in round 1
+    const M = { id: 'M', name: 'M', status: 'idle', after: { ids: ['R', 'C2'], prompt: core.PRESETS.merge.prompt }, inbox: { flow: 'f5', round: 0, got: { C2: { name: 'C2', reply: 'C2 answer' } } } }
+    t = relayPlan([...fork, M], R, 'fine\nVERDICT: APPROVE', { why: 'handoff', round: 1, flow: 'f5', only: 'R' })
+    eq(t.filter(x => x.run).map(x => [x.run, x.from, x.round]), [['M', 'R, C2', 1]])
+    assert.ok(t.find(x => x.run).prompt.includes('C2 answer')) }
   // deleted upstreams are no longer awaited
   s = relayPlan([A, Q, D], Q, 'only', { why: 'handoff', round: 0, flow: 'f2' })
   eq(s[1].run, 'D')
@@ -512,6 +549,10 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
     // stuck: no verdict; failed: a bee errors
     const q2 = qt.newSquadRun(sq, { flow: 'f2', task: 't', by: 'user' }); qt.squadTrack(q2, W, core.relayPlan(all, W, 'x', { why: 'squad', flow: 'f2' }), 'x', null)
     const rep = 'looks fine'; eq(qt.squadTrack(q2, Rv, core.relayPlan(all, Rv, rep, { why: 'handoff', flow: 'f2', round: 0 }), rep, null), { done: true, status: 'BLOCKED' }); assert.ok(/Stuck: No VERDICT given/.test(qt.squadReport(q2)) && /Tofu \(next\): did not run/.test(qt.squadReport(q2)))
+    { const mkb = (id, ups) => ({ id, name: id, ...(ups ? { after: { ids: ups } } : {}) }), ch = list => qt.chainText(qt.squadsOf(list)[0])
+      eq(ch([mkb('A'), mkb('B', ['A']), mkb('C', ['A']), mkb('D', ['B', 'C'])]), 'A → B + C → D')
+      eq(ch([mkb('A'), mkb('B', ['A']), mkb('C', ['A']), mkb('R', ['B'])]), 'A → B → R; A → C')
+      eq(ch([mkb('A'), mkb('B', ['A']), mkb('C', ['B'])]), 'A → B → C') }
     const q3 = qt.newSquadRun(sq, { flow: 'f3', task: 't', by: 'user' }); eq(qt.squadTrack(q3, W, null, 'boom', 'ERROR'), { done: true, status: 'ERROR' }); eq(qt.squadTrack(q3, solo, [], '', null), null)
     assert.ok(qt.toolNames().includes('mcp__hive__run_squad') && /job for your squad \(Mochi → Pip → Tofu\)/.test(qt.squadPrompt(q, qt.chainText(sq), 'queen')))
   }

@@ -235,7 +235,7 @@ function fail(a, text) { log(a, { role: 'error', text }); a.status = 'error'; ev
 function run(a, prompt, why = 'manual', meta = {}) {
   if (!alive(a) || !prompt) return
   if (procs.has(a.id) || a.status === 'setup' || folderBusy(a))
-    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, oneOff: meta.oneOff, compacted: meta.compacted, shown: meta.shown, evDepth: meta.evDepth, at: Date.now() })
+    return enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, only: meta.only, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, oneOff: meta.oneOff, compacted: meta.compacted, shown: meta.shown, evDepth: meta.evDepth, at: Date.now() })
   if (GATED[why] && overBudget()) {
     const text = `Today's budget $${state.settings.budget} is used up, so the ${GATED[why]} did not run. Manual messages still work.`
     log(a, { role: 'error', text }); event(a, text, 'budget', true)
@@ -248,14 +248,14 @@ function run(a, prompt, why = 'manual', meta = {}) {
     const reason = core.compactWhy(a, state.settings)
     if (reason) {                                        // compact now, then run this prompt right after
       if (!meta.silent && !meta.shown) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show the message now, not after the compaction
-      enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, evDepth: meta.evDepth, compacted: true, shown: true, at: 0 })
+      enqueue(a, { prompt, why, round: meta.round, from: meta.from, flow: meta.flow, only: meta.only, room: meta.room, show: meta.show, hop: meta.hop, batch: meta.batch, evDepth: meta.evDepth, compacted: true, shown: true, at: 0 })
       log(a, { role: 'system', text: reason })
       const room = meta.room && state.rooms.find(x => x.id === meta.room)
       if (room) roomLog(room, { who: a.id, name: a.name, color: a.color, kind: 'system', text: `${a.name}: ${reason[0].toLowerCase()}${reason.slice(1)}` })
       return run(a, '/compact', 'chat', { compacted: true, silent: true })
     }
   }
-  if (why !== 'resume') a.ctx = { why, silent: meta.silent, round: meta.round || 0, room: meta.room, hop: meta.hop || 0, batch: meta.batch, evDepth: meta.evDepth || 0, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
+  if (why !== 'resume') a.ctx = { why, silent: meta.silent, round: meta.round || 0, only: meta.only, room: meta.room, hop: meta.hop || 0, batch: meta.batch, evDepth: meta.evDepth || 0, flow: meta.flow || (Team.isLead(state.agents, a) ? crypto.randomBytes(4).toString('hex') : null) }
   if (one) log(a, { role: 'system', text: 'Answering in a side session; the main session stays as it is' })
   if (!meta.silent && !meta.shown) log(a, { role: 'user', text: meta.show || prompt, why, from: meta.from })      // show: the conversation shows only what the user wrote, not the attached group context
   if (!fs.existsSync(a.workspace)) return fail(a, `Workspace does not exist: ${a.workspace}`)
@@ -353,7 +353,7 @@ function doSteps(steps) {
     if (!b) continue
     if ('inbox' in s) { if (s.value) b.inbox = s.value; else delete b.inbox }
     else if (s.log) { log(b, { role: 'system', text: s.text }); event(b, s.text, 'relay', !s.quiet) }
-    else enqueue(b, { prompt: s.prompt, why: s.why, round: s.round, flow: s.flow, from: s.from, at: Date.now() })
+    else enqueue(b, { prompt: s.prompt, why: s.why, round: s.round, flow: s.flow, from: s.from, only: s.only, at: Date.now() })
   }
 }
 
@@ -417,7 +417,9 @@ const actions = {
       if (ids.length) b.after = { ...b.after, ids, id: undefined }; else delete b.after
       if (b.inbox && b.inbox.got) delete b.inbox.got[a.id]
     }
+    for (const b of team) if (b !== a && !upIds(b).length) settle(b)       // cut loose: back to the folder it came from
     dropWorktree(a)                                        // the branch is kept
+    tidyWorktrees()
     const w = chats.get(a.id)
     if (w && !w.isDestroyed()) w.destroy()
     for (const f of [logFile(a.id), idxFile(a), idxFile(a, '-d'), idxFile(a, '-c')]) fs.rmSync(f, { force: true })
@@ -1439,6 +1441,86 @@ function create(c) {
   return { id: a.id }
 }
 
+// ───────── Taking a relay apart without deleting anyone ─────────
+// Not while the squad is at work: a handoff that is on its way would arrive at a bee that no longer expects it
+function squadAtRest(a) {
+  const busy = Team.teamOf(state.agents, a.id).find(m => ['running', 'paused', 'setup'].includes(m.status) || (m.queue && m.queue.length))
+  if (busy) throw new Error(`${busy.name} is still at work. Stop the squad first`)
+}
+// A bee (or squad) that joined a relay from its own folder goes back to it once it is cut loose: the folder of a team is the folder its lead came from
+// a worktree is only for a bee that works side by side with another one in a repo: once that is over (or it moves to another folder) it goes
+const tidyWorktrees = () => { for (const x of state.agents) if (!x.isolate && x.worktree && !Team.isParallel(state.agents, x.id)) dropWorktree(x) }
+function settle(b) {
+  const team = Team.teamOf(state.agents, b.id), h = team[0].home
+  let moved = false
+  for (const m of team) {
+    if (h && m.workspace !== h.workspace) { if (!m.isolate) dropWorktree(m); m.workspace = h.workspace; m.task = h.task; moved = true }
+    if (m.home && m.home.workspace === m.workspace) delete m.home
+  }
+  return moved
+}
+const onItsOwn = b => { delete b.after; delete b.inbox; log(b, { role: 'system', text: `${b.name} left the relay and works on its own now, ${settle(b) ? `back in its own folder ${b.task}` : 'in the same folder'}` }) }
+// A bee that is already here joins: it picks up after `up`, and a squad it leads comes with it.
+// A relay shares one folder, so they move into that squad's folder (their own is remembered for when they leave)
+function joinRelay(id, upId) {
+  const a = byId(id), u = byId(upId)
+  if (!a || !u) throw new Error('This bee no longer exists')
+  const mine = Team.teamOf(state.agents, a.id), team = Team.teamOf(state.agents, u.id)
+  if (team.includes(a)) throw new Error(a === u ? 'A bee cannot follow itself' : `${a.name} is already in this relay`)
+  if (upIds(a).length) throw new Error(`${a.name} already follows another bee. Take it out of that relay first`)
+  if (team.length + mine.length > core.TEAM_MAX) throw new Error(`A team can have at most ${core.TEAM_MAX} bees`)
+  if ([...mine, ...team].some(t => t.isolate)) throw new Error('A bee on its own branch cannot be part of a relay')
+  squadAtRest(a); squadAtRest(u)
+  const moved = a.workspace !== u.workspace
+  for (const m of mine) if (m.workspace !== u.workspace) { if (!m.isolate) dropWorktree(m); m.home = m.home || { workspace: m.workspace, task: m.task }; m.workspace = u.workspace; m.task = u.task }
+  a.after = { ids: [u.id], prompt: core.PRESETS.review.prompt, loop: true }
+  delete a.inbox
+  for (const m of mine) {                                  // a step that became parallel cannot send work back
+    const layer = Team.layerOf(state.agents, m.id)
+    if (layer.length > 1) for (const p of layer) if (p.after && p.after.loop) { p.after = { ...p.after, loop: false }; if (p !== a) log(p, { role: 'system', text: '"Send feedback back" was switched off: this step now has bees working in parallel' }) }
+  }
+  log(a, { role: 'system', text: `${a.name} now picks up when ${u.name} is done${moved ? `, and works in ${u.name}'s folder ${a.task} (a new session starts there)` : ''}. The handoff prompt is in its settings` })
+  for (const m of mine) if (m !== a && moved) log(m, { role: 'system', text: `The squad now follows ${u.name} and works in the folder ${m.task}` })
+  log(u, { role: 'system', text: `${a.name} now picks up when ${u.name} is done` })
+  tidyWorktrees()
+  push()
+  return { id: a.id }
+}
+// One link: `down` no longer follows `up`. A bee left without any link works on its own again
+function unlink(downId, upId) {
+  const b = byId(downId), u = byId(upId)
+  if (!b || !upIds(b).includes(upId)) throw new Error('That link is no longer there')
+  squadAtRest(b)
+  const ids = upIds(b).filter(id => id !== upId)
+  if (b.inbox && b.inbox.got) delete b.inbox.got[upId]
+  if (ids.length) { b.after = { ...b.after, ids, id: undefined }; log(b, { role: 'system', text: `${b.name} no longer follows ${u ? u.name : 'that bee'}` }) }
+  else if (Team.downOf(state.agents, b.id).length) { delete b.after; delete b.inbox; log(b, { role: 'system', text: `${b.name} no longer follows ${u ? u.name : 'that bee'}: it leads its own relay now${settle(b) ? `, back in its folder ${b.task}` : ''}` }) }
+  else onItsOwn(b)
+  if (u && !inRelay(u)) log(u, { role: 'system', text: `${u.name} has no bee after it any more and works on its own now` })
+  tidyWorktrees()
+  push()
+}
+// A whole bee: it steps out and the gap closes behind it (A→B→C minus B becomes A→C)
+function leaveRelay(id) {
+  const a = byId(id)
+  if (!a || !inRelay(a)) throw new Error('This bee is not in a relay')
+  squadAtRest(a)
+  const ups = upIds(a).filter(byId), cut = []
+  for (const b of Team.downOf(state.agents, a.id)) {
+    let ids = upIds(b).filter(x => x !== a.id)
+    if (!ids.length) ids = ups
+    if (b.inbox && b.inbox.got) delete b.inbox.got[a.id]
+    if (ids.length) b.after = { ...b.after, ids: [...new Set(ids)], id: undefined }
+    else if (Team.downOf(state.agents, b.id).length) { delete b.after; delete b.inbox; cut.push(b) }
+    else onItsOwn(b)
+  }
+  onItsOwn(a)
+  for (const b of cut) settle(b)
+  tidyWorktrees()
+  for (const u of ups) if (!inRelay(u)) log(u, { role: 'system', text: `${u.name} has no bee after it any more and works on its own now` })
+  push()
+}
+
 function update(id, c) {
   const a = byId(id)
   if (!a) throw new Error('This bee no longer exists')
@@ -1668,6 +1750,9 @@ function ipc() {
   handle('outputs', () => outputs())
   handle('openOutput', (id, abs, how) => openOutput(id, String(abs || ''), how === 'open' ? 'open' : 'reveal'))
   handle('openLink', url => { if (!/^https?:\/\//.test(String(url))) throw new Error('Not a web link'); shell.openExternal(String(url)) })
+  handle('unlink', (down, up) => unlink(String(down || ''), String(up || '')))
+  handle('joinRelay', (id, up) => joinRelay(String(id || ''), String(up || '')))
+  handle('leaveRelay', id => leaveRelay(String(id || '')))
   handle('squadName', (id, name) => { const a = need(id); if (!Team.isLead(state.agents, a)) throw new Error('Only the first bee of a squad carries its name'); a.squadName = String(name || '').replace(/[@\n]/g, ' ').trim().slice(0, 30); if (!a.squadName) delete a.squadName; push() })
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: fs.existsSync(wsRoot()) ? wsRoot() : HOME })

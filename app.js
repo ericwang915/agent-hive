@@ -76,7 +76,7 @@ function renderChats() {
     if (g.team.length === 1) return chatRow(g.team[0])
     const lead = g.team[0], open = sqFold[lead.id] === undefined ? g.hot : !sqFold[lead.id]
     const layers = Team.layersOf(A, lead.id).flat()
-    return `<div class="ch-sq${open ? ' open' : ''}"><button class="ch-sqh" data-act="sq-fold" data-id="${lead.id}" data-open="${open ? 1 : 0}" title="${esc(layers.map(m => m.name).join(' → '))}"><span class="caret">${ICON.caret}</span><b>${esc(squadNameOf(lead))}</b><span class="meta">${esc(lead.task)}</span>${open ? '' : `<span class="faces">${layers.map(m => `<i style="background:${esc(m.color)}"></i>`).join('')}</span>${g.team.some(chatFresh) ? '<span class="ch-dot"></span>' : ''}`}</button>${open ? `<div class="ch-rail">${layers.map(m => chatRow(m, true)).join('')}</div>` : ''}</div>`
+    return `<div class="ch-sq${open ? ' open' : ''}"><button class="ch-sqh" data-act="sq-fold" data-id="${lead.id}" data-open="${open ? 1 : 0}" title="${squadLine(Team.teamOf(S.agents, lead.id))}"><span class="caret">${ICON.caret}</span><b>${esc(squadNameOf(lead))}</b><span class="meta">${esc(lead.task)}</span>${open ? '' : `<span class="faces">${layers.map(m => `<i style="background:${esc(m.color)}"></i>`).join('')}</span>${g.team.some(chatFresh) ? '<span class="ch-dot"></span>' : ''}`}</button>${open ? `<div class="ch-rail">${layers.map(m => chatRow(m, true)).join('')}</div>` : ''}</div>`
   }).join(''))
 }
 function renderFeed() {
@@ -165,42 +165,70 @@ function renderHive() {
 let hiveView = 'comb', combSel = ''                   // the honeycomb is what a new hive opens with; Cards stays one click away
 try { hiveView = localStorage.getItem('hive-view') === 'cards' ? 'cards' : 'comb' } catch {}
 const HX = { W: 138, H: 159, G: 8 }, HX_ROW = HX.H * 0.75 + HX.G, HX_HALF = (HX.W + HX.G) / 2
-// Where a squad's bees go, from its layers: bees on one step stack above and below the line, tucked between the steps before and after
+// Where a squad's bees go. A bee sits next to the bee it follows: the only follower straight to the right, several followers fanned out
+// above and below, a bee that merges several to the right of them, in the middle. So a branch reads as a branch, whatever its length.
+// Cells are (xh, row): xh counts half cells, and a comb only has cells where xh and row are both even or both odd
 function combPlace(layers) {
-  const at = new Map()
-  let cur = 0, prevMulti = false
-  for (const layer of layers) {
-    if (layer.length === 1) { at.set(layer[0].id, { xh: cur, row: 0 }); cur += 2; prevMulti = false; continue }
-    if (prevMulti) cur += 2
-    const side = cur === 0 ? 1 : cur - 1               // a first step with several bees has nothing to tuck behind
-    const rows = layer.length === 2 ? [-1, 1] : layer.length === 3 ? [-1, 0, 1] : [-1, 1, 0, 2, -2, 3]
-    layer.forEach((b, i) => { const row = rows[i % rows.length]; at.set(b.id, { xh: row % 2 ? side : side + 1, row }) })
-    cur = Math.max(cur, side + (layer.length > 2 ? 3 : 1))
-    prevMulti = true
+  const at = new Map(), taken = new Set(), key = (xh, row) => xh + ',' + row
+  const put = (id, xh, row) => {
+    if ((xh + row) % 2) xh++
+    if (taken.has(key(xh, row))) {                          // somebody is there already: the nearest free cell, never to the left
+      let best = null
+      for (let dx = 0; dx <= 8; dx++) for (let dr = -8; dr <= 8; dr++) {
+        const x = xh + dx, r = row + dr
+        if ((x + r) % 2 || taken.has(key(x, r))) continue
+        const d = dx / 2 + Math.abs(dr)
+        if (!best || d < best.d) best = { d, x, r }
+      }
+      if (best) { xh = best.x; row = best.r }
+    }
+    taken.add(key(xh, row)); at.set(id, { xh, row })
   }
+  const FAN = [[1, -1], [1, 1], [2, 0], [1, -3], [1, 3], [2, -2], [2, 2]]           // where the 1st, 2nd, 3rd… follower of one bee goes
+  const fanned = new Map()
+  layers.forEach((layer, li) => layer.forEach((b, i) => {
+    const ups = Team.upIds(b).filter(id => at.has(id)).map(id => at.get(id))
+    if (!ups.length) return put(b.id, 0, [0, 2, -2, 4, -4, 6][i % 6] + (li ? 2 : 0))
+    if (ups.length > 1) return put(b.id, Math.max(...ups.map(p => p.xh)) + 1, Math.round(ups.reduce((n, p) => n + p.row, 0) / ups.length))
+    const up = Team.upIds(b).find(id => at.has(id)), sibs = S.agents.filter(x => Team.upIds(x).length === 1 && Team.upIds(x)[0] === up).length
+    if (sibs <= 1) return put(b.id, ups[0].xh + 2, ups[0].row)
+    const k = fanned.get(up) || 0, [dx, dr] = FAN[k % FAN.length]
+    fanned.set(up, k + 1)
+    put(b.id, ups[0].xh + dx, ups[0].row + dr)
+  }))
   const minRow = Math.min(...[...at.values()].map(p => p.row)), minX = Math.min(...[...at.values()].map(p => p.xh))
   for (const p of at.values()) { p.x = (p.xh - minX) * HX_HALF; p.y = (p.row - minRow) * HX_ROW }
   return at
+}
+// A squad in one line. "A → B ∥ C → D" when every bee of a step follows every bee of the step before; a squad that branches is written branch by branch
+function squadLine(team, fmt = m => esc(m.name), sep = x => x) {
+  const A = S.agents, layers = Team.layersOf(A, team[0].id)
+  const full = layers.every((l, i) => !i || l.every(m => { const u = Team.upIds(m).filter(id => byId(id)); return u.length === layers[i - 1].length && layers[i - 1].every(p => u.includes(p.id)) }))
+  if (full) return layers.map(l => l.map(fmt).join(sep(' ∥ '))).join(sep(' → '))
+  const paths = [], walk = (m, path) => { const d = path.includes(m) ? [] : Team.downOf(A, m.id); if (!d.length) paths.push([...path, m]); else d.forEach(x => walk(x, [...path, m])) }
+  layers[0].forEach(r => walk(r, []))
+  return paths.slice(0, 6).map(p => p.map(fmt).join(sep(' → '))).join(sep('  ·  '))
 }
 // The engine in one word, for the small places
 const ENG_SHORT = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', 'cursor-agent': 'Cursor', antigravity: 'Antigravity', dsh: 'DeepSeek', grok: 'Grok' }
 const engShort = a => ENG_SHORT[a.engine] || String(a.template || '').trim().split(/\s+/)[0].split('/').pop() || 'Custom'
 function combCell(a, p) {
   const live = a.status === 'running', sched = scheduled(a), mood = a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy'
-  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px;--bee:${esc(a.color)}" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(subline(a))} · ${esc(a.task)}${sched ? ' · ' + esc(schedText(a.schedule)) : ''}"><div class="hx-in${sched ? ' timed' : ''}">
+  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px;--bee:${esc(a.color)}" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" draggable="true" title="${esc(a.name)} · ${esc(subline(a))} · ${esc(a.task)}${sched ? ' · ' + esc(schedText(a.schedule)) : ''}"><div class="hx-in${sched ? ' timed' : ''}">
     ${beeFace(a, sched ? 32 : 38, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}<span class="hx-eng"> - ${esc(engShort(a))}</span></div><div class="hx-task ell">${esc(a.task)}</div>${sched ? `<div class="hx-when">${ICON.clock}<span class="ell">${esc(schedText(a.schedule))}</span></div>` : ''}${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
 }
-const combLink = (p, q, sym, label) => `<div class="hx-link" style="left:${(p.x + q.x) / 2 + HX.W / 2}px;top:${(p.y + q.y) / 2 + HX.H / 2}px"><span style="transform:rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg)">${sym}</span>${label ? `<em>${label}</em>` : ''}</div>`
+// The badge on a link is a button: click or right-click it to take that link out
+const combLink = (p, q, sym, label, up, down) => `<div class="hx-link" data-link="${down.id}" data-up="${up.id}" data-act="link-menu" title="${esc(up.name)} → ${esc(down.name)} · click to remove this link" style="left:${(p.x + q.x) / 2 + HX.W / 2}px;top:${(p.y + q.y) / 2 + HX.H / 2}px"><span style="transform:rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg)">${sym}</span>${label ? `<em>${label}</em>` : ''}</div>`
 const combBox = at => { const ps = [...at.values()]; return { w: Math.max(...ps.map(p => p.x)) + HX.W, h: Math.max(...ps.map(p => p.y)) + HX.H } }
 function combSquad(team) {
   const lead = team[0], layers = Team.layersOf(S.agents, lead.id), at = combPlace(layers), box = combBox(at), last = layers[layers.length - 1]
   let links = ''
   for (const b of team) {
     const ups = Team.upIds(b).filter(id => at.has(id))
-    ups.forEach((id, i) => { links += combLink(at.get(id), at.get(b.id), b.after && b.after.loop && ups.length === 1 ? '⇄' : '→', ups.length > 1 && i === ups.length - 1 ? 'merge' : '') })
+    ups.forEach((id, i) => { links += combLink(at.get(id), at.get(b.id), b.after && b.after.loop && ups.length === 1 ? '⇄' : '→', ups.length > 1 && i === ups.length - 1 ? 'merge' : '', byId(id), b) })
   }
   const busy = team.some(m => ['running', 'paused'].includes(m.status) || (m.queue && m.queue.length))
-  const shape = [team.some(m => m.after && m.after.loop) ? 'review loop' : '', layers.some(l => l.length > 1) ? `${Math.max(...layers.map(l => l.length))} in parallel${layers[layers.length - 1].length === 1 && layers.length > 2 ? ', then a merge' : ''}` : ''].filter(Boolean).join(' · ') || 'relay'
+  const shape = [team.some(m => m.after && m.after.loop) ? 'review loop' : '', layers.some(l => l.length > 1) ? `${Math.max(...layers.map(l => l.length))} in parallel${team.some(m => Team.upIds(m).length > 1) ? ', then a merge' : ''}` : ''].filter(Boolean).join(' · ') || 'relay'
   return `<div class="hx-group" style="width:${Math.max(box.w, 236)}px"><div class="hx-gh"><button class="sq-name" data-act="squad-rename" data-id="${lead.id}" title="The squad's name: Queen and @mentions use it. Click to rename">${esc(squadNameOf(lead))}</button>
     ${busy ? `<button class="btn sm icon ghost danger" data-act="team-stop" data-id="${lead.id}" title="Stop the squad">${ICON.stop}</button>` : ''}${team.length < S.teamMax ? `<button class="btn sm relay-add" data-act="relay" data-id="${last.length === 1 ? last[0].id : lead.id}" title="Add a bee to the end of this squad">${ICON.plus}Relay</button>` : ''}</div>
     <div class="hx-gs ell">${esc(lead.task)} · ${shape}</div><div class="hx-area" style="width:${box.w}px;height:${box.h}px">${team.map(b => combCell(b, at.get(b.id))).join('')}${links}</div></div>`
@@ -211,7 +239,7 @@ function combSolo(bees, width, withHatch, few) {
   const pos = i => { const r = Math.floor(i / cols), c = i % cols; return { x: c * (HX.W + HX.G) + (r % 2 ? HX_HALF : 0), y: r * HX_ROW } }
   const rows = Math.ceil(n / cols), w = Math.min(n, cols) * (HX.W + HX.G) - HX.G + (rows > 1 ? HX_HALF : 0), h = HX.H + (rows - 1) * HX_ROW
   const hatch = withHatch ? (() => { const p = pos(bees.length); return `<button class="hx add" style="left:${p.x}px;top:${p.y}px" data-act="hatch"><span class="hx-in"><span class="plus">+</span><span class="hx-task">Hatch</span></span></button>` })() : ''
-  return `<div class="hx-group" style="width:${w}px"><div class="hx-gh"><b class="round">${bees.length ? 'On their own' : 'No bees yet'}</b></div><div class="hx-gs">${bees.length} bee${bees.length === 1 ? '' : 's'}</div><div class="hx-area" style="width:${w}px;height:${h}px">${bees.map((b, i) => combCell(b, pos(i))).join('')}${hatch}</div></div>`
+  return `<div class="hx-group" style="width:${w}px"><div class="hx-gh"><b class="round">${bees.length ? 'On their own' : S.agents.length ? 'A new bee' : 'No bees yet'}</b></div><div class="hx-gs">${bees.length || !S.agents.length ? `${bees.length} bee${bees.length === 1 ? '' : 's'}` : 'on its own, or into a relay'}</div><div class="hx-area" style="width:${w}px;height:${h}px">${bees.map((b, i) => combCell(b, pos(i))).join('')}${hatch}</div></div>`
 }
 function combHtml(list, width) {
   const A = S.agents, done = new Set(), squads = [], solo = []
@@ -226,7 +254,7 @@ function combHtml(list, width) {
   const hatch = filter === 'all' && !query && A.length < S.max
   if (!shown.length && !hatch) return query ? '' : '<div class="guide">No bees match</div>'
   const team = sel ? Team.teamOf(A, sel.id) : []
-  const side = sel ? `<div class="hx-side">${cardHtml(sel)}${team.length > 1 ? `<div class="hx-where">${esc(squadNameOf(team[0]))} · ${Team.layersOf(A, team[0].id).map(l => l.map(m => (m.id === sel.id ? `<b>${esc(m.name)}</b>` : esc(m.name))).join(' ∥ ')).join(' → ')}</div>` : ''}<div class="hx-hint">Click a cell to see it here · double-click opens its chat</div></div>` : ''
+  const side = sel ? `<div class="hx-side">${cardHtml(sel)}${team.length > 1 ? `<div class="hx-where">${esc(squadNameOf(team[0]))} · ${squadLine(team, m => (m.id === sel.id ? `<b>${esc(m.name)}</b>` : esc(m.name)))}</div>` : ''}<div class="hx-hint">Click a cell to see it here · drag it onto another bee to follow that one · double-click opens its chat</div></div>` : ''
   return `<div class="hx-page${narrow ? ' narrow' : ''}"><div class="hx-left">${squads.map(combSquad).join('')}${solo.length || hatch ? combSolo(solo, Math.max(HX.W * 2 + HX_HALF, leftW), hatch, squads.length > 0 && solo.length + (hatch ? 1 : 0) <= 6) : ''}</div>${side}</div>`
 }
 
@@ -317,7 +345,7 @@ function teamHtml(team, cols, colW) {
   const layers = Team.layersOf(S.agents, team[0].id), span = Math.min(cols, team.length === 2 ? 2 : 3)
   const W = span * colW + (span - 1) * GAP - 30, n = Math.max(1, Math.min(layers.length, Math.floor((W + 28) / (220 + 28))))
   const stacked = n < layers.length, w = (W - (n - 1) * 28) / n, tight = w < 250, dag = layers.some(l => l.length > 1)
-  const chain = layers.map(l => l.map(m => `<span class="m"><span class="dot" style="background:${esc(m.color)}"></span>${esc(m.name)}</span>`).join('<span class="sep">∥</span>')).join('<span class="sep">→</span>')
+  const chain = squadLine(team, m => `<span class="m"><span class="dot" style="background:${esc(m.color)}"></span>${esc(m.name)}</span>`, x => `<span class="sep">${x.trim()}</span>`)
   const busy = team.some(m => ['running', 'paused'].includes(m.status) || (m.queue && m.queue.length))
   const last = layers[layers.length - 1]
   return `<div class="team" style="grid-column:span ${span}">
@@ -931,7 +959,19 @@ const ACT = {
   filter: el => { filter = el.dataset.f; renderHive() },
   sub: el => { sub = el.dataset.k; renderHive() },
   hatch: () => openHatch(),
-  relay: el => openHatch({ after: el.dataset.id }),
+  // a new bee, or one that is already here (a squad comes along with its lead)
+  relay: (el, e) => {
+    const u = byId(el.dataset.id), team = u ? Team.teamOf(S.agents, u.id) : []
+    const free = !u || team.some(m => m.isolate) ? [] : S.agents.map(b => ({ b, sq: Team.teamOf(S.agents, b.id) })).filter(({ b, sq }) => !Team.upIds(b).length && !team.includes(b) && team.length + sq.length <= S.teamMax && !sq.some(m => m.isolate || m.status === 'setup'))
+    if (!e || !free.length) return openHatch({ after: el.dataset.id })
+    showCtx(e, [
+      { label: `Hatch a new bee after ${u.name}…`, icon: ICON.plus, run: () => openHatch({ after: u.id }) },
+      '-',
+      { head: `Or one that is here picks up after ${u.name}` },
+      ...free.map(({ b, sq }) => ({ label: sq.length > 1 ? `${b.name}, with ${sq.filter(m => m !== b).map(m => m.name).join(' and ')}` : b.name, icon: `<span class="ic"><span class="dot" style="background:${esc(b.color)}"></span></span>`,
+        run: async () => { const same = b.workspace === u.workspace; if (await call('joinRelay', b.id, u.id)) toast(same ? `${b.name} now follows ${u.name}` : `${b.name} now follows ${u.name} and works in ${u.task}`) } })),
+    ])
+  },
   edit: el => openHatch({ edit: el.dataset.id }),
   'hatch-close': () => { $('#hatch').close(); F = null },
   chat: el => { chatSeen[el.dataset.id] = Date.now(); saveChats(); renderChats(); return call('openChat', el.dataset.id, el.dataset.tab || '') },
@@ -991,6 +1031,7 @@ const ACT = {
   'mem-hist-restore': async () => { const key = MH.key; if (await call('restoreMemory', key, MH.list[MH.i].id)) { $('#editor').close(); memOpen.add(key); toast('Restored'); loadGarden() } },
   'mem-save': async el => { if (await call('saveMemory', el.dataset.k, $('#mem-text').value)) { memEdit = null; toast('Saved'); loadGarden() } },
   pal: el => palRun(+el.dataset.i),
+  'link-menu': (el, e) => { e.stopPropagation(); linkMenu(e, el.dataset.link, el.dataset.up) },
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
   upgrade: () => doUpgrade(),
   'rm-more': el => { const c = el.closest('.rm-card'), open = c.classList.toggle('open'); el.textContent = open ? 'Show less' : 'Show all'; if (!open) c.scrollIntoView({ block: 'nearest' }) },
@@ -1376,7 +1417,7 @@ function showCtx(e, items) {
   closeCtx()
   const m = document.createElement('div')
   m.id = 'ctx'
-  m.innerHTML = items.filter(Boolean).map((x, i) => (x === '-' ? '<hr>' : `<button data-i="${i}" class="${x.danger ? 'danger' : ''}">${x.icon || '<span class="ic"></span>'}${esc(x.label)}</button>`)).join('')
+  m.innerHTML = items.filter(Boolean).map((x, i) => (x === '-' ? '<hr>' : x.head ? `<div class="ctx-h">${esc(x.head)}</div>` : `<button data-i="${i}" class="${x.danger ? 'danger' : ''}">${x.icon || '<span class="ic"></span>'}${esc(x.label)}</button>`)).join('')
   document.body.appendChild(m)
   const w = m.offsetWidth, h = m.offsetHeight
   m.style.left = Math.max(6, Math.min(e.clientX, innerWidth - w - 6)) + 'px'
@@ -1410,23 +1451,80 @@ function beeMenu(e, id) {
     a.status === 'running' && { label: 'Pause', icon: ICON.pause, run: () => ACT.pause(el) },
     (a.status === 'paused' || (['stopped', 'error', 'sleeping'].includes(a.status) && a.lastRunAt)) && { label: 'Resume', icon: ICON.resume, run: () => ACT.continue(el) },
     ['running', 'paused', 'setup'].includes(a.status) && { label: 'Stop', icon: ICON.stop, run: () => ACT.stop(el) },
-    !a.isolate && Team.teamOf(S.agents, id).length < S.teamMax && { label: 'Add relay bee…', icon: ICON.plus, run: () => ACT.relay(el) },
+    !a.isolate && Team.teamOf(S.agents, id).length < S.teamMax && { label: 'Add relay bee…', icon: ICON.plus, run: () => ACT.relay(el, e) },
+    Team.inTeam(S.agents, id) && { label: 'Leave the relay', icon: ICON.branch, run: async () => { if (await call('leaveRelay', id)) toast(`${a.name} works on its own now`) } },
     { label: 'Show in Finder', icon: ICON.finder, run: () => call('reveal', id) },
     { label: 'Rename & settings…', icon: ICON.gear, run: () => ACT.edit(el) },
     '-',
     { label: 'Delete bee', icon: ICON.trash, danger: true, run: () => ACT.delete(el) },
   ])
 }
+// A link between two bees of a relay: taking it out leaves both bees alive
+function linkMenu(e, down, up) {
+  const b = byId(down), u = byId(up)
+  if (!b || !u) return
+  const alone = [Team.upIds(b).length === 1 && !Team.downOf(S.agents, b.id).length && b, Team.upIds(u).length === 0 && Team.downOf(S.agents, u.id).length === 1 && u].filter(Boolean)
+  showCtx(e, [
+    { label: `Remove link ${u.name} → ${b.name}`, icon: ICON.trash, danger: true, run: async () => { if (await call('unlink', down, up)) toast(alone.length ? `${alone.map(x => x.name).join(' and ')} work${alone.length === 1 ? 's' : ''} on ${alone.length === 1 ? 'its' : 'their'} own now` : 'Link removed') } },
+    '-',
+    { label: `Open ${u.name}'s chat`, icon: ICON.chat, run: () => call('openChat', up) },
+    { label: `Open ${b.name}'s chat`, icon: ICON.chat, run: () => call('openChat', down) },
+  ])
+}
 document.addEventListener('contextmenu', e => {
-  const room = e.target.closest('[data-room]'), bee = e.target.closest('[data-bee]')
+  const room = e.target.closest('[data-room]'), bee = e.target.closest('[data-bee]'), link = e.target.closest('[data-link]')
+  if (link) return linkMenu(e, link.dataset.link, link.dataset.up)
   if (e.target.closest('input, textarea, .sel, .md')) return closeCtx()          // keep the native menu for text
   if (room) return roomMenu(e, room.dataset.room)
   if (bee) return beeMenu(e, bee.dataset.bee)
   closeCtx()
 })
-document.addEventListener('click', e => { if (!e.target.closest('[data-act="more"]')) closeCtx() })
+document.addEventListener('click', e => { if (!e.target.closest('[data-act="more"], [data-act="link-menu"], [data-act="relay"]')) closeCtx() })
 window.addEventListener('blur', closeCtx)
 document.addEventListener('scroll', closeCtx, true)
+// ───────── Drag a bee onto another: it picks up after that one ─────────
+// Same rules as the Relay menu. A squad's lead brings its squad along; a bee that already follows another cannot be dragged into a second relay
+let dragBee = null
+function joinWhy(b, u) {
+  if (!b || !u || b.id === u.id) return 'x'
+  const team = Team.teamOf(S.agents, u.id), sq = Team.teamOf(S.agents, b.id)
+  if (team.includes(b)) return `${b.name} is already in this squad`
+  if (Team.upIds(b).length) return `${b.name} already follows another bee`
+  if (team.length + sq.length > S.teamMax) return `A squad has at most ${S.teamMax} bees`
+  if ([...team, ...sq].some(m => m.isolate)) return 'Own-branch bees cannot be in a relay'
+  if ([...team, ...sq].some(m => m.status === 'setup')) return 'The repo is still setting up'
+  if ([...team, ...sq].some(m => ['running', 'paused'].includes(m.status))) return 'Not while one of them is at work'
+  return ''
+}
+const dragTip = (e, html, bad) => { let t = $('#drag-tip'); if (!html) { if (t) t.remove(); return } if (!t) { t = document.createElement('div'); t.id = 'drag-tip'; document.body.appendChild(t) } t.className = bad ? 'bad' : ''; t.innerHTML = html; t.style.left = Math.min(e.clientX + 14, innerWidth - t.offsetWidth - 8) + 'px'; t.style.top = e.clientY + 18 + 'px' }
+const dragClear = () => { document.querySelectorAll('.hx.drop-on, .hx.drop-no, .hx.dragging').forEach(x => x.classList.remove('drop-on', 'drop-no', 'dragging')); document.body.classList.remove('bee-drag'); dragTip() }
+document.addEventListener('dragstart', e => {
+  const hx = e.target.closest && e.target.closest('.hx[data-bee]')
+  if (!hx) return
+  dragBee = hx.dataset.bee; closeCtx()
+  e.dataTransfer.effectAllowed = 'link'; e.dataTransfer.setData('application/x-hive-bee', dragBee)      // not text: a drop on a text field must not type the name
+  hx.addEventListener('dragend', () => { dragClear(); dragBee = null }, { once: true })                   // the hive redraws while bees work: a cell that was replaced still gets its dragend, the document does not
+  setTimeout(() => { const el = document.querySelector(`.hx[data-bee="${dragBee}"]`); if (el) el.classList.add('dragging'); document.body.classList.add('bee-drag') })
+})
+document.addEventListener('dragover', e => {
+  if (!dragBee) return
+  const hx = e.target.closest && e.target.closest('.hx[data-bee]'), b = byId(dragBee), u = hx && byId(hx.dataset.bee)
+  document.querySelectorAll('.hx.drop-on, .hx.drop-no').forEach(x => x !== hx && x.classList.remove('drop-on', 'drop-no'))
+  if (!u || !b || u.id === b.id) return dragTip(e, b ? `Drop ${esc(b.name)} on the bee it should follow` : '')
+  const why = joinWhy(b, u), n = Team.teamOf(S.agents, b.id).length - 1
+  hx.classList.toggle('drop-on', !why); hx.classList.toggle('drop-no', !!why)
+  if (!why) { e.preventDefault(); e.dataTransfer.dropEffect = 'link' }
+  dragTip(e, why ? esc(why) : `<div><b>${esc(u.name)}</b> → <b>${esc(b.name)}</b>${n ? ` and its squad` : ''}</div><div class="sub">${esc(b.name)} picks up when ${esc(u.name)} is done${b.workspace !== u.workspace ? `, in the folder ${esc(u.task)}` : ''}</div>`, !!why)
+})
+document.addEventListener('drop', async e => {
+  const hx = e.target.closest && e.target.closest('.hx[data-bee]'), b = byId(dragBee), u = hx && byId(hx.dataset.bee)
+  dragClear(); dragBee = null
+  if (!b || !u || joinWhy(b, u)) return
+  e.preventDefault()
+  const same = b.workspace === u.workspace
+  if (await call('joinRelay', b.id, u.id)) toast(same ? `${b.name} now follows ${u.name}` : `${b.name} now follows ${u.name} and works in ${u.task}`)
+})
+document.addEventListener('dragend', () => { dragClear(); dragBee = null })
 document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && R.cur) renameRoom(R.cur); const hx = e.target.closest && e.target.closest('.hx[data-id]'); if (hx) call('openChat', hx.dataset.id) })
 
 async function bootRoom() {

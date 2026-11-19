@@ -345,10 +345,23 @@ const PRESETS = {
 }
 const VERDICT_LINE = 'End with the verdict on its own line: VERDICT: APPROVE (looks good) or VERDICT: CHANGES (needs changes).'
 
-function relayPrompt(after, from, reply) {
+// What a bee handed in, cut to fit. The end of a reply is its summary, so the end is kept; a parallel bee's reply ends with the diff of its worktree
+// (main adds it), and there the summary and the start of the diff (the list of files) are kept instead of the diff's tail alone
+const WT_DIFF = /\n\n--- [^\n]*'s changes in its own worktree \([^\n]*\) ---\n/
+function clipReply(reply, max) {
+  const s = String(reply || '').trim()
+  if (!s) return '(it finished without a written summary; look at the workspace)'
+  if (s.length <= max) return s
+  const m = s.match(WT_DIFF)
+  if (!m) return s.slice(-max)
+  const text = s.slice(0, m.index).slice(-Math.floor(max * 0.4))
+  return text + s.slice(m.index, m.index + max - text.length) + '\n[diff cut short here]'
+}
+function relayPrompt(after, from, reply, round = 0) {
   let p = String((after && after.prompt) || PRESETS.review.prompt)
   if (!p.includes('{reply}')) p += '\n\nResult from {from}:\n\n{reply}'
-  p = p.split('{from}').join(from).split('{reply}').join(String(reply || '').slice(-16000))
+  p = p.split('{from}').join(from).split('{reply}').join(clipReply(reply, 16000))
+  if (after && after.loop && round > 0) p += `\n\nThis is round ${round + 1} of ${MAX_ROUNDS} on this job: the work was revised after review feedback. Check that the earlier points were dealt with.${round + 1 >= MAX_ROUNDS ? ' It is the last round: after it the relay stops for the user either way.' : ''}`
   if (after && after.loop && !/VERDICT/.test(p)) p += '\n\n' + VERDICT_LINE
   return p
 }
@@ -357,7 +370,7 @@ function verdictOf(text) {
   return all.length ? all[all.length - 1][1].toUpperCase() : null
 }
 const feedbackPrompt = (name, reply) =>
-  `Review feedback from ${name}:\n\n${String(reply || '').slice(-6000)}\n\nRevise the code based on this feedback. When done, briefly say what you changed; if you think a point needs no change, explain why.`
+  `Review feedback from ${name}:\n\n${String(reply || '').slice(-12000)}\n\nRevise the code based on this feedback. When done, briefly say what you changed; if you think a point needs no change, explain why.`
 
 const OFF = { paused: 'is paused', stopped: 'is stopped', setup: 'is still setting up its repo' }
 
@@ -369,30 +382,37 @@ function relayPlan(agents, a, reply, ctx = {}) {
   if (ups.length && ctx.why !== 'handoff') return []        // side chats with a downstream bee do not advance the relay
   const by = id => agents.find(x => x.id === id)
   const round = ctx.round || 0, flow = ctx.flow || null, steps = []
+  // A round of fixes belongs to the reviewer that asked for it (ctx.only). From the lead, only the bees on the way to that reviewer run again:
+  // in A → B → R with a second branch A → C, R's feedback reruns A and B, not C. Once R itself is reached, the relay goes on as usual
+  const only = ctx.only && ctx.only !== a.id && by(ctx.only) ? ctx.only : null
+  const leadsTo = (id, target, seen = new Set()) => id === target || (!seen.has(id) && seen.add(id) && agents.some(b => upIds(b).includes(id) && leadsTo(b.id, target, seen)))
 
   if (ups.length && a.after.loop) {
     const v = verdictOf(reply), lead = Team.leadOf(agents, a.id)
     if (v === 'CHANGES') {
       if (round + 1 >= MAX_ROUNDS) steps.push({ log: a.id, text: `${MAX_ROUNDS} rounds without approval, stopped for you to take a look` })
       else if (!lead || lead.id === a.id || OFF[lead.status]) steps.push({ log: a.id, text: `Lead ${lead ? lead.name + ' ' + (OFF[lead.status] || '') : 'is gone'}; feedback not sent, relay stopped here` })
-      else steps.push({ run: lead.id, prompt: feedbackPrompt(a.name, reply), why: 'feedback', round: round + 1, flow, from: a.name })
+      else steps.push({ run: lead.id, prompt: feedbackPrompt(a.name, reply), why: 'feedback', round: round + 1, flow, from: a.name, only: a.id })
       return steps
     }
     if (!v) return [{ log: a.id, text: 'No VERDICT given, relay stopped here' }]
     steps.push({ log: a.id, text: `Approved (round ${round + 1})` })
   }
 
-  const next = agents.filter(b => upIds(b).includes(a.id))
+  const down = agents.filter(b => upIds(b).includes(a.id)), next = down.filter(b => !only || leadsTo(b.id, only))
+  // a merge off that path that is still waiting for its other bees gets this newer result, so it does not merge the version from before the fixes
+  for (const b of down) if (!next.includes(b) && b.inbox && b.inbox.flow === flow && b.inbox.got && b.inbox.got[a.id]) steps.push({ inbox: b.id, value: { ...b.inbox, got: { ...b.inbox.got, [a.id]: { name: a.name, reply } } } })
   if (!next.length) {
     if (ups.length) steps.push({ log: a.id, text: 'Chain finished' })
     return steps
   }
   for (const b of next) {
     if (OFF[b.status] || b.needsSetup) { steps.push({ log: b.id, text: `${b.name} ${OFF[b.status] || 'is not ready'}, skipped relay from ${a.name}` }); continue }
-    let box = b.inbox
-    if (box && box.flow === flow && box.round > round) continue          // stale late result
-    if (!box || box.flow !== flow || box.round !== round) box = { flow, round, got: {} }
-    box = { flow, round, got: { ...box.got, [a.id]: { name: a.name, reply } } }
+    // One box per flow. Results of different rounds meet in it: a bee off the reviewer's path does not run again, so what it handed in
+    // (or hands in late, while the others are already a round further) stays valid; a bee that does run again replaces its own entry
+    let box = b.inbox && b.inbox.flow === flow ? b.inbox : { flow, round, got: {} }
+    const at = Math.max(box.round || 0, round)
+    box = { flow, round: at, got: { ...box.got, [a.id]: { name: a.name, reply } } }
     const need = upIds(b).filter(by)
     const missing = need.filter(id => !box.got[id])
     if (missing.length) {
@@ -401,9 +421,9 @@ function relayPlan(agents, a, reply, ctx = {}) {
     }
     const got = need.map(id => box.got[id])
     const cut = Math.floor(15000 / got.length)
-    const combined = got.length === 1 ? got[0].reply : got.map(g => `### ${g.name}'s result\n\n${String(g.reply || '').slice(-cut)}`).join('\n\n')
+    const combined = got.length === 1 ? got[0].reply : got.map(g => `### ${g.name}'s result\n\n${clipReply(g.reply, cut)}`).join('\n\n')
     const from = got.map(g => g.name).join(', ')
-    steps.push({ inbox: b.id, value: null }, { run: b.id, prompt: relayPrompt(b.after, from, combined), why: 'handoff', round, flow, from })
+    steps.push({ inbox: b.id, value: null }, { run: b.id, prompt: relayPrompt(b.after, from, combined, at), why: 'handoff', round: at, flow, from, ...(only ? { only } : {}) })
   }
   return steps
 }
@@ -523,7 +543,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = { HEADLESS_OFF, BEE_SYS, mcpPrefix, parseInit,
-  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, binOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, clipReply, ENGINES, command, templateArgs, cmdOf, binOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,
