@@ -11,7 +11,7 @@ const kindOf = p => { const e = extOf(p); return DOC.includes(e) ? 'doc' : IMG.i
 // Safe to hand to the system's default app: documents and pictures, never something that runs
 const canOpen = p => [...DOC, ...IMG, ...MEDIA].includes(extOf(p)) && !['html', 'htm'].includes(extOf(p))
 
-const WRITES = /^(Write|Edit|MultiEdit|NotebookEdit|write_file|create_file|str_replace_editor|apply_patch)$/i
+const WRITES = /^(Write|Edit|MultiEdit|NotebookEdit|write_file|write_to_file|replace_file_content|multi_replace_file_content|create_file|str_replace_editor|apply_patch)$/i
 const URL_RE = /https?:\/\/[^\s<>"'`）】」』，。；]+/g
 const PATH_RE = new RegExp(String.raw`(?:^|[\s\`"'(（「『【:：=])((?:~\/|\.{1,2}\/|\/)?(?:[^\s\`"'<>()（）「」『』【】，。；:*?|]+\/)*[^\s\`"'<>()（）「」『』【】，。；:*?|\/]+\.(?:${SHOWN.join('|')}))(?=$|[\s\`"')）」』】，。；:,.!?])`, 'gi')
 
@@ -28,7 +28,7 @@ function scan(entries) {
   const file = (p, t, via) => { p = String(p || '').trim(); if (!p || p.length > 1024) return; const old = files.get(p); files.set(p, { kind: 'file', path: p, t: Math.max(t || 0, old ? old.t : 0), via: via === 'wrote' || (old && old.via === 'wrote') ? 'wrote' : 'named' }) }
   for (const e of entries || []) {
     if (!e) continue
-    if (e.role === 'tool' && WRITES.test(String(e.name || '')) && e.input) file(e.input.file_path || e.input.path || e.input.notebook_path, e.t, 'wrote')
+    if (e.role === 'tool' && WRITES.test(String(e.name || '')) && e.input) file(e.input.file_path || e.input.path || e.input.Path || e.input.TargetFile || e.input.notebook_path, e.t, 'wrote')
     if (e.role !== 'assistant' || e.sub || typeof e.text !== 'string') continue
     const text = e.text
     for (const mm of text.matchAll(/\[([^\]\n]{1,120})\]\((https?:\/\/[^\s)]+)\)/g)) { const u = trimUrl(mm[2]); if (!links.has(u) || !links.get(u).label) links.set(u, { kind: 'link', url: u, site: siteOf(u), label: mm[1].trim(), t: e.t || 0 }) }

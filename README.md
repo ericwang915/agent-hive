@@ -1,7 +1,7 @@
 <p align="center"><img src="icon.png" width="112" alt="Agent Hive logo: a queen bee on a honeycomb"></p>
 <h1 align="center">Agent Hive</h1>
 <p align="center"><b>One Queen. Many bees. Your coding agents, working as a hive.</b><br>
-A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI and Cursor Agent into a team you can watch, schedule and steer.</p>
+A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI, Antigravity, DeepSeek Harness and Cursor Agent into a team you can watch, schedule and steer.</p>
 <p align="center">
   <a href="https://github.com/ericwang915/agent-hive/releases/latest"><img src="https://img.shields.io/github/v/release/ericwang915/agent-hive?label=release" alt="latest release"></a>
   <a href="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml"><img src="https://github.com/ericwang915/agent-hive/actions/workflows/test.yml/badge.svg" alt="tests"></a>
@@ -16,7 +16,7 @@ A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI and Cursor
 
 ## What is Agent Hive?
 
-Agent Hive is a macOS app that runs several coding-agent CLIs at once and lets them work as a team. Each agent is a **bee**: Claude Code, Codex, Gemini CLI, Cursor Agent, or any command you like, working in its own folder. You can talk to each bee, put it on a schedule, chain bees into a relay where one writes and another reviews, or pull them into a group and let **Queen** hand out the work.
+Agent Hive is a macOS app that runs several coding-agent CLIs at once and lets them work as a team. Each agent is a **bee**: Claude Code, Codex, Gemini CLI, Antigravity (`agy`), DeepSeek Harness (`dsh`), Cursor Agent, or any command you like, working in its own folder. You can talk to each bee, put it on a schedule, chain bees into a relay where one writes and another reviews, or pull them into a group and let **Queen** hand out the work.
 
 It uses the CLIs and logins you already have, including a Claude or ChatGPT subscription. It ships no API keys, stores none, has no account and no server of its own.
 
@@ -51,7 +51,7 @@ npm start
 ### Requirements
 
 - macOS 12 or later
-- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini` or `cursor-agent`. Queen, the daily report and the night bees need `claude`.
+- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini`, `agy`, `dsh` or Cursor's `agent` (older installs: `cursor-agent`). Queen, the daily report and the night bees need `claude`.
 - `git` for diffs, commits, branches and pull requests. `gh` is optional and used to open pull requests.
 
 ## What you can do with it
@@ -144,7 +144,7 @@ Yes. It is open source under the MIT license. You pay only for the agent CLIs yo
 
 ### Does it need an API key?
 
-No. Agent Hive starts the CLIs installed on your Mac (`claude`, `codex`, `gemini`, `cursor-agent`) with the logins they already have. It never sees or stores a key.
+No. Agent Hive starts the CLIs installed on your Mac (`claude`, `codex`, `gemini`, `agy`, `dsh`, `cursor-agent`) with the logins they already have. It stores no key. If your shell profile exports an API key for one of them (`DEEPSEEK_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `CODEX_API_KEY`, `CURSOR_API_KEY`), the app hands it on to that CLI, as a terminal would.
 
 ### Does it work with a Claude Pro or Max subscription, or ChatGPT Plus?
 
@@ -152,7 +152,7 @@ Yes. If the CLI works in your terminal, it works as a bee, with the same account
 
 ### Which coding agents does it support?
 
-Claude Code, Codex CLI, Gemini CLI and Cursor Agent out of the box, plus any command line that accepts a prompt (a custom template with `{prompt}`). Queen, the daily report and the night bees need Claude Code.
+Claude Code, Codex CLI, Gemini CLI, Antigravity (`agy`), DeepSeek Harness (`dsh`) and Cursor Agent out of the box, plus any command line that accepts a prompt (a custom template with `{prompt}`). Queen, the daily report and the night bees need Claude Code.
 
 ### How is it different from Claude Code subagents or agent teams?
 

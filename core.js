@@ -51,18 +51,33 @@ const ENGINES = {
   },
   gemini: {
     label: 'Gemini CLI', cmd: 'gemini', models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-    args: (a, p) => ['-p', p, '-o', 'stream-json', '--skip-trust', ...m('-m', a),
+    // The folder is trusted through the environment: --skip-trust only exists from 0.39 on, and older versions stop at an option they do not know
+    env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' },
+    args: (a, p) => ['-p', p, '-o', 'stream-json', ...m('-m', a),
       a.permission === 'full' ? '--yolo' : '--approval-mode=auto_edit',
       ...(a.sessionId ? ['--resume', 'latest'] : [])],
   },
   'cursor-agent': {
-    label: 'Cursor Agent', cmd: 'cursor-agent', models: [],
-    args: (a, p) => ['-p', p, '--output-format', 'stream-json', ...m('--model', a),
+    // Cursor now installs its CLI as "agent"; "cursor-agent" is the older name. --trust: a headless run cannot answer the workspace-trust question
+    label: 'Cursor Agent', cmd: 'cursor-agent', alt: ['agent'], models: [],
+    args: (a, p) => ['-p', p, '--output-format', 'stream-json', '--trust', ...m('--model', a),
       ...(a.permission === 'full' ? ['--force'] : []),
       ...(a.sessionId ? ['--resume', a.sessionId] : [])],
   },
   grok: { label: 'Grok CLI', cmd: 'grok', template: 'grok -p {prompt}' },
-  antigravity: { label: 'Antigravity', cmd: 'antigravity', template: 'antigravity chat {prompt}' },
+  // Antigravity's CLI. Without full access it edits files but cannot run commands: a headless run has nobody to ask
+  antigravity: {
+    label: 'Antigravity', cmd: 'agy', models: [],
+    args: (a, p) => ['-p', p, '--output-format', 'stream-json', ...m('--model', a),
+      ...(a.permission === 'full' ? ['--dangerously-skip-permissions'] : ['--mode', 'accept-edits']),
+      ...(a.sessionId ? ['--conversation', a.sessionId] : [])],
+  },
+  // DeepSeek Harness. The model comes from its own configuration; "--" keeps a prompt that starts with a dash from being read as an option
+  dsh: {
+    label: 'DeepSeek Harness', cmd: 'dsh', models: [], noModel: true,
+    args: (a, p) => ['--profile', 'headless', '--json', '--permission-mode', a.permission === 'full' ? 'danger-full-access' : 'workspace-write', '--approval-policy', 'never',
+      ...(a.sessionId ? ['--session-id', a.sessionId] : []), '--', p],
+  },
   custom: { label: 'Custom command', cmd: '', template: '' },
 }
 
@@ -76,15 +91,18 @@ function templateArgs(tpl, prompt) {
   return out
 }
 
+// The command an engine is installed as: its usual name, or the first other name found on PATH
+const binOf = (e, PATH) => [e.cmd, ...(e.alt || [])].find(c => onPath(c, PATH)) || e.cmd
+
 function command(a, prompt, ctx) {
   const e = ENGINES[a.engine]
   if (!e) throw new Error('Unknown engine: ' + a.engine)
-  if (e.args) return { cmd: e.cmd, args: e.args(a, prompt, ctx) }
+  if (e.args) return { cmd: binOf(e), args: e.args(a, prompt, ctx), ...(e.env ? { env: e.env } : {}) }
   const out = templateArgs(a.template || e.template, prompt)
   return { cmd: out[0], args: out.slice(1) }
 }
 
-const cmdOf = a => { const e = ENGINES[a.engine] || {}; return e.args ? e.cmd : String(a.template || e.template || '').trim().split(/\s+/)[0] || '' }
+const cmdOf = a => { const e = ENGINES[a.engine] || {}; return e.args ? binOf(e) : String(a.template || e.template || '').trim().split(/\s+/)[0] || '' }
 const validModel = s => s === '' || s == null || (/^[\w.:/[\]=,-]+$/.test(s) && !s.startsWith('-'))
 
 function onPath(cmd, PATH = process.env.PATH || '') {
@@ -116,10 +134,16 @@ function slotKey(s, d = new Date()) {
 // ───────── Output parsing ─────────
 const num = v => (typeof v === 'number' && isFinite(v) ? v : 0)
 function usageOf(o) {
-  if (!o || (o.type !== 'result' && o.type !== 'turn.completed')) return null
+  if (!o) return null
+  // Antigravity reports each step; its closing total covers the whole conversation, earlier rounds included, so it is not counted
+  if (o.event === 'step_update') { const s = (o.step_update || {}).usage; return s ? { tin: num(s.input_tokens) + num(s.cache_read_tokens), tout: num(s.output_tokens), usd: 0 } : null }
+  // DeepSeek Harness reports each step
+  if (o.type === 'status' && o.phase === 'step_end' && o.usage) return { tin: num(o.usage.inputTokens), tout: num(o.usage.outputTokens), usd: 0 }
+  if (o.type !== 'result' && o.type !== 'turn.completed') return null
   const u = o.usage || o.stats || {}
   return {
-    tin: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens) + num(u.cached_input_tokens),
+    // Codex's cached_input_tokens are already part of its input_tokens
+    tin: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens),
     tout: num(u.output_tokens),
     usd: num(o.total_cost_usd),
   }
@@ -129,7 +153,7 @@ const str = v => (typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v)
 function descOf(input) {
   if (input == null) return ''
   if (typeof input !== 'object') return String(input)
-  for (const k of ['command', 'file_path', 'path', 'url', 'query', 'pattern', 'description', 'prompt'])
+  for (const k of ['command', 'file_path', 'path', 'url', 'query', 'pattern', 'description', 'prompt', 'CommandLine', 'Path', 'TargetFile', 'AbsolutePath', 'Url', 'Query'])
     if (typeof input[k] === 'string' && input[k]) return input[k]
   const j = JSON.stringify(input)
   return j === '{}' ? '' : j
@@ -188,7 +212,27 @@ const kTok = n => (n >= 1000 ? (n / 1000).toFixed(n < 100000 ? 1 : 0) + 'k' : St
 
 // onPartial: the reply as it is being written ({text}), {thinking: true} while the model thinks, null once the full message has arrived
 function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = () => {}, onPartial = () => {}) {
-  let buf = '', delta = '', plain = [], live = ''
+  let buf = '', delta = '', plain = [], live = '', spoke = false
+  const steps = new Set()
+  const say = text => { spoke = true; emit({ role: 'assistant', text }) }
+  // Antigravity: a conversation is a row of steps. A reply arrives as text_delta pieces of an agent_response step; a tool step is ACTIVE, then DONE or ERROR
+  function agy(o) {
+    if (o.event === 'step_update') {
+      const s = o.step_update || {}, tid = 'step' + s.step_index, info = s.tool_info || {}
+      if (s.step_type === 'agent_response') {
+        if (s.text_delta) { live += str(s.text_delta); onPartial({ text: live }) }
+        if (s.state !== 'ACTIVE') { const t = live.trim(); live = ''; onPartial(null); if (t) say(t) }
+      } else if (s.step_type === 'tool') {
+        if (!steps.has(tid)) { steps.add(tid); emit(toolEntry(s.tool_name || info.name, info.parameters, tid)) }
+        if (s.state !== 'ACTIVE') emit(outEntry(info.error ? str(info.error.message || info.error) : info.output || '', tid))
+      }
+    } else if (o.event === 'result') {
+      const r = o.result || {}
+      if (!spoke && str(r.response).trim()) say(str(r.response).trim())
+      if (r.status && r.status !== 'SUCCESS') emit({ role: 'error', text: str(r.error || r.message || r.status) })
+      spoke = false
+    }
+  }
   // Plain-text CLIs: consecutive non-JSON lines become one reply (keeps Markdown tables and lists intact)
   const flushPlain = () => { const t = plain.join('\n').trim(); plain = []; if (t) emit({ role: 'assistant', text: t }) }
   const flush = () => { flushPlain(); if (delta.trim()) emit({ role: 'assistant', text: delta }); delta = '' }
@@ -205,12 +249,13 @@ function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = 
       return
     }
     const sub = o.parent_tool_use_id ? { sub: true } : {}          // from a sub-agent the bee started
-    const sid = o.session_id || o.thread_id || o.sessionId
+    const sid = o.session_id || o.thread_id || o.sessionId || (o.event === 'init' && o.conversation_id)
     if (sid && typeof sid === 'string') onSession(sid)
     const u = usageOf(o)
     if (u) onUsage(u)
     const cx = contextOf(o)
     if (cx) onContext(cx)
+    if (typeof o.event === 'string' && !o.type) { flush(); agy(o); return }
     // Gemini: accumulate deltas, flush on the first non-delta
     if (o.type === 'message' && o.role === 'assistant' && o.delta) { delta += str(o.content); return }
     flush()
@@ -219,7 +264,28 @@ function makeParser(emit, onSession = () => {}, onUsage = () => {}, onContext = 
         if (o.role === 'assistant' && o.content) emit({ role: 'assistant', text: str(o.content) })
         break
       case 'tool_use': emit(toolEntry(o.tool_name || o.name, o.parameters || o.input, o.tool_id || o.id)); break
-      case 'tool_result': emit(outEntry(o.output != null ? o.output : o.error || '', o.tool_id || o.tool_use_id)); break
+      case 'tool_result': emit(outEntry(o.output != null ? o.output : o.result || o.error || '', o.tool_id || o.tool_use_id || o.callId)); break
+      // DeepSeek Harness: text, tool_call and tool_result as each step is committed, then final with the whole answer
+      case 'text': if (typeof o.text === 'string' && o.text.trim()) say(o.text); break
+      case 'tool_call':
+        if (typeof o.tool === 'string') emit(toolEntry(o.tool, o.input, o.callId))
+        else if (o.tool_call && typeof o.tool_call === 'object') {
+          // Cursor: {readToolCall: {args, result}} and the like, or {function: {name, arguments}}; "started", then "completed" with the result
+          const k = Object.keys(o.tool_call)[0] || '', c = o.tool_call[k] || {}
+          const name = k === 'function' ? str(c.name) : k.replace(/ToolCall$/, '').replace(/^./, x => x.toUpperCase())
+          let input = k === 'function' ? c.arguments : c.args
+          if (typeof input === 'string') try { input = JSON.parse(input) } catch {}
+          if (!o.call_id || !steps.has(o.call_id)) { steps.add(o.call_id); emit(toolEntry(name, input, o.call_id)) }
+          if (o.subtype === 'completed') { const r = c.result || {}, ok = r.success || r.error || r.rejected || r; emit(outEntry(ok.content != null ? ok.content : ok.output != null ? ok.output : ok.stdout != null ? ok.stdout : ok.message != null ? ok.message : ok.path != null ? ok.path : ok, o.call_id)) }
+        }
+        break
+      case 'final': {
+        if (!spoke && str(o.text).trim()) say(str(o.text))
+        const k = o.reason && o.reason.kind
+        if (k && k !== 'completed') emit({ role: 'error', text: `The run ended early: ${str(o.reason.message || k)}` })
+        spoke = false
+        break
+      }
       case 'assistant':
         if (!sub.sub) { live = ''; onPartial(null) }
         for (const c of (o.message && Array.isArray(o.message.content) ? o.message.content : [])) {
@@ -455,7 +521,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = { HEADLESS_OFF, BEE_SYS, mcpPrefix, parseInit,
-  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, ENGINES, command, templateArgs, cmdOf, binOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,

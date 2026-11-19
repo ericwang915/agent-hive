@@ -100,12 +100,21 @@ const at = s => new Date(s)
   eq(c({ engine: 'claude', permission: 'safe' }, { mcp: '{}' }).args.includes('--mcp-config'), false)
   eq(c({ engine: 'codex' }).args, ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', 'hi'])
   eq(c({ engine: 'codex', permission: 'safe', model: 'gpt-5.2', sessionId: 't1' }).args, ['exec', '--json', '--skip-git-repo-check', '-m', 'gpt-5.2', '-s', 'workspace-write', 'resume', 't1', 'hi'])
-  eq(c({ engine: 'gemini' }).args, ['-p', 'hi', '-o', 'stream-json', '--skip-trust', '--yolo'])
-  eq(c({ engine: 'gemini', permission: 'ask', model: 'gemini-2.5-pro', sessionId: 'x' }).args, ['-p', 'hi', '-o', 'stream-json', '--skip-trust', '-m', 'gemini-2.5-pro', '--approval-mode=auto_edit', '--resume', 'latest'])
-  eq(c({ engine: 'cursor-agent' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--force'])
-  eq(c({ engine: 'cursor-agent', permission: 'safe', model: 'gpt-5', sessionId: 'c1' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--model', 'gpt-5', '--resume', 'c1'])
+  eq(c({ engine: 'gemini' }).args, ['-p', 'hi', '-o', 'stream-json', '--yolo'])
+  eq(c({ engine: 'gemini' }).env, { GEMINI_CLI_TRUST_WORKSPACE: 'true' })          // trusted through the environment: versions before 0.39 do not know --skip-trust
+  eq(c({ engine: 'claude' }).env, undefined)
+  eq(c({ engine: 'antigravity' }), { cmd: 'agy', args: ['-p', 'hi', '--output-format', 'stream-json', '--dangerously-skip-permissions'] })
+  eq(c({ engine: 'antigravity', permission: 'safe', model: 'gemini-4-neon-high', sessionId: 'c-1' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--model', 'gemini-4-neon-high', '--mode', 'accept-edits', '--conversation', 'c-1'])
+  eq(c({ engine: 'dsh' }), { cmd: 'dsh', args: ['--profile', 'headless', '--json', '--permission-mode', 'danger-full-access', '--approval-policy', 'never', '--', 'hi'] })
+  eq(command({ engine: 'dsh', permission: 'safe', model: 'ignored', sessionId: 'session-9' }, '--help').args, ['--profile', 'headless', '--json', '--permission-mode', 'workspace-write', '--approval-policy', 'never', '--session-id', 'session-9', '--', '--help'])
+  eq(c({ engine: 'gemini', permission: 'ask', model: 'gemini-2.5-pro', sessionId: 'x' }).args, ['-p', 'hi', '-o', 'stream-json', '-m', 'gemini-2.5-pro', '--approval-mode=auto_edit', '--resume', 'latest'])
+  eq(c({ engine: 'cursor-agent' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--trust', '--force'])
+  eq([core.binOf(core.ENGINES['cursor-agent'], '/nowhere'), core.binOf(core.ENGINES.claude, '/nowhere')], ['cursor-agent', 'claude'])
+  { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-bin-')); fs.writeFileSync(path.join(d, 'agent'), '#!/bin/sh\n', { mode: 0o755 })       // only the new name is installed
+    eq(core.binOf(core.ENGINES['cursor-agent'], d), 'agent'); fs.writeFileSync(path.join(d, 'cursor-agent'), '#!/bin/sh\n', { mode: 0o755 }); eq(core.binOf(core.ENGINES['cursor-agent'], d), 'cursor-agent') }
+  eq(c({ engine: 'cursor-agent', permission: 'safe', model: 'gpt-5', sessionId: 'c1' }).args, ['-p', 'hi', '--output-format', 'stream-json', '--trust', '--model', 'gpt-5', '--resume', 'c1'])
   eq(c({ engine: 'grok' }), { cmd: 'grok', args: ['-p', 'hi'] })
-  eq(c({ engine: 'antigravity' }), { cmd: 'antigravity', args: ['chat', 'hi'] })
+  eq(c({ engine: 'antigravity', template: 'antigravity chat {prompt}' }).cmd, 'agy')      // a bee saved while Antigravity was a template keeps working
   // templates never go through a shell: the prompt is passed verbatim as one argument
   const evil = 'a b; rm -rf / $(x) `y` "z"'
   eq(command({ engine: 'custom', template: 'node fake.js --say {prompt} --end' }, evil), { cmd: 'node', args: ['fake.js', '--say', evil, '--end'] })
@@ -157,7 +166,7 @@ const at = s => new Date(s)
     { type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'npm test', aggregated_output: 'ok' } },
     { type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: 'a.js' }] } },
     { type: 'item.completed', item: { id: 'i3', type: 'agent_message', text: 'Fixed' } },
-    { type: 'turn.completed', usage: { input_tokens: 5, cached_input_tokens: 20, output_tokens: 2 } },
+    { type: 'turn.completed', usage: { input_tokens: 25, cached_input_tokens: 20, output_tokens: 2 } },      // the cached ones are part of the input
     { type: 'turn.failed', error: { message: 'rate limit' } },
     { type: 'error', message: 'bad' },
   ])
@@ -170,6 +179,60 @@ const at = s => new Date(s)
   p.feed(big.slice(0, 50)); p.feed(big.slice(50) + '\n'); p.end()
   eq(out[0].text.length, 4000)
   eq(usageOf({ type: 'assistant' }), null)
+
+  // Antigravity (agy): lines as the CLI printed them
+  const C = 'c0ffee'
+  r = parse([
+    { event: 'init', conversation_id: C, init: { cwd: '/w', tools: ['run_command'], permission_mode: 'request-review' } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 0, state: 'DONE', step_type: 'user_input' } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 1, state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 100, output_tokens: 9, cache_read_tokens: 0 } } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'write_file', tool_info: { name: 'write_file', parameters: { Path: '/w/hello.txt' } } } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 2, state: 'DONE', step_type: 'tool', tool_name: 'write_file', tool_info: { name: 'write_file', parameters: { Path: '/w/hello.txt' } } } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 3, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'npm test' } } } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 3, state: 'ERROR', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'npm test' }, error: { type: 'TOOL_ERROR', message: 'user denied permission' } } } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 4, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'po' } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 4, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'ng' } },
+    { event: 'step_update', step_update: { conversation_id: C, step_index: 4, state: 'DONE', step_type: 'agent_response', text_delta: '\n', usage: { input_tokens: 20, output_tokens: 3, cache_read_tokens: 80 } } },
+    { event: 'result', result: { conversation_id: C, status: 'SUCCESS', response: 'pong\n', usage: { input_tokens: 5000, output_tokens: 500 } } },
+  ])
+  eq(r.sess, [C])
+  eq(r.out.map(e => [e.role, e.text]), [['tool', 'write_file(/w/hello.txt)'], ['out', ''], ['tool', 'run_command(npm test)'], ['out', 'user denied permission'], ['assistant', 'pong']])
+  eq(r.out[0].tid, r.out[1].tid)
+  eq(r.use, [{ tin: 100, tout: 9, usd: 0 }, { tin: 100, tout: 3, usd: 0 }])       // per step; the closing total spans earlier rounds too
+  r = parse([{ event: 'result', result: { status: 'SUCCESS', response: 'only here' } }, { event: 'result', result: { status: 'FAILED', response: '', error: 'quota' } }])
+  eq(r.out.map(e => [e.role, e.text]), [['assistant', 'only here'], ['error', 'quota']])
+
+  // DeepSeek Harness (dsh --json), after its json-stream.ts
+  r = parse([
+    { type: 'session', sessionId: 'session-1', cwd: '/w' },
+    { type: 'status', phase: 'turn_start', turn: 1 },
+    { type: 'thinking', text: 'hm' },
+    { type: 'text', text: 'Looking' },
+    { type: 'tool_call', callId: 'k1', tool: 'bash', input: { command: 'ls' } },
+    { type: 'tool_result', callId: 'k1', status: 'completed', result: 'a.js' },
+    { type: 'status', phase: 'step_end', turn: 1, step: 1, usage: { inputTokens: 40, outputTokens: 6, cacheReadTokens: 30 } },
+    { type: 'text', text: 'One file' },
+    { type: 'final', sessionId: 'session-1', reason: { kind: 'completed' }, text: 'One file' },
+  ])
+  eq(r.sess, ['session-1', 'session-1'])          // named again by the final event
+  eq(r.out.map(e => [e.role, e.text, e.tid]), [['assistant', 'Looking', undefined], ['tool', 'bash(ls)', 'k1'], ['out', 'a.js', 'k1'], ['assistant', 'One file', undefined]])
+  eq(r.use, [{ tin: 40, tout: 6, usd: 0 }])
+  r = parse([{ type: 'session', sessionId: 's2' }, { type: 'final', sessionId: 's2', reason: { kind: 'aborted' }, text: 'half' }, { type: 'error', message: 'unknown option' }])
+  eq(r.out.map(e => [e.role, e.text]), [['assistant', 'half'], ['error', 'The run ended early: aborted'], ['error', 'unknown option']])
+  // Cursor's tool_call events have no "tool" string and stay out
+  // Cursor Agent, after its output-format reference
+  r = parse([
+    { type: 'system', subtype: 'init', cwd: '/w', session_id: 'cs1', model: 'm', permissionMode: 'default' },
+    { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'go' }] }, session_id: 'cs1' },
+    { type: 'tool_call', subtype: 'started', call_id: 'r1', tool_call: { readToolCall: { args: { path: 'a.js' } } }, session_id: 'cs1' },
+    { type: 'tool_call', subtype: 'completed', call_id: 'r1', tool_call: { readToolCall: { args: { path: 'a.js' }, result: { success: { content: 'let x', totalLines: 1 } } } }, session_id: 'cs1' },
+    { type: 'tool_call', subtype: 'completed', call_id: 'w1', tool_call: { writeToolCall: { args: { path: 'b.js', fileText: 'y' }, result: { success: { path: '/w/b.js', linesCreated: 1 } } } }, session_id: 'cs1' },
+    { type: 'tool_call', subtype: 'started', call_id: 'f1', tool_call: { function: { name: 'grep', arguments: '{"pattern":"TODO"}' } }, session_id: 'cs1' },
+    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Done' }] }, session_id: 'cs1' },
+    { type: 'result', subtype: 'success', is_error: false, result: 'Done', session_id: 'cs1' },
+  ])
+  eq(r.out.map(e => [e.role, e.text, e.tid]), [['tool', 'Read(a.js)', 'r1'], ['out', 'let x', 'r1'], ['tool', 'Write(b.js)', 'w1'], ['out', '/w/b.js', 'w1'], ['tool', 'grep(TODO)', 'f1'], ['assistant', 'Done', undefined]])
+  eq([...new Set(r.sess)], ['cs1'])
   // plain-text CLIs: consecutive lines become one entry
   r = parse(['First line', '', '| a | b |', '|---|---|', { type: 'error', message: 'x' }, 'After'])
   eq(r.out.map(e => [e.role, e.text]), [['assistant', 'First line\n\n| a | b |\n|---|---|'], ['error', 'x'], ['assistant', 'After']])

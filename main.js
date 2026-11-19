@@ -25,7 +25,7 @@ const setups = new Map()     // agentId → running git child process
 const pending = new Map()    // approvalId → { a, answer }
 const notes = new Set()      // keep Notifications from being GC'd
 const nightBusy = new Set()
-const cursorModels = []
+const listed = { 'cursor-agent': [], antigravity: [] }      // the models these CLIs say they have
 
 // ───────── Basics ─────────
 const today = () => ymd(new Date())
@@ -40,11 +40,15 @@ const fmtDur = ms => (ms < 60000 ? Math.max(1, Math.round(ms / 1000)) + 's' : ms
 const fmtTok = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? Math.round(n / 1000) + 'k' : String(n)) + ' tok'
 const fmtCost = u => (u.usd ? '$' + u.usd.toFixed(2) : u.tin + u.tout ? fmtTok(u.tin + u.tout) : '')
 
+// An app started from Finder does not get the shell's environment. Taken over from a login shell: PATH, and the settings the agent CLIs read their API key from
+// (one that is already set stays as it is). They are only handed on to the CLIs
+const SHELL_ENV = ['DEEPSEEK_API_KEY', 'DSH_HOME', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'CODEX_API_KEY', 'CURSOR_API_KEY']
 function importPath() {
   try {
-    const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'echo __PATH__$PATH'], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
+    const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'echo __PATH__$PATH; ' + SHELL_ENV.map(k => `echo __${k}__$${k}`).join('; ')], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
     const mm = out.match(/__PATH__(.+)/)
     if (mm) process.env.PATH = mm[1].trim()
+    for (const k of SHELL_ENV) { const v = out.match(new RegExp(`^__${k}__(.+)$`, 'm')); if (v && !process.env[k]) process.env[k] = v[1].trim() }
   } catch {}
 }
 
@@ -266,13 +270,13 @@ function run(a, prompt, why = 'manual', meta = {}) {
   }
   try { c = core.command(one ? { ...a, sessionId: undefined } : a, full, { mcp: a.engine === 'claude' && a.permission === 'ask' && approvePort ? mcpConfig(a) : null }) } catch (e) { return fail(a, e.message) }
 
-  const child = spawn(c.cmd, c.args, { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
+  const child = spawn(c.cmd, c.args, { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(c.env || {}), ELECTRON_RUN_AS_NODE: undefined } })
   const p = { child, interrupted: false }
   procs.set(a.id, p)
   a.status = 'running'; a.runStart = a.lastRunAt = Date.now(); if (!one) a.sessionCwd = cwd; delete a.interrupted
   const said = [], use = { usd: 0, tin: 0, tout: 0 }
   let partial = null, partialTimer = null          // the reply while it streams, sent to the chat window at most every 70ms
-  let lastErr = '', done = false
+  let lastErr = '', lastLog = '', done = false
   const parser = core.makeParser(
     e => { if (e.role === 'assistant' && !e.sub) said.push(e.text); if (e.role === 'error') lastErr = e.text; log(a, e) },
     sid => { if (!one && a.sessionId !== sid) { a.sessionId = sid; save() } },
@@ -282,7 +286,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
   let idle = null
   child.stdout.on('data', d => { parser.feed(d); clearTimeout(idle); idle = setTimeout(() => parser.flush(), 500) })
-  child.stderr.on('data', d => { if (d.trim()) log(a, { role: 'log', text: d.trim().slice(0, 2000) }) })
+  child.stderr.on('data', d => { if (d.trim()) { lastLog = d.trim(); log(a, { role: 'log', text: lastLog.slice(0, 2000) }) } })
 
   const finish = (code, signal, err) => {
     if (done) return
@@ -301,7 +305,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
     const clean = a.status === 'running' && code === 0 && !p.interrupted
     if (a.status === 'running') {
       a.status = code === 0 || p.interrupted ? 'idle' : 'error'
-      if (a.status === 'error') event(a, first(lastErr, 200) || `Failed (exit code ${code == null ? signal : code})`, 'error', true)
+      if (a.status === 'error') event(a, first(lastErr, 200) || first(lastLog.split('\n').filter(l => /error/i.test(l)).pop() || lastLog, 200) || `Failed (exit code ${code == null ? signal : code})`, 'error', true)
     }
     delete a.runStart; delete a.interrupted
     a.changes = quickChanges(a)
@@ -1450,15 +1454,20 @@ function update(id, c) {
 function enginesInfo() {
   return Object.entries(core.ENGINES).map(([id, e]) => ({
     id, label: e.label, cmd: e.cmd, template: e.args ? null : e.template,
-    models: id === 'cursor-agent' ? cursorModels : e.models || [],
-    installed: id === 'custom' ? true : core.onPath(e.cmd), custom: id === 'custom',
+    models: listed[id] || e.models || [], noModel: !!e.noModel,
+    installed: id === 'custom' ? true : core.onPath(e.args ? core.binOf(e) : e.cmd), custom: id === 'custom',
   }))
 }
-function loadCursorModels() {
-  if (!core.onPath('cursor-agent')) return
-  execFile('cursor-agent', ['--list-models'], { timeout: 15000 }, (_e, out) => {
-    for (const l of String(out || '').split('\n')) { const mm = l.trim().match(/^(\S+) - /); if (mm && !cursorModels.includes(mm[1])) cursorModels.push(mm[1]) }
-  })
+// "id - Name" per line from cursor-agent, "id<tab>Name" from agy
+const MODEL_LIST = { 'cursor-agent': [['--list-models'], /^(\S+) - /], antigravity: [['models'], /^([\w.-]+)\t/] }
+function loadModels() {
+  for (const [id, [args, re]] of Object.entries(MODEL_LIST)) {
+    const cmd = core.binOf(core.ENGINES[id])
+    if (!core.onPath(cmd)) continue
+    execFile(cmd, args, { timeout: 20000 }, (_e, out) => {
+      for (const l of String(out || '').split('\n')) { const mm = l.match(re); if (mm && !listed[id].includes(mm[1])) listed[id].push(mm[1]) }
+    })
+  }
 }
 
 // ───────── What Claude Code brings along ─────────
@@ -1584,7 +1593,7 @@ function ipc() {
   handle('update', update)
   handle('setModel', (id, model) => {
     const a = need(id); model = String(model || '').trim()
-    if (!core.ENGINES[a.engine].args) throw new Error('This engine has no model option')
+    if (!core.ENGINES[a.engine].args || core.ENGINES[a.engine].noModel) throw new Error('This engine has no model option')
     if (!core.validModel(model) || model.length > 80) throw new Error('Invalid model name')
     a.model = model; log(a, { role: 'system', text: `Model changed to ${model || 'default'}, effective next run` })
   })
@@ -1740,7 +1749,7 @@ else {
     load()
     startApprovals()
     ipc()
-    loadCursorModels()
+    loadModels()
     showMain()
     const look = () => checkUpdate().catch(() => {})
     setTimeout(look, 4000); setInterval(look, 6 * 3600000); setInterval(autoUpgrade, 60000)

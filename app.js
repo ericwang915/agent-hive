@@ -499,6 +499,8 @@ function updEngine() {
   if (e.template !== null) {
     if (!F.template) F.template = e.template || ''
     el.innerHTML = `<div class="lab" style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:6px">Command template</div><input type="text" id="f-template" style="width:100%" class="mono" spellcheck="false" placeholder="mycli run {prompt}" value="${esc(F.template)}"><div class="hint"><code>{prompt}</code> becomes the prompt; no shell involved</div>`
+  } else if (e.noModel) {
+    el.innerHTML = `<div class="hint">${esc(e.label)} takes its model from its own settings</div>`
   } else {
     el.innerHTML = `<div class="row" style="flex-wrap:wrap"><span class="mute" style="font-size:12px">Model</span><div class="seg" id="model-seg"></div><input type="text" id="f-model" list="model-list" placeholder="or type a model name" style="width:190px" spellcheck="false" value="${esc(F.model)}"><datalist id="model-list">${e.models.map(m => `<option value="${esc(m)}">`).join('')}</datalist></div>`
     updModelSeg()
