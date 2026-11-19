@@ -31,7 +31,9 @@ function parseInit(o) {
 }
 const ENGINES = {
   claude: {
-    label: 'Claude Code', cmd: 'claude', models: ['opus', 'sonnet', 'haiku', 'fable'],
+    label: 'Claude Code', cmd: 'claude', models: ['claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
+    // Exact versions, so the button says what runs; the aliases opus / sonnet / haiku / fable still work when typed
+    names: { 'claude-fable-5-2': 'Fable 5.2', 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' },
     args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', [HEADLESS_OFF, ...(a.noMcp ? [] : a.mcpOff || []).map(mcpPrefix)].join(','), '--append-system-prompt', BEE_SYS, ...m('--model', a),
       ...(a.permission === 'full' ? ['--dangerously-skip-permissions']
         : a.permission === 'plan' ? ['--permission-mode', 'plan']

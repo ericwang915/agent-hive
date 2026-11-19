@@ -179,6 +179,8 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .cbtns .tool { border: 0; background: transparent; height: 26px; min-width: 26px; padding: 0 7px; border-radius: 8px; color: var(--c-dim); display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap }
 .cbtns .tool:hover:not(:disabled) { background: var(--c-user); color: var(--c-text) }
 .cbtns .tool:disabled { cursor: default }
+/* A model's full name can be long: in a narrow window the pill gives way with an ellipsis instead of running under the buttons on the right */
+.cbtns #model-pill { display: block; flex: 0 1 auto; min-width: 48px; overflow: hidden; text-overflow: ellipsis; line-height: 26px }
 #relay-toggle.on { background: var(--c-relay); color: var(--c-relay-ink); font-weight: 600 }
 #cmeter.warn { color: var(--c-wait); font-weight: 600 }
 #timer { font-variant-numeric: tabular-nums; color: var(--c-faint) }
@@ -193,6 +195,16 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .menu .mi span { color: var(--c-dim); font-size: 12px }
 .menu .mi .ck { margin-left: auto; color: var(--c-ok) }
 .menu input { width: 100%; margin-top: 4px }
+#model-menu.wide { width: min(400px, calc(100vw - 16px)); max-width: 400px !important; padding: 8px }
+#model-menu.wide input { margin: 0 0 4px; height: 32px }
+#model-menu.wide #model-list { max-height: min(340px, 50vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; margin-right: -4px }
+.mfam { padding: 10px 9px 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--c-dim) }
+.mrow { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 4px 0 9px; border-radius: 8px; font-size: 13px; color: var(--c-text) }
+.mrow > span { flex: 1; min-width: 0 } .mrow.on > span { font-weight: 600 }
+.mvars { flex: none; display: flex; gap: 2px; padding: 2px; background: var(--c-user); border-radius: 8px }
+.mvar { border: 0; background: transparent; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; color: var(--c-dim) }
+.mvar:hover { color: var(--c-text) }
+.mvar.on { background: var(--c-box); color: var(--c-accent); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .12) }
 #slash { left: 22px }
 .menu .mi.f code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text) }
 #perm-menu { min-width: 300px }

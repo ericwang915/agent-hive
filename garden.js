@@ -11,11 +11,15 @@ const NIGHT = {
 
 const read = f => { try { return fs.readFileSync(f, 'utf8') } catch { return '' } }
 const stamp = (d = new Date()) => d.toISOString().replace(/[-:T]/g, '').replace(/\..*/, '') + '-' + String(d.getMilliseconds()).padStart(3, '0')
+// Earlier versions sit next to the files as plain Markdown, the newest KEEP of each (older ones are removed at the next save); nothing here needs git
+const KEEP = 30, VERSION = /-(\d{14}-\d{3})\.md$/
+const versions = (histDir, name) => { try { return fs.readdirSync(histDir).filter(f => f.startsWith(name + '-') && f.slice(name.length).match(/^-\d{14}-\d{3}\.md$/)).sort() } catch { return [] } }
 function keepOld(histDir, name, file) {
   const old = read(file)
   if (!old) return
   fs.mkdirSync(histDir, { recursive: true })
   fs.writeFileSync(path.join(histDir, `${name}-${stamp()}.md`), old)
+  for (const f of versions(histDir, name).slice(0, -KEEP)) fs.rmSync(path.join(histDir, f), { force: true })
 }
 
 // ───────── skills ─────────
@@ -93,14 +97,44 @@ const memFile = (root, key) => {
   return key === 'hive' ? path.join(root, 'memory', 'hive.md') : path.join(root, 'memory', 'agents', key + '.md')
 }
 const readMemory = (root, key) => read(memFile(root, key)).trim()
-function writeMemory(root, key, md) {
-  const file = memFile(root, key), text = String(md || '').trim()
-  if (read(file).trim() === text) return false
-  keepOld(path.join(root, 'memory', '.history'), key, file)
+// by: who changed it ('user', 'Dreamer', 'bee deleted', 'restored'); it goes into CHANGES.md next to the old versions
+function writeMemory(root, key, md, by = 'user') {
+  const file = memFile(root, key), text = String(md || '').trim(), old = read(file).trim()
+  if (old === text) return false
+  const hist = memHistDir(root)
+  keepOld(hist, key, file)
+  noteChange(hist, `${key} · ${by} · ${old ? old.split('\n').length : 0} → ${text ? text.split('\n').length : 0} lines`)
   if (!text) { fs.rmSync(file, { force: true }); return true }
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, text + '\n')
   return true
+}
+const memHistDir = root => path.join(root, 'memory', '.history')
+// One line per change, newest last; cut back to the last 2000 lines once it passes 256 KB
+function noteChange(hist, line) {
+  const file = path.join(hist, 'CHANGES.md')
+  try {
+    fs.mkdirSync(hist, { recursive: true })
+    const now = new Date(), local = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ')   // the user's own clock
+    fs.appendFileSync(file, `- ${local} · ${line}\n`)
+    if (fs.statSync(file).size > 256 * 1024) fs.writeFileSync(file, read(file).split('\n').slice(-2000).join('\n'))
+  } catch {}
+}
+// How many earlier versions there are to look at; a count only, the files are not read
+const memoryVersions = (root, key) => { memFile(root, key); return Math.min(KEEP, versions(memHistDir(root), key).length) }
+// The earlier versions of one memory, newest first
+function memoryHistory(root, key) {
+  memFile(root, key)
+  const hist = memHistDir(root)
+  return versions(hist, key).reverse().slice(0, KEEP).map(f => {
+    const id = f.match(VERSION)[1], t = Date.parse(id.replace(/^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)-(\d{3})$/, '$1-$2-$3T$4:$5:$6.$7Z'))
+    return { id, t, text: read(path.join(hist, f)).trim() }
+  })
+}
+function restoreMemory(root, key, id) {
+  const v = memoryHistory(root, key).find(x => x.id === String(id))
+  if (!v) throw new Error('That version is no longer kept')
+  return writeMemory(root, key, v.text, 'restored')
 }
 
 // ───────── Night bees ─────────
@@ -114,18 +148,24 @@ function transcript(logs, budget = 80000) {
   }).join('\n\n')
 }
 
-function dreamerPrompt(mem, text) {
-  return `You are Dreamer, the bee in Agent Hive that curates long-term memory. Below are the existing memories and each bee's new conversation logs since the last pass.
+// opts.today: 'YYYY-MM-DD', the date entries are stamped with. opts.bees: the names of the bees that exist now
+function dreamerPrompt(mem, text, opts = {}) {
+  const today = opts.today || new Date().toISOString().slice(0, 10)
+  return `You are Dreamer, the bee in Agent Hive that curates long-term memory. Below are ALL the existing memories and each bee's new conversation logs since the last pass. Today is ${today}.
 
 You curate two kinds of memory:
 1. Hive shared memory: what every bee should know, drawn from all of them. It has two parts:
    - "## The user": the user's preferences, habits and cross-project conventions.
-   - "## The hive": one or two lines per bee, starting with its name: what its project is, and the facts, decisions and conventions from its memory that other bees may need. Refresh a bee's lines when its memory changes in this pass; keep the lines of bees that are not in this pass as they are.
+   - "## The hive": one or two lines per bee, starting with its name: what its project is, and the facts, decisions and conventions from its memory that other bees may need. Refresh a bee's lines when its memory changes in this pass.${opts.bees ? ` The bees in the hive now: ${opts.bees.join(', ') || '(none)'}. Remove the lines of any bee that is not in this list: it was deleted.` : ''}
 2. Each bee's own project memory: key facts about its project, decisions made, conventions, pitfalls hit.
 
 Rules:
 - Keep only what is important, objective and lasting. Important: it would change how a bee does its work. Objective: a fact, a decision that was made, a convention in use, something the user stated; not a guess, an impression or praise. Lasting: still true weeks from now; not today's progress, a task's status, a one-off number or a temporary workaround. When in doubt, leave it out. Remove existing entries that fail this test.
 - Merge new information into the existing memory, dedupe, and drop anything outdated. Keep each bee's memory to 40 lines at most and the shared memory to 60, as concise Markdown lists.
+- Date every entry: end it with the day it was first learned, in brackets, like "(2026-03-14)". An existing entry without a date gets today's. When the new logs show an entry is still true, leave its first date and add or move the confirmation: "(2026-03-14, confirmed ${today})".
+- A correction replaces the old fact and keeps ONE short trace of it on the same entry: "Deploys with pnpm (${today}). Previously: npm (until ${today})". When that entry is corrected again, the older trace goes; never keep a chain of them.
+- Generalise: several one-off examples of the same behaviour become one rule with the date of the first.
+- Review every memory below in this pass, including those of bees with no new logs. An entry that was last learned or confirmed more than 60 days ago is suspect: keep it if it is the kind of fact that does not expire (a preference, a convention, how the project is built); remove it if it describes a state that has probably moved on (what is in progress, a version, a workaround, a plan). Remove what the new logs contradict.
 - Do not output a memory that has not changed (omit its field).
 - Write only what the logs support; do not make things up. Never write keys, tokens or passwords.
 - Write in the language the user uses in the conversations.
@@ -184,10 +224,10 @@ function parseJson(text) {
 // Writes known agents only; returns what changed ('shared memory' or bee names)
 function applyMemory(root, res, agents) {
   const changed = []
-  if (res && typeof res.hive === 'string' && res.hive.trim() && writeMemory(root, 'hive', res.hive)) changed.push('shared memory')
+  if (res && typeof res.hive === 'string' && res.hive.trim() && writeMemory(root, 'hive', res.hive, 'Dreamer')) changed.push('shared memory')
   for (const [id, md] of Object.entries((res && res.agents) || {})) {
     const a = agents.find(x => x.id === id)
-    if (a && typeof md === 'string' && md.trim() && writeMemory(root, id, md)) changed.push(a.name)
+    if (a && typeof md === 'string' && md.trim() && writeMemory(root, id, md, 'Dreamer')) changed.push(a.name)
   }
   return changed
 }
@@ -221,5 +261,5 @@ function preamble(root, agent) {
 
 module.exports = {
   NIGHT, SKILL_NAME, parseSkill, formatSkill, saveSkill, deleteSkill, listSkills, linkSkill, isLinked, linkPath,
-  readMemory, writeMemory, memFile, transcript, dreamerPrompt, gardenerPrompt, lockedSkills, parseJson, applyMemory, applySkills, writeDream, preamble,
+  readMemory, writeMemory, memFile, memoryHistory, memoryVersions, restoreMemory, transcript, dreamerPrompt, gardenerPrompt, lockedSkills, parseJson, applyMemory, applySkills, writeDream, preamble,
 }

@@ -5,6 +5,11 @@
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 const pad2 = n => String(n).padStart(2, '0')
 
+// Models: the name the CLI gives one, and the maker it is grouped under in a long list
+const MODEL_FAMILY = [['Claude', /claude|opus|sonnet|haiku/], ['GPT', /gpt|codex|^o\d/], ['Gemini', /gemini/], ['Grok', /grok/], ['Cursor', /^auto$|composer/], ['DeepSeek', /deepseek/], ['Kimi', /kimi|moonshot/]]
+const familyOf = m => (MODEL_FAMILY.find(([, re]) => re.test(String(m).toLowerCase())) || ['Other'])[0]
+const modelName = (e, m) => (e.names && e.names[m]) || m
+
 const STATUS = {
   running: 'Running', paused: 'Paused', stopped: 'Stopped', idle: 'Idle', error: 'Error', sleeping: 'Sleeping', setup: 'Setting up',
 }

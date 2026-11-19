@@ -740,19 +740,58 @@ input.addEventListener('keydown', e => {
 })
 
 // Model pill
-async function setModel(m) { if (await call('setModel', ID, m)) toast(`Model: ${m || 'default'}`) }
+async function setModel(m) { if (await call('setModel', ID, m)) toast(`Model: ${m ? modelName(eng(), m) : 'default'}`) }
+// A short list is a plain menu. A long one (Cursor and Antigravity report dozens) gets a search box and chips grouped by maker
+const MANY = 8
 function toggleModelMenu(open = $('#model-menu').hidden) {
-  const m = $('#model-menu'), e = eng()
+  const m = $('#model-menu'), e = eng(), many = e.models.length > MANY
   if (e.template !== null) open = false
   m.hidden = !open
   if (!open) return
+  m.classList.toggle('wide', many)
   m.style.left = Math.max(0, comp.offsetLeft + $('#model-pill').offsetLeft - 8) + 'px'
-  m.innerHTML = [['', 'Default model'], ...e.models.map(x => [x, x])].map(([v, l]) => `<button class="mi" data-m="${esc(v)}">${esc(l)}${(A.model || '') === v ? '<span class="ck">✓</span>' : ''}</button>`).join('')
-    + `<input type="text" id="model-custom" placeholder="Custom model, Enter to confirm" spellcheck="false" value="${esc(e.models.includes(A.model) ? '' : A.model || '')}">`
+  m.innerHTML = many ? `<input type="search" id="model-q" placeholder="Search, or type a model name" spellcheck="false"><div id="model-list"></div>`
+    : `<div id="model-list"></div><input type="text" id="model-custom" placeholder="Custom model, Enter to confirm" spellcheck="false" value="${esc(e.models.includes(A.model) ? '' : A.model || '')}">`
+  fillModels('')
+  // a narrow window: pull the menu back inside it
+  const over = m.getBoundingClientRect().right - (innerWidth - 8)
+  if (over > 0) m.style.left = (parseFloat(m.style.left) - over) + 'px'
+  if (many) { $('#model-q').focus(); $('#model-list .mvar.on, #model-list .ck')?.scrollIntoView({ block: 'nearest' }) }
 }
+function fillModels(text) {
+  const e = eng(), cur = A.model || '', el = $('#model-list')
+  if (e.models.length <= MANY) return void (el.innerHTML = [['', 'Default model'], ...e.models.map(x => [x, modelName(e, x)])].map(([v, l]) => `<button class="mi" data-m="${esc(v)}" title="${esc(v)}">${esc(l)}${cur === v ? '<span class="ck">✓</span>' : ''}</button>`).join(''))
+  const q = text.trim(), words = q.toLowerCase().split(/\s+/).filter(Boolean)
+  const hit = e.models.filter(x => { const t = (x + ' ' + modelName(e, x)).toLowerCase(); return words.every(w => t.includes(w)) })
+  // "Gemini 4 Neon (High)" and its siblings become one row, "Gemini 4 Neon", with Low / Medium / High to pick from
+  const fams = new Map()
+  for (const x of hit) {
+    const n = modelName(e, x), mm = n.match(/^(.*\S)\s*\(([^()]+)\)$/), f = familyOf(x)
+    if (!fams.has(f)) fams.set(f, new Map())
+    const rows = fams.get(f), base = mm ? mm[1] : n
+    rows.set(base, [...(rows.get(base) || []), { id: x, v: mm ? mm[2] : '' }])
+  }
+  const rank = v => { const k = LEVELS.indexOf(v.toLowerCase()); return k < 0 ? 99 : k }
+  const one = (v, l, t) => `<button class="mi" data-m="${esc(v)}" title="${esc(t || v)}">${esc(l)}${cur === v ? '<span class="ck">✓</span>' : ''}</button>`
+  const row = ([base, xs]) => xs.length === 1 ? one(xs[0].id, base + (xs[0].v ? ` (${xs[0].v})` : ''))
+    : `<div class="mrow${xs.some(x => x.id === cur) ? ' on' : ''}"><span class="ell">${esc(base)}</span><div class="mvars">${xs.sort((a, b) => rank(a.v) - rank(b.v)).map(x => `<button class="mvar${cur === x.id ? ' on' : ''}" data-m="${esc(x.id)}" title="${esc(x.id)}">${esc(x.v || 'Standard')}</button>`).join('')}</div></div>`
+  el.innerHTML = (q ? '' : one('', 'Default model', "The CLI's own default") + (cur && !e.models.includes(cur) ? one(cur, cur) : ''))
+    + [...fams].map(([f, rows]) => `<div class="mfam">${f}</div>${[...rows].map(row).join('')}`).join('')
+    + (q && !hit.length ? `<div class="mfam">No match</div>${one(q, `Use "${q}"`)}` : '')
+}
+const LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 $('#model-pill').addEventListener('click', e => { e.stopPropagation(); toggleModelMenu() })
-$('#model-menu').addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-m]'); if (b) { setModel(b.dataset.m); toggleModelMenu(false) } })
-$('#model-menu').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'model-custom' && !e.isComposing) { setModel(e.target.value.trim()); toggleModelMenu(false); input.focus() } if (e.key === 'Escape') toggleModelMenu(false) })
+$('#model-menu').addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-m]'); if (b) { setModel(b.dataset.m); toggleModelMenu(false); input.focus() } })
+$('#model-menu').addEventListener('input', e => { if (e.target.id === 'model-q') fillModels(e.target.value) })
+$('#model-menu').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { toggleModelMenu(false); return input.focus() }
+  if (e.key !== 'Enter' || e.isComposing) return
+  // Enter in the search box takes the first match
+  // ...but only once something was typed: with an empty box the first row is "Default model", and Enter would quietly reset the bee
+  const m = e.target.id === 'model-custom' ? e.target.value.trim() : e.target.id === 'model-q' && e.target.value.trim() ? $('#model-list [data-m]')?.dataset.m : null
+  if (m == null) return
+  setModel(m); toggleModelMenu(false); input.focus()
+})
 document.addEventListener('click', () => { toggleModelMenu(false); togglePermMenu(false) })
 
 $('#relay-toggle').addEventListener('click', () => act('chatRelay', '', { on: !A.chatRelay }))
@@ -778,7 +817,7 @@ function cyclePerm() {
 }
 function renderFoot() {
   const e = eng(), lead = isLead(), next = Team.downOf(S.agents, A.id).map(x => x.name).join(', ')
-  const pillText = `${e.label}${e.template === null ? ' · ' + (A.model || 'default') + ' ▾' : ''}`
+  const pillText = `${e.label}${e.template === null ? ' · ' + (A.model ? modelName(e, A.model) : 'default') + ' ▾' : ''}`
   $('#model-pill').textContent = pillText
   $('#model-pill').disabled = e.template !== null
   const cx = A.context, cb = $('#cmeter'), pct = cx && cx.used && cx.window ? Math.min(100, Math.round(cx.used / cx.window * 100)) : null

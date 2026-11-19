@@ -84,7 +84,7 @@ The Hive page opens as a honeycomb; a switch takes you to the classic cards. Eac
 
 ### Hatch a bee in a few clicks
 
-Pick a folder, an engine and a model. Give it a prompt and a schedule, or leave both empty and just talk to it.
+Pick a folder and an engine. Give it a prompt and a schedule, or leave both empty and just talk to it. A bee starts on its CLI's default model; the model button under the chat box changes it at any time.
 
 ![The hatch dialog](docs/hatch.gif)
 

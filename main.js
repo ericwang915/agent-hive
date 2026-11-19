@@ -25,7 +25,7 @@ const setups = new Map()     // agentId → running git child process
 const pending = new Map()    // approvalId → { a, answer }
 const notes = new Set()      // keep Notifications from being GC'd
 const nightBusy = new Set()
-const listed = { 'cursor-agent': [], antigravity: [] }      // the models these CLIs say they have
+const listed = { 'cursor-agent': [], antigravity: [] }, named = {}      // the models these CLIs say they have
 
 // ───────── Basics ─────────
 const today = () => ymd(new Date())
@@ -407,6 +407,8 @@ const actions = {
     roomsPush()
     kill(a)
     state.agents = state.agents.filter(x => x !== a)
+    // its memory leaves with it (the last version stays in memory/.history); Dreamer takes its lines out of the shared memory on the next pass
+    try { garden.writeMemory(wsRoot(), a.id, '', 'bee deleted') } catch {}
     // keep the relay shape
     if (!ups.length && downs.length > 1) for (const b of team) { delete b.after; delete b.inbox; if (b !== a && !b.isolate) dropWorktree(b) }   // deleting a lead with several downstream bees: disband the whole team
     else for (const b of downs) {
@@ -1205,15 +1207,21 @@ async function nightRun(k, manual) {
   const started = Date.now()
   try {
     const logs = state.agents.map(a => ({ agent: a, entries: readLog(a.id).filter(e => e.t > n.lastAt) })).filter(l => l.entries.some(e => e.role === 'assistant'))
-    if (!logs.length) return
+    // Dreamer also goes over the memories on a quiet week, with nothing new to read: that is when the old entries get weeded
+    const memOf = () => ({ hive: garden.readMemory(root, 'hive'), agents: Object.fromEntries(state.agents.map(a => [a.id, garden.readMemory(root, a.id)]).filter(([, md]) => md)) })
+    const review = k === 'dreamer' && !logs.length && (manual || started - (n.reviewAt || 0) > 7 * 86400000) && (m => !!m.hive || Object.keys(m.agents).length > 0)(memOf())
+    if (!logs.length && !review) return
     // a quiet day: wait until there is enough to read (the logs are kept, nothing is lost), but not more than three days
     const size = logs.reduce((n0, l) => n0 + l.entries.reduce((x, e) => x + (e.role === 'user' || e.role === 'assistant' ? String(e.text || '').length : 0), 0), 0)
-    if (!manual && size < 2000 && started - n.lastAt < 3 * 86400000) return
-    const text = garden.transcript(logs)
+    if (!manual && !review && size < 2000 && started - n.lastAt < 3 * 86400000) return
+    const text = review ? '(no new conversations: this pass only reviews the existing memories)' : garden.transcript(logs)
     let changed, summary
     if (k === 'dreamer') {
-      const mem = { hive: garden.readMemory(root, 'hive'), agents: Object.fromEntries(logs.map(l => [l.agent.id, garden.readMemory(root, l.agent.id)])), names: Object.fromEntries(logs.map(l => [l.agent.id, `${l.agent.name}, working on ${l.agent.task}`])) }
-      const res = garden.parseJson(await once(garden.dreamerPrompt(mem, text), chore()))
+      // every bee's memory, not only those of the bees that spoke: an idle bee's memory ages too
+      const mem = { ...memOf(), names: Object.fromEntries(state.agents.map(a => [a.id, `${a.name}, working on ${a.task}`])) }
+      for (const l of logs) if (!(l.agent.id in mem.agents)) mem.agents[l.agent.id] = ''
+      n.reviewAt = started          // set before the call: a review that fails waits for next week, it does not retry every night
+      const res = garden.parseJson(await once(garden.dreamerPrompt(mem, text, { today: today(), bees: state.agents.map(a => a.name) }), chore()))
       changed = garden.applyMemory(root, res, state.agents); summary = res.summary
     } else {
       const have = garden.listSkills(root)
@@ -1222,10 +1230,10 @@ async function nightRun(k, manual) {
     }
     summary = String(summary || '').slice(0, 600)
     garden.writeDream(root, today(), meta.name, summary, changed)
-    n.lastAt = started
-    n.last = { t: Date.now(), summary, changed, agents: logs.length }
+    if (!review) n.lastAt = started          // a review read no logs: entries waiting for their reply are still unread
+    n.last = { t: Date.now(), summary, changed, agents: logs.length, review: review || undefined }
     const what = k === 'dreamer' ? (changed.length ? `updated ${changed.length} memor${changed.length === 1 ? 'y' : 'ies'}` : 'no memory changes') : (changed.length ? `skills: ${changed.join(', ')}` : 'no new skills')
-    event(bee, `Finished ${meta.verb} · read ${logs.length} bee${logs.length === 1 ? '' : 's'} · ${what}`, 'done', changed.length > 0)
+    event(bee, `Finished ${meta.verb} · ${review ? 'reviewed the memories' : `read ${logs.length} bee${logs.length === 1 ? '' : 's'}`} · ${what}`, 'done', changed.length > 0)
   } catch (e) { if (!e.interrupted && !quitting) event(bee, `${meta.verb[0].toUpperCase() + meta.verb.slice(1)} failed: ${e.message}`, 'error') }   // an interrupted night run just waits for the next night
   finally { nightBusy.delete(k); send('night-busy', [...nightBusy]); send('garden-changed'); save() }
 }
@@ -1235,6 +1243,7 @@ function gardenInfo() {
   return {
     root, skills: garden.listSkills(root), hive: garden.readMemory(root, 'hive'),
     agents: Object.fromEntries(state.agents.map(a => [a.id, garden.readMemory(root, a.id)])),
+    versions: Object.fromEntries(['hive', ...state.agents.map(a => a.id)].map(key => [key, garden.memoryVersions(root, key)])),
     night: state.settings.night, busy: [...nightBusy], memoryInject: state.settings.memoryInject, meta: NIGHT,
   }
 }
@@ -1454,18 +1463,25 @@ function update(id, c) {
 function enginesInfo() {
   return Object.entries(core.ENGINES).map(([id, e]) => ({
     id, label: e.label, cmd: e.cmd, template: e.args ? null : e.template,
-    models: listed[id] || e.models || [], noModel: !!e.noModel,
+    models: listed[id]?.length ? listed[id] : e.models || [], names: named[id] || e.names || {}, noModel: !!e.noModel,
     installed: id === 'custom' ? true : core.onPath(e.args ? core.binOf(e) : e.cmd), custom: id === 'custom',
   }))
 }
 // "id - Name" per line from cursor-agent, "id<tab>Name" from agy
-const MODEL_LIST = { 'cursor-agent': [['--list-models'], /^(\S+) - /], antigravity: [['models'], /^([\w.-]+)\t/] }
+const MODEL_LIST = { 'cursor-agent': [['--list-models'], /^(\S+) - (.+)$/], antigravity: [['models'], /^([\w.-]+)\t(.*)$/] }
 function loadModels() {
   for (const [id, [args, re]] of Object.entries(MODEL_LIST)) {
     const cmd = core.binOf(core.ENGINES[id])
     if (!core.onPath(cmd)) continue
     execFile(cmd, args, { timeout: 20000 }, (_e, out) => {
-      for (const l of String(out || '').split('\n')) { const mm = l.match(re); if (mm && !listed[id].includes(mm[1])) listed[id].push(mm[1]) }
+      for (const l of String(out || '').split('\n')) {
+        // Colour codes and the "(current)" mark are for a terminal, not for the list
+        const mm = l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/^\s+|\r$/g, '').match(re)
+        if (!mm) continue
+        if (!listed[id].includes(mm[1])) listed[id].push(mm[1])
+        const name = mm[2].replace(/\s*\((current|default)[^)]*\)/gi, '').trim()
+        if (name && name !== mm[1]) (named[id] ||= {})[mm[1]] = name
+      }
     })
   }
 }
@@ -1696,7 +1712,12 @@ function ipc() {
   handle('linkSkill', (name, on) => { garden.linkSkill(wsRoot(), String(name || ''), !!on); send('garden-changed') })
   handle('saveMemory', (key, md) => {
     if (key !== 'hive' && !byId(key)) throw new Error('This bee no longer exists')
-    garden.writeMemory(wsRoot(), key, String(md || '').slice(0, 200000)); send('garden-changed')
+    garden.writeMemory(wsRoot(), key, String(md || '').slice(0, 200000), 'user'); send('garden-changed')
+  })
+  handle('memoryHistory', key => garden.memoryHistory(wsRoot(), String(key || '')))
+  handle('restoreMemory', (key, id) => {
+    if (key !== 'hive' && !byId(key)) throw new Error('This bee no longer exists')
+    garden.restoreMemory(wsRoot(), String(key || ''), String(id || '')); send('garden-changed')
   })
   handle('openGarden', kind => {
     const dir = path.join(wsRoot(), kind === 'memory' ? 'memory' : 'skills')

@@ -440,8 +440,21 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(garden.readMemory(root, 'a1'), '- Use pnpm')
   eq(garden.applyMemory(root, { hive: '- User likes concise code' }, agents), [])
   eq(garden.applyMemory(root, { hive: '- New preference' }, agents), ['shared memory'])
-  const mh = fs.readdirSync(path.join(root, 'memory', '.history'))
+  const mh = fs.readdirSync(path.join(root, 'memory', '.history')).filter(f => f !== 'CHANGES.md')
   assert.ok(mh.length === 1 && fs.readFileSync(path.join(root, 'memory', '.history', mh[0]), 'utf8').includes('concise'))
+  // history: newest first, who changed it is logged, an earlier version can be brought back, and only the newest thirty are kept
+  { const h = garden.memoryHistory(root, 'hive')
+    eq([h.length, h[0].text, Math.abs(h[0].t - Date.now()) < 60000], [1, '- User likes concise code', true])
+    assert.ok(/ · hive · Dreamer · 1 → 1 lines\n$/.test(fs.readFileSync(path.join(root, 'memory', '.history', 'CHANGES.md'), 'utf8')))
+    eq(garden.restoreMemory(root, 'hive', h[0].id), true)
+    eq([garden.readMemory(root, 'hive'), garden.memoryHistory(root, 'hive').map(x => x.text)], ['- User likes concise code', ['- New preference', '- User likes concise code']])
+    assert.throws(() => garden.restoreMemory(root, 'hive', '19990101000000-000'), /no longer kept/)
+    for (let i = 0; i < 34; i++) { garden.writeMemory(root, 'a10', '- v' + i); const t0 = Date.now(); while (Date.now() === t0) {} }
+    eq([garden.memoryHistory(root, 'a10').length, garden.memoryHistory(root, 'a10')[0].text, garden.memoryHistory(root, 'a1').map(x => x.text)], [30, '- v32', []])   // a1's history is not a10's
+    // a deleted bee: the file goes, its last version stays
+    garden.writeMemory(root, 'a10', '', 'bee deleted')
+    eq([garden.readMemory(root, 'a10'), garden.memoryHistory(root, 'a10')[0].text], ['', '- v33'])
+    garden.writeMemory(root, 'hive', '- New preference') }
   assert.throws(() => garden.writeMemory(root, '../x', 'y'))
   // preamble
   const pre = garden.preamble(root, agents[0])
@@ -470,6 +483,9 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   { const big = [{ name: 'big-one', description: 'D', body: 'x'.repeat(9000) }, { name: 'small-one', description: 'd', body: 'steps' }]
     eq(garden.lockedSkills(big), ['big-one'])
     assert.ok(garden.gardenerPrompt(big, 'T').includes('## big-one\nD\n\n[body too long to show') && garden.gardenerPrompt(big, 'T').includes('## small-one\nd\n\nsteps')) }
+  { const p = garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T', { today: '2026-11-19', bees: ['Puff', 'Olive'] })
+    assert.ok(p.includes('Today is 2026-11-19') && p.includes('confirmed 2026-11-19') && p.includes('Previously: npm (until 2026-11-19)') && p.includes('The bees in the hive now: Puff, Olive. Remove the lines of any bee that is not in this list') && /more than 60 days ago is suspect/.test(p))
+    assert.ok(!garden.dreamerPrompt({}, 'T').includes('The bees in the hive now')) }
   assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' }, names: { a1: 'Puff, working on web' } }, 'T').includes('## a1 (bee Puff, working on web)\nM') && /one or two lines per bee/.test(garden.dreamerPrompt({}, 'T')) && /important, objective and lasting/.test(garden.dreamerPrompt({}, 'T')) && garden.gardenerPrompt(sk, 'T').includes('## release-flow\nNew description') && /Update before you plant/.test(garden.gardenerPrompt(sk, 'T')))
 }
 

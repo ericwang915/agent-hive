@@ -182,10 +182,13 @@ function combPlace(layers) {
   for (const p of at.values()) { p.x = (p.xh - minX) * HX_HALF; p.y = (p.row - minRow) * HX_ROW }
   return at
 }
+// The engine in one word, for the small places
+const ENG_SHORT = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', 'cursor-agent': 'Cursor', antigravity: 'Antigravity', dsh: 'DeepSeek', grok: 'Grok' }
+const engShort = a => ENG_SHORT[a.engine] || String(a.template || '').trim().split(/\s+/)[0].split('/').pop() || 'Custom'
 function combCell(a, p) {
-  const live = a.status === 'running', mood = a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy'
-  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px;--bee:${esc(a.color)}" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(a.task)}"><div class="hx-in">
-    ${beeFace(a, 38, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}</div><div class="hx-task ell">${esc(scheduled(a) ? schedText(a.schedule) : a.task)}</div>${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
+  const live = a.status === 'running', sched = scheduled(a), mood = a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy'
+  return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px;--bee:${esc(a.color)}" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" title="${esc(a.name)} · ${esc(subline(a))} · ${esc(a.task)}${sched ? ' · ' + esc(schedText(a.schedule)) : ''}"><div class="hx-in${sched ? ' timed' : ''}">
+    ${beeFace(a, sched ? 32 : 38, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}<span class="hx-eng"> - ${esc(engShort(a))}</span></div><div class="hx-task ell">${esc(a.task)}</div>${sched ? `<div class="hx-when">${ICON.clock}<span class="ell">${esc(schedText(a.schedule))}</span></div>` : ''}${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
 }
 const combLink = (p, q, sym, label) => `<div class="hx-link" style="left:${(p.x + q.x) / 2 + HX.W / 2}px;top:${(p.y + q.y) / 2 + HX.H / 2}px"><span style="transform:rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg)">${sym}</span>${label ? `<em>${label}</em>` : ''}</div>`
 const combBox = at => { const ps = [...at.values()]; return { w: Math.max(...ps.map(p => p.x)) + HX.W, h: Math.max(...ps.map(p => p.y)) + HX.H } }
@@ -423,6 +426,7 @@ function afterShape() {
   return { depth, peers, parallel: peers.length > 0 }
 }
 function updRelay() {
+  if (!F) return            // the dialog was closed while a check was still on its way
   const el = $('#sec-relay')
   if (F.mode === 'edit') {
     if (!F.after) { el.innerHTML = F.inRelay ? '<div class="lab">Relay</div><div class="ro">Team lead</div>' : ''; return }
@@ -463,12 +467,13 @@ const checkWs = debounce(async () => {
   if (!F || F.mode === 'edit' || F.afterWs) return
   const p = fWorkspace(), r = F.task || F.wsCustom ? await hive.call('exists', p) : ''
   const el = $('#ws-hint')
-  if (!el || p !== fWorkspace()) return
+  if (!F || !el || p !== fWorkspace()) return
   el.className = 'hint' + (r === 'file' ? ' err' : '')
   el.textContent = r === 'dir' ? 'Exists, will be used' : r === 'none' ? 'Created on hatch' : r === 'file' ? 'This is a file' : ''
   checkGit()
 }, 200)
 function updWs() {
+  if (!F) return
   const el = $('#sec-ws')
   if (F.mode === 'edit') { el.innerHTML = `<div class="lab">Workspace</div><div class="ro ell sel">${esc(tilde(F.wsCustom, S.home))}</div>`; return }
   if (F.afterWs) { el.innerHTML = `<div class="lab">Workspace</div><div class="ro ell">${esc(tilde(F.afterWs, S.home))} <span class="faint">· shared with the team</span></div>`; return }
@@ -486,6 +491,7 @@ const checkGit = debounce(async () => {
   el.textContent = r.text || r.error || ''
 }, 300)
 function updGit() {
+  if (!F) return
   const el = $('#sec-git')
   if (F.mode === 'edit') { el.innerHTML = F.git ? `<div class="lab">Remote Git</div><div class="ro ell sel">${esc(F.git.url)}${F.git.branch ? ' @ ' + esc(F.git.branch) : ''}</div>` : ''; return }
   if (F.afterWs) { el.innerHTML = ''; return }
@@ -502,12 +508,11 @@ function updEngine() {
   } else if (e.noModel) {
     el.innerHTML = `<div class="hint">${esc(e.label)} takes its model from its own settings</div>`
   } else {
-    el.innerHTML = `<div class="row" style="flex-wrap:wrap"><span class="mute" style="font-size:12px">Model</span><div class="seg" id="model-seg"></div><input type="text" id="f-model" list="model-list" placeholder="or type a model name" style="width:190px" spellcheck="false" value="${esc(F.model)}"><datalist id="model-list">${e.models.map(m => `<option value="${esc(m)}">`).join('')}</datalist></div>`
-    updModelSeg()
+    // A bee starts on the CLI's default model; the model button under the chat box changes it at any time
+    el.innerHTML = `<div class="hint">${F.model ? `Model: <b>${esc(e.names?.[F.model] || F.model)}</b>` : 'Starts on the default model'} · change it in the chat, with the model button under the message box</div>`
   }
   updBeh(); updPreview()
 }
-const updModelSeg = () => { const el = $('#model-seg'); if (el) el.innerHTML = [['', 'Default'], ...eng(F.engine).models.slice(0, 5).map(m => [m, m])].map(([v, l]) => `<button type="button" class="${F.model === v ? 'on' : ''}" data-act="f-model" data-m="${esc(v)}">${esc(l)}</button>`).join('') }
 
 const MODES = [['manual', 'Manual'], ['adhoc', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['interval', 'Interval'], ['event', 'Event']]
 const EV_TYPES = [['commit', 'Git commit'], ['github', 'GitHub'], ['bee', 'A bee finishes']], EV_WHAT = [['pr', 'New pull request'], ['comment', 'New comment'], ['ci', 'CI failure']], EV_ON = [['done', 'Finishes'], ['error', 'Fails'], ['any', 'Either']]
@@ -548,7 +553,7 @@ const PERM = {
 }
 // The MCP servers from the user's Claude Code setup, ticked = this bee may use it
 let CS = null
-async function loadSetup(force) { const r = await hive.call('claudeSetup', force); if (r && !r.error) CS = r; if ($('#sec-beh')) updBeh(); if (view === 'skills') renderGarden() }
+async function loadSetup(force) { const r = await hive.call('claudeSetup', force); if (r && !r.error) CS = r; if (F && $('#sec-beh')) updBeh(); if (view === 'skills') renderGarden() }
 // every server off = start the session without MCP at all, which saves the most
 function setMcpOff(off) { F.mcpOff = off; F.noMcp = !!CS && CS.servers.length > 0 && CS.servers.every(s => off.includes(s.name)); updBeh() }
 const MCP_ST = { connected: '', 'needs-auth': 'needs sign-in', failed: 'failed', pending: 'connecting' }
@@ -616,7 +621,6 @@ const INPUT = {
     checkGit()
   },
   'f-git-branch': v => { F.gitBranch = v; checkGit() },
-  'f-model': v => { F.model = v; updModelSeg() },
   'f-template': v => { F.template = v; updPreview() },
   'f-prompt': v => { F.prompt = v },
   'f-after-prompt': v => { F.after.prompt = v; if (F.after.role && F.after.role !== 'custom' && v !== S.presets[F.after.role].prompt) { F.after.role = 'custom'; document.querySelectorAll('[data-act="f-role"]').forEach(b => b.classList.toggle('on', b.dataset.k === 'custom')) } },
@@ -690,10 +694,10 @@ function renderDash() {
   <div class="panel report"><h3 class="round">${queenSvg(26)}Report</h3>${d.report ? `<div class="md">${reportHtml(d.report)}</div>` : `<div class="mute">${queenBusy ? 'Writing…' : 'None yet'}</div>`}</div>
   <div class="panel"><h3 class="round">Activity</h3>${rows.length ? `<div class="tl">${rows.map(a => `<div class="who"><span class="dot" style="background:${esc(a.color)}"></span><span class="ell">${esc(a.name)}</span></div><div class="track">${st(a.id).segs.map(g => `<i style="left:${pct(g[0])}%;width:${Math.max(.15, pct(g[1]) - pct(g[0]))}%"></i>`).join('')}${today ? `<span class="now" style="left:${pct(now)}%"></span>` : ''}</div>`).join('')}
     <div></div><div class="axis">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${h}:00</span>`).join('')}</div></div>` : '<div class="mute">No activity</div>'}</div>
-  <div class="panel"><h3 class="round">Bees</h3>${A.length ? `<table class="atable"><thead><tr><th>Name</th><th>Task</th><th>Status</th><th>Runtime</th><th>Spend</th><th>7 days</th><th>Last message</th></tr></thead><tbody>${A.map(a => {
+  <div class="panel"><h3 class="round">Bees</h3>${A.length ? `<div class="atable-wrap"><table class="atable"><thead><tr><th>Name</th><th>Task</th><th>Status</th><th>Runtime</th><th>Spend</th><th>7 days</th><th>Last message</th></tr></thead><tbody>${A.map(a => {
     const x = st(a.id), mx = Math.max(1, ...x.week)
     return `<tr data-act="chat" data-id="${a.id}"><td><div class="row">${beeOf(a, 24)}<b>${esc(a.name)}</b></div></td><td>${esc(a.task)}</td><td>${pill(a.status)}</td><td>${x.runs ? `${x.runs} run${x.runs === 1 ? '' : 's'} · ${fmtMin(x.ms)}` : '<span class="faint">—</span>'}</td><td>${x.usd ? fmtUsd(x.usd) : x.tok ? fmtTok(x.tok) : '<span class="faint">—</span>'}</td><td>${x.week.some(Boolean) ? `<span class="spark">${x.week.map(v => `<i style="height:${Math.round(v / mx * 100)}%"></i>`).join('')}</span>` : '<span class="faint">—</span>'}</td><td class="said"><div class="ell">${esc(x.last) || '<span class="faint">—</span>'}</div></td></tr>`
-  }).join('')}</tbody></table>` : '<div class="mute">No bees yet</div>'}</div>`)
+  }).join('')}</tbody></table></div>` : '<div class="mute">No bees yet</div>'}</div>`)
 }
 
 // ───────── Skills / Memory ─────────
@@ -707,7 +711,7 @@ function nightHtml(k) {
   const duty = k === 'gardener' ? 'Distills reusable skills from new conversations' : 'Tidies shared memory and each bee\'s memory'
   return `<div class="night ${k}">${beeSvg(m.color, k === 'dreamer' ? 'sleep' : 'happy', 46, false, busy ? 'running' : k === 'dreamer' ? 'sleeping' : 'idle')}
   <div class="info"><b class="round">${m.name}</b><span class="when">Daily <input type="time" data-night="${k}" value="${esc(n.time)}"></span>
-    <div class="last">${l ? `Last ${whenText(new Date(l.t)) || ''} · ${l.agents} bee${l.agents === 1 ? '' : 's'} · ${esc(what)}${l.summary ? `<br>${esc(l.summary)}` : ''}` : duty}</div></div>
+    <div class="last">${l ? `Last ${whenText(new Date(l.t)) || ''} · ${l.review ? 'reviewed the memories' : `${l.agents} bee${l.agents === 1 ? '' : 's'}`} · ${esc(what)}${l.summary ? `<br>${esc(l.summary)}` : ''}` : duty}</div></div>
   <button class="btn" data-act="night-now" data-k="${k}" ${busy ? 'disabled' : ''}>${busy ? `${m.verb[0].toUpperCase()}${m.verb.slice(1)}…` : 'Run now'}</button></div>`
 }
 // Skills page: what Claude Code itself brings to every Claude bee, apart from the hive's own skills
@@ -722,12 +726,14 @@ function setupHtml() {
   <div class="setup-mod"><div class="hd">MCP servers <span class="faint">${CS.servers.length}</span></div>${CS.servers.length ? `<div class="setup-rows">${CS.servers.map(s => `<div class="r"><span class="nm ell">${esc(s.label)}</span><span class="faint ell">${esc(s.source)}</span><span class="faint">${s.tools ? s.tools + ' tools' : MCP_ST[s.status] || '—'}</span><span class="faint">${bees ? `${usedBy(s)} of ${bees} bee${bees === 1 ? '' : 's'}` : ''}</span></div>`).join('')}</div>` : '<div class="faint">None</div>'}</div>
   <div class="setup-mod"><div class="hd">Skills <span class="faint">${CS.skills.length}${bees ? ` · used by ${S.agents.filter(a => a.engine === 'claude' && !a.noSkills).length} of ${bees} bee${bees === 1 ? '' : 's'}; switch them off per bee in its settings` : ''}</span></div>${Object.entries(groups).map(([g, list]) => `<div class="grp"><span class="g">${esc(g)}</span>${list.map(n => `<span class="chip">${esc(n)}</span>`).join('')}</div>`).join('') || '<div class="faint">None</div>'}</div></div>`
 }
+// Shown at the top right of an opened card, and it stays in view while the card scrolls by
+const foldBtn = (act, attr) => `<button class="btn sm fold" data-act="${act}" ${attr} title="Collapse">Collapse<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg></button>`
 function renderGarden() {
   if (!G) return
   if (view === 'skills') {
     const card = s => {
       const editing = false, open = skillOpen.has(s.name)                  // editing happens in a window of its own (openSkillEditor)
-      return `<div class="skill${editing || open ? ' wide' : ''}"><div class="top">${ICON.sprout}<span class="nm ell grow">${esc(s.name)}</span><span class="faint" style="font-size:11.5px">${dayKey(new Date(s.mtime)).slice(5)}</span></div>
+      return `<div class="skill${editing || open ? ' wide' : ''}${open ? ' open' : ''}"><div class="top">${ICON.sprout}<span class="nm ell grow">${esc(s.name)}</span><span class="faint" style="font-size:11.5px">${dayKey(new Date(s.mtime)).slice(5)}</span>${open ? foldBtn('skill-open', `data-n="${esc(s.name)}"`) : ''}</div>
       ${editing ? `<textarea id="skill-text" spellcheck="false">${esc(s.raw)}</textarea><div class="acts"><button class="btn sm primary" data-act="skill-save" data-n="${esc(s.name)}">Save</button><button class="btn sm" data-act="skill-cancel">Cancel</button></div>`
     : `<div class="desc">${esc(s.description) || '<span class="faint">No description</span>'}</div>${open ? `<div class="body md">${renderMd(s.body)}</div>` : ''}
       <div class="acts"><button class="btn sm ghost" data-act="skill-open" data-n="${esc(s.name)}">${open ? 'Hide' : 'View'}</button><button class="btn sm ghost" data-act="skill-edit" data-n="${esc(s.name)}">Edit</button>
@@ -743,10 +749,10 @@ function renderGarden() {
   if (view === 'memory') {
     const card = (key, head, md) => {
       const editing = memEdit === key, open = memOpen.has(key)
-      return `<div class="mem"><div class="top">${head}</div>
+      return `<div class="mem${open && md && !editing ? ' open' : ''}"><div class="top">${head}${open && md && !editing ? `<span class="grow"></span>${foldBtn('mem-open', `data-k="${key}"`)}` : ''}</div>
       ${editing ? `<textarea id="mem-text" spellcheck="false">${esc(md)}</textarea><div class="acts"><button class="btn sm primary" data-act="mem-save" data-k="${key}">Save</button><button class="btn sm" data-act="mem-cancel">Cancel</button></div>`
     : `${md ? `<div class="body md${open ? '' : ' clip'}">${renderMd(md)}</div>` : '<div class="faint">Empty</div>'}
-      <div class="acts">${md ? `<button class="btn sm ghost" data-act="mem-open" data-k="${key}">${open ? 'Collapse' : 'Expand'}</button>` : ''}<button class="btn sm ghost" data-act="mem-edit" data-k="${key}">${md ? 'Edit' : 'Write'}</button></div>`}</div>`
+      <div class="acts">${md ? `<button class="btn sm ghost" data-act="mem-open" data-k="${key}">${open ? 'Collapse' : 'Expand'}</button>` : ''}<button class="btn sm ghost" data-act="mem-edit" data-k="${key}">${md ? 'Edit' : 'Write'}</button>${G.versions && G.versions[key] ? `<button class="btn sm ghost" data-act="mem-history" data-k="${key}" title="Earlier versions of this memory">History<span class="faint" style="margin-left:5px">${G.versions[key]}</span></button>` : ''}</div>`}</div>`
     }
     $('#v-memory').innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Memory</h1></div>
       <label class="check" style="align-items:center"><input type="checkbox" id="mem-inject" ${G.memoryInject ? 'checked' : ''}>Give new sessions memory and skills</label>
@@ -768,8 +774,25 @@ function openSkillEditor() {
   if (!$('#editor').open) $('#editor').showModal()
   ;(isNew ? $('#skill-name') : $('#skill-text')).focus()
 }
-$('#editor').addEventListener('close', () => { skillEdit = null; if (view === 'skills') loadGarden() })
-$('#editor').addEventListener('keydown', e => { if (e.metaKey && e.key === 'Enter') { e.preventDefault(); $('#editor [data-act="skill-save"]').click() } })
+// Earlier versions of one memory: pick one on the left, read it on the right, bring it back if Dreamer or an edit dropped something
+let MH = null
+async function openMemHistory(key) {
+  const list = await hive.call('memoryHistory', key)
+  if (!Array.isArray(list) || !list.length) return toast('No earlier versions', 'err')
+  MH = { key, list, i: 0 }
+  renderMemHistory()
+  if (!$('#editor').open) $('#editor').showModal()
+}
+function renderMemHistory() {
+  const a = byId(MH.key), v = MH.list[MH.i], when = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  $('#editor').innerHTML = `
+  <div class="dlg-head"><span class="ed-ic" style="color:var(--team-ink)">${ICON.brain}</span><div class="grow"><h2 class="round">Memory history</h2><div class="faint" style="font-size:12.5px">${MH.key === 'hive' ? 'Shared memory' : esc(a ? a.name : MH.key)} · the last ${MH.list.length} version${MH.list.length === 1 ? '' : 's'} before the current one</div></div><button type="button" class="btn icon ghost" data-act="mem-hist-close">${ICON.x}</button></div>
+  <div class="dlg-body"><div class="mh"><div class="mh-list">${MH.list.map((x, i) => `<button type="button" class="${i === MH.i ? 'on' : ''}" data-act="mem-hist-pick" data-i="${i}"><b>${when(x.t)}</b><span>${x.text.split('\n').length} lines</span></button>`).join('')}</div>
+    <div class="mh-body md">${renderMd(v.text)}</div></div></div>
+  <div class="dlg-foot"><span class="hint grow">Restoring keeps today's version here, so it can be undone</span><button type="button" class="btn" data-act="mem-hist-close">Close</button><button type="button" class="btn primary" data-act="mem-hist-restore">Restore this version</button></div>`
+}
+$('#editor').addEventListener('close', () => { skillEdit = null; MH = null; if (view === 'skills') loadGarden() })
+$('#editor').addEventListener('keydown', e => { if (e.metaKey && e.key === 'Enter') { e.preventDefault(); $('#editor [data-act="skill-save"]')?.click() } })
 
 // The report's bee headings read "Name · project · what it does": the name stays bold, the rest steps back; a known bee gets its colour dot
 function reportHtml(md) {
@@ -820,7 +843,7 @@ function renderOutputs() {
       <span class="ico">${icon}</span><span class="tx"><span class="nm ell">${esc(x.kind === 'link' ? x.label || x.url.replace(/^https?:\/\//, '') : x.name)}</span><span class="sub ell">${esc(x.kind === 'link' ? x.url : x.dir)}</span></span></button>
       <span class="tag">${esc(ext)}</span>
       <button class="who" data-act="out-bee-open" data-i="${i}" title="${x.kind === 'link' ? `Open ${esc(b.name)}'s chat where this link came up` : `Open in ${esc(b.name)}'s window`}"><span class="dot" style="background:${esc(b.color)}"></span><b>${esc(b.name)}</b><span class="ell">${esc(b.task)}</span></button>
-      <span class="when">${hm(x.t)}${x.kind === 'file' ? ` · ${outSize(x.size)}` : ''}</span>
+      <span class="when">${hm(x.t)}${x.kind === 'file' ? `<span class="sz"> · ${outSize(x.size)}</span>` : ''}</span>
       <span class="acts">${x.kind === 'file' ? `<button class="btn sm icon ghost" data-act="out-reveal" data-i="${i}" title="Show in Finder">${ICON.finder}</button>` : ''}<button class="btn sm icon ghost" data-act="out-copy" data-i="${i}" title="${x.kind === 'link' ? 'Copy link' : 'Copy path'}">${ICON.link}</button></span></div>`
   })
   setHtml($('#out-list'), html + (OUT.shown.length > 400 ? `<div class="guide">Showing the newest 400 of ${OUT.shown.length}. Search or pick a bee to narrow it down.</div>` : ''))
@@ -934,8 +957,7 @@ const ACT = {
   // Form
   'f-rename': () => { F.name = pickName(); $('#f-name').value = F.name; INPUT['f-name'](F.name) },
   'f-color': el => { F.color = el.dataset.c; updColor(); updHead() },
-  'f-engine': el => { F.engine = el.dataset.e; F.engineTouched = true; F.model = ''; F.template = ''; updEngine() },
-  'f-model': el => { F.model = el.dataset.m; $('#f-model').value = F.model; updModelSeg() },
+  'f-engine': el => { if (el.dataset.e === F.engine) return; F.engine = el.dataset.e; F.engineTouched = true; F.model = ''; F.template = ''; updEngine() },   // another engine: its models are different ones
   'f-role': el => { F.after.role = el.dataset.k; if (F.after.role !== 'custom') F.after.prompt = S.presets[F.after.role].prompt; if (F.after.role !== 'review') F.after.loop = false; updRelay() },
   'f-pick': async () => { const p = await call('pickFolder'); if (typeof p === 'string' && p) { F.wsCustom = p; F.task = p.replace(/\/+$/, '').split('/').pop(); F.taskTouched = true; $('#f-task').value = F.task; updWs(); updPreview() } },
   'f-unpick': () => { F.wsCustom = ''; updWs(); updPreview() },
@@ -963,6 +985,10 @@ const ACT = {
   'mem-open': el => { const k = el.dataset.k; memOpen.has(k) ? memOpen.delete(k) : memOpen.add(k); renderGarden() },
   'mem-edit': el => { memEdit = el.dataset.k; renderGarden(); $('#mem-text').focus() },
   'mem-cancel': () => { memEdit = null; renderGarden() },
+  'mem-history': el => openMemHistory(el.dataset.k),
+  'mem-hist-pick': el => { MH.i = +el.dataset.i; renderMemHistory() },
+  'mem-hist-close': () => $('#editor').close(),
+  'mem-hist-restore': async () => { const key = MH.key; if (await call('restoreMemory', key, MH.list[MH.i].id)) { $('#editor').close(); memOpen.add(key); toast('Restored'); loadGarden() } },
   'mem-save': async el => { if (await call('saveMemory', el.dataset.k, $('#mem-text').value)) { memEdit = null; toast('Saved'); loadGarden() } },
   pal: el => palRun(+el.dataset.i),
   more: el => { const r = el.getBoundingClientRect(); beeMenu({ clientX: r.right - 190, clientY: r.bottom + 4, preventDefault() {} }, el.dataset.id) },
@@ -1297,7 +1323,7 @@ function openGroup(id) {
   <div class="dlg-body">
     <div class="field"><div class="lab">Name</div><input type="text" id="g-name" maxlength="30" style="width:100%" placeholder="Group name" value="${esc(GF.name)}"></div>
     <label class="g-queen"><input type="checkbox" id="g-queen" ${GF.queen ? 'checked' : ''}>${queenSvg(34)}<span><b>Queen leads</b><span class="sub" style="display:block">She picks bees, dispatches work and sums up. Unchecked: messages go to every member.</span></span></label>
-    <div class="field" id="g-model-row" ${GF.queen ? '' : 'hidden'}><div class="lab">Queen's model</div><select id="g-model"><option value="">Default</option>${(eng('claude').models || []).map(m => `<option value="${esc(m)}" ${GF.model === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
+    <div class="field" id="g-model-row" ${GF.queen ? '' : 'hidden'}><div class="lab">Queen's model</div><select id="g-model"><option value="">Default</option>${GF.model && !(eng('claude').models || []).includes(GF.model) ? `<option value="${esc(GF.model)}" selected>${esc(GF.model)}</option>` : ''}${(eng('claude').models || []).map(m => `<option value="${esc(m)}" ${GF.model === m ? 'selected' : ''}>${esc(eng('claude').names?.[m] || m)}</option>`).join('')}</select></div>
     <div class="field"><div class="lab">Members <span class="opt" id="g-count"></span></div><div class="g-list">${S.agents.length ? S.agents.map(a => `<label class="g-row"><input type="checkbox" data-g="${a.id}" ${GF.members.has(a.id) ? 'checked' : ''}>${beeOf(a, 28)}<span class="grow"><b>${esc(a.name)}</b><span class="sub ell" style="display:block">${esc(a.task)} · ${esc(eng(a.engine).label)}</span></span>${pill(a.status)}</label>`).join('') : '<div class="hint">No bees yet</div>'}</div></div>
   </div>
   <div class="dlg-foot">${r ? `<button type="button" class="btn danger" data-act="group-delete">Delete group</button>` : ''}<span class="grow"></span><button type="button" class="btn" data-act="group-close">Cancel</button><button type="submit" class="btn primary">${r ? 'Save' : 'New group'}</button></div>`
