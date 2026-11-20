@@ -470,13 +470,11 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   assert.throws(() => garden.saveSkill(root, '../x', 'x'))
   assert.throws(() => garden.saveSkill(root, 'a', 'x'))
   eq(garden.applySkills(root, { skills: Array.from({ length: 12 }, (_, i) => ({ name: 'bulk-' + i, description: 'd', body: 'b' })) }).length, 8)   // 8 at most
-  // applyMemory: ignores unknown agents
+  // memory pages: written, versioned
   const agents = [{ id: 'a1', name: 'Mochi' }]
-  eq(garden.applyMemory(root, { hive: '- User likes concise code', agents: { a1: '- Use pnpm', ghost: '- should not be written' }, summary: 's' }, agents), ['shared memory', 'Mochi'])
-  eq(fs.existsSync(path.join(root, 'memory', 'agents', 'ghost.md')), false)
+  eq([garden.writeMemory(root, 'hive', '- User likes concise code', 'Dreamer'), garden.writeMemory(root, 'a1', '- Use pnpm', 'Dreamer')], [true, true])
   eq(garden.readMemory(root, 'a1'), '- Use pnpm')
-  eq(garden.applyMemory(root, { hive: '- User likes concise code' }, agents), [])
-  eq(garden.applyMemory(root, { hive: '- New preference' }, agents), ['shared memory'])
+  eq([garden.writeMemory(root, 'hive', '- User likes concise code', 'Dreamer'), garden.writeMemory(root, 'hive', '- New preference', 'Dreamer')], [false, true])
   const mh = fs.readdirSync(path.join(root, 'memory', '.history')).filter(f => f !== 'CHANGES.md')
   assert.ok(mh.length === 1 && fs.readFileSync(path.join(root, 'memory', '.history', mh[0]), 'utf8').includes('concise'))
   // history: newest first, who changed it is logged, an earlier version can be brought back, and only the newest thirty are kept
@@ -520,10 +518,7 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   { const big = [{ name: 'big-one', description: 'D', body: 'x'.repeat(9000) }, { name: 'small-one', description: 'd', body: 'steps' }]
     eq(garden.lockedSkills(big), ['big-one'])
     assert.ok(garden.gardenerPrompt(big, 'T').includes('## big-one\nD\n\n[body too long to show') && garden.gardenerPrompt(big, 'T').includes('## small-one\nd\n\nsteps')) }
-  { const p = garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T', { today: '2026-11-19', bees: ['Puff', 'Olive'] })
-    assert.ok(p.includes('Today is 2026-11-19') && p.includes('confirmed 2026-11-19') && p.includes('Previously: npm (until 2026-11-19)') && p.includes('The bees in the hive now: Puff, Olive. Remove the lines of any bee that is not in this list') && /more than 60 days ago is suspect/.test(p))
-    assert.ok(!garden.dreamerPrompt({}, 'T').includes('The bees in the hive now')) }
-  assert.ok(garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' } }, 'T').includes('## a1\nM') && garden.dreamerPrompt({ hive: 'H', agents: { a1: 'M' }, names: { a1: 'Puff, working on web' } }, 'T').includes('## a1 (bee Puff, working on web)\nM') && /one or two lines per bee/.test(garden.dreamerPrompt({}, 'T')) && /important, objective and lasting/.test(garden.dreamerPrompt({}, 'T')) && garden.gardenerPrompt(sk, 'T').includes('## release-flow\nNew description') && /Update before you plant/.test(garden.gardenerPrompt(sk, 'T')))
+  assert.ok(garden.gardenerPrompt(sk, 'T').includes('## release-flow\nNew description') && /Update before you plant/.test(garden.gardenerPrompt(sk, 'T')))
 }
 
 // ───────── Queen leading the team ─────────
@@ -830,5 +825,56 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq(st.map(s => [s.run, s.when, s.unsure, s.said]), [['b', 'rate below 5%', 'start', 'rate 4%'], ['c', undefined, undefined, undefined]])
   eq(ev.parseEvent({ type: 'bee', ids: ['a'], when: ' tests  failed ', unsure: 'start' }, [A, B], 'b'), { type: 'bee', cooldown: 5, ids: ['a'], on: 'done', when: 'tests failed', unsure: 'start' })
   eq('when' in ev.parseEvent({ type: 'bee', ids: ['a'], unsure: 'start' }, [A, B], 'b'), false)
+}
+{ // layered memory
+  const L = require('./layers'), T = '2026-11-20'
+  const old = '## Build\n- Deploys with pnpm (2026-03-14, confirmed 2026-10-01)\n- Tests run with vitest\n\nPlain line (2026-05-01)'
+  const l = L.fromPage(old, T)
+  eq(l.obs.map(o => [o.text, o.sec, o.first, o.last, o.n, o.early]), [['Deploys with pnpm', 'Build', '2026-03-14', '2026-10-01', 1, true], ['Tests run with vitest', 'Build', T, T, 1, true], ['Plain line', 'Build', '2026-05-01', '2026-05-01', 1, true]])
+  eq(L.norm('- Deploys with pnpm. (2026-03-14, confirmed 2026-10-01, ×3)'), 'deploys with pnpm')
+  const agents = [{ id: 'a1', name: 'Mochi' }, { id: 'a2', name: 'Puff' }], mem = { hive: L.empty(), agents: { a1: l, a2: L.empty() } }
+  const got = L.apply(mem, { facts: [
+    { key: 'a1', bee: 'a1', day: '2026-11-19', text: 'Deployed with pnpm again', quote: 'pnpm deploy', obs: 'o1', about: ['pnpm'], also: ['部署'] },
+    { key: 'a1', bee: 'a1', day: '2026-11-19', text: 'Switched tests to jest', obs: 'new:1', says: 'Tests run with jest', replaces: 'o2', kind: 'lasting' },
+    { key: 'a1', bee: 'a1', day: '2026-11-18', text: 'Another jest run', obs: 'new:1', says: 'ignored wording' },
+    { key: 'a1', bee: 'a1', day: '2099-01-01', text: 'v3 is in progress', obs: 'new:2', says: 'v3 is in progress', kind: 'state' },
+    { key: 'hive', bee: 'a2', text: 'User wants short answers', obs: 'new:1', says: 'The user wants short answers', sec: 'Nonsense' },
+    { key: 'hive', bee: 'a2', text: 'Puff builds the website', obs: 'new:2', says: 'Puff: builds the website', sec: 'The hive' },
+    { key: 'ghost', text: 'x', obs: 'new:9', says: 'x' }, { key: 'a1', text: '' }, null,
+  ] }, agents, T)
+  eq(got.sort(), ['a1', 'hive'])
+  const o = id => l.obs.find(x => x.id === id)
+  eq([o('o1').n, o('o1').last, o('o1').early, o('o1').facts.length], [2, '2026-11-19', undefined, 1])
+  eq([o('o2').state, o('o2').by, o('o2').until], ['replaced', 'o4', '2026-11-19'])
+  eq([o('o4').text, o('o4').n, o('o4').first, o('o4').last, o('o4').facts.length], ['Tests run with jest', 2, '2026-11-18', '2026-11-19', 2])
+  eq([o('o5').kind, o('o5').first], ['state', T]); eq(l.facts.length, 4); eq(l.facts[0].also, ['部署'])
+  eq(mem.hive.obs.map(x => [x.sec, x.bee]), [['The user', undefined], ['The hive', 'a2']])
+  L.rank(l, 'a1', T); eq(l.obs.map(x => x.state), ['on', 'replaced', 'on', 'on', 'on'])
+  const page = L.render(l, 'a1')
+  assert.ok(page.includes('## Build\n- Deploys with pnpm (2026-03-14, confirmed 2026-11-19, ×2)') && page.includes('- Tests run with jest (2026-11-18, confirmed 2026-11-19, ×2)') && !page.includes('vitest'))
+  // a state observation nobody confirmed for more than 60 days leaves the page; a lasting one stays
+  L.rank(l, 'a1', '2027-03-01'); eq([o('o5').state, o('o1').state], ['kept', 'on']); L.rank(l, 'a1', T)
+  // the page holds 40 lines; the least confirmed step down, the user's own lines never do
+  { const big = L.empty(); for (let i = 0; i < 50; i++) L.apply({ hive: L.empty(), agents: { a1: big } }, { facts: [{ key: 'a1', text: 'fact ' + i, obs: 'new:1', says: 'obs ' + i }, ...(i < 5 ? [{ key: 'a1', text: 'again ' + i, obs: 'new:1' }] : [])] }, agents, T)
+    L.syncFromPage(big, '', T); eq(big.obs.every(x => x.state === 'kept'), true)
+    L.rank(big, 'a1', T); eq([big.obs.filter(x => x.state === 'on').length, big.obs.slice(0, 5).every(x => x.state === 'on')], [40, true]) }
+  // the user edits the page: a new line is theirs, a removed line is wrong and does not come back
+  L.syncFromPage(l, page.replace('- Plain line (2026-05-01)', '').trim() + '\n- Always ask before deleting files', T)
+  eq([o('o3').state, o('o3').wrong, l.obs[5].state, l.obs[5].text, o('o1').state], ['replaced', true, 'user', 'Always ask before deleting files', 'on'])
+  eq(L.apply(mem, { facts: [{ key: 'a1', text: 'Plain line', obs: 'new:1', says: 'Plain line.' }] }, agents, T), []); eq(o('o3').state, 'replaced')
+  L.apply(mem, { facts: [{ key: 'a1', text: 'ask first', obs: 'o6', says: 'reworded', replaces: 'o6' }, { key: 'a1', text: 'no asking', obs: 'new:1', says: 'Never ask', replaces: 'o6' }] }, agents, T)
+  eq([l.obs[5].text, l.obs[5].state, l.obs[5].n], ['Always ask before deleting files', 'user', 2])          // never reworded, never replaced
+  eq(L.reject(l, 'o1', T), true); eq(L.reject(l, 'o1', T), false); eq(L.reject(l, 'nope', T), false); L.rank(l, 'a1', T)
+  assert.ok(!L.render(l, 'a1').includes('pnpm') && L.render(l, 'a1').includes('- Always ask before deleting files (' + T + ', ×2, yours)'))
+  const p = L.prompt(mem, { a1: 'Mochi, working on web' }, 'LOGS', { today: T })
+  assert.ok(p.includes('## key "a1" (bee Mochi, working on web)') && p.includes('o4 [×2, 2026-11-18 → 2026-11-19] Tests run with jest') && p.includes('marked these as wrong') && p.includes('- Deploys with pnpm') && !p.includes('vitest') && p.endsWith('LOGS'))
+  const v = L.view(l)
+  eq([v.on[0].state, v.replaced.some(r => r.text === 'Tests run with vitest' && r.by === 'Tests run with jest' && r.because.name === 'Mochi'), v.replaced.find(r => r.text === 'Plain line').why], ['user', true, 'Removed by you'])
+  eq(v.on.find(r => r.text === 'Tests run with jest').facts.map(f => f.text), ['Switched tests to jest', 'Another jest run'])
+  // the shared memory drops the lines of a bee that is gone
+  L.rank(mem.hive, 'hive', T, ['a1']); eq(mem.hive.obs.map(x => x.state), ['on', 'replaced']); assert.ok(L.render(mem.hive, 'hive').startsWith('## The user\n- The user wants short answers'))
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'layers-')); L.save(root, 'a1', l); eq(L.load(root, 'a1').obs.length, l.obs.length); eq(L.load(root, 'zz'), null); assert.throws(() => L.load(root, '../x'), /Invalid/); L.remove(root, 'a1'); eq(L.load(root, 'a1'), null)
+  // day markers in the transcript
+  assert.ok(/--- \d{4}-\d\d-\d\d ---\n\[user\] hi\n\[assistant\] yo/.test(garden.transcript([{ agent: { name: 'A', id: 'a', task: 't', engine: 'claude' }, entries: [{ role: 'user', text: 'hi', t: 1795000000000 }, { role: 'assistant', text: 'yo', t: 1795000001000 }] }])))
 }
 console.log('ok')

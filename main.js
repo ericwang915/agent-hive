@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, 
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http'), crypto = require('crypto')
 const { spawn, execFile, execFileSync } = require('child_process')
 const { rankOf } = require('./common')
-const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files'), evs = require('./events'), outs = require('./outputs')
+const core = require('./core'), Team = require('./team'), garden = require('./garden'), qt = require('./queen'), files = require('./files'), evs = require('./events'), outs = require('./outputs'), layers = require('./layers')
 const { upIds } = Team, { git, tryGit, repoInfo, headOf, slotKey, ymd } = core
 const NIGHT = garden.NIGHT
 
@@ -444,7 +444,7 @@ const actions = {
     kill(a)
     state.agents = state.agents.filter(x => x !== a)
     // its memory leaves with it (the last version stays in memory/.history); Dreamer takes its lines out of the shared memory on the next pass
-    try { garden.writeMemory(wsRoot(), a.id, '', 'bee deleted') } catch {}
+    try { garden.writeMemory(wsRoot(), a.id, '', 'bee deleted'); layers.remove(wsRoot(), a.id) } catch {}
     // keep the relay shape
     if (!ups.length && downs.length > 1) for (const b of team) { delete b.after; delete b.inbox; if (b !== a && !b.isolate) dropWorktree(b) }   // deleting a lead with several downstream bees: disband the whole team
     else for (const b of downs) {
@@ -1388,6 +1388,18 @@ function roomDelete(r) {
   roomsPush()
 }
 
+// ───────── Layered memory ─────────
+// The observations and facts under a memory page. A page from before the layers is read into them the first time
+const layerOf = (root, key) => layers.load(root, key) || layers.fromPage(garden.readMemory(root, key), today())
+// → whether the page changed
+function layerWrite(root, key, l, by) {
+  layers.rank(l, key, today(), key === 'hive' ? state.agents.map(a => a.id) : null)
+  layers.save(root, key, l)
+  return garden.writeMemory(root, key, layers.render(l, key), by)
+}
+// the user wrote on a page (or restored an old one): what they wrote stands
+function layerSync(root, key, md) { const l = layers.load(root, key); if (l) { layers.syncFromPage(l, md, today()); layers.save(root, key, l) } }
+
 // ───────── Night bees ─────────
 async function nightRun(k, manual) {
   if (nightBusy.has(k)) return
@@ -1408,11 +1420,22 @@ async function nightRun(k, manual) {
     let changed, summary
     if (k === 'dreamer') {
       // every bee's memory, not only those of the bees that spoke: an idle bee's memory ages too
-      const mem = { ...memOf(), names: Object.fromEntries(state.agents.map(a => [a.id, `${a.name}, working on ${a.task}`])) }
-      for (const l of logs) if (!(l.agent.id in mem.agents)) mem.agents[l.agent.id] = ''
+      // Dreamer does not rewrite the memories: it says which observation each new fact supports, and the pages are made from the observations.
+      // Every bee's memory is gone over, not only those of the bees that spoke: an idle bee's memory ages too
+      const mem = { hive: layerOf(root, 'hive'), agents: Object.fromEntries(state.agents.map(a => [a.id, layerOf(root, a.id)])) }
       n.reviewAt = started          // set before the call: a review that fails waits for next week, it does not retry every night
-      const res = garden.parseJson(await once(garden.dreamerPrompt(mem, text, { today: today(), bees: state.agents.map(a => a.name) }), chore()))
-      changed = garden.applyMemory(root, res, state.agents); summary = res.summary
+      if (review) summary = 'Went over the memories: nothing new to read'
+      else {
+        const res = garden.parseJson(await once(layers.prompt(mem, Object.fromEntries(state.agents.map(a => [a.id, `${a.name}, working on ${a.task}`])), text, { today: today() }), chore()))
+        const got = layers.apply(mem, res, state.agents.filter(a => byId(a.id)), today())
+        summary = res.summary || (got.length ? '' : 'Nothing worth keeping in the new conversations')
+      }
+      changed = []
+      for (const [key, l] of [['hive', mem.hive], ...Object.entries(mem.agents)]) {
+        if (key !== 'hive' && !byId(key)) continue          // deleted while Dreamer was reading
+        if (!l.obs.length && !layers.load(root, key)) continue
+        if (layerWrite(root, key, l, 'Dreamer')) changed.push(key === 'hive' ? 'shared memory' : byId(key).name)
+      }
     } else {
       const have = garden.listSkills(root)
       const res = garden.parseJson(await once(garden.gardenerPrompt(have, text), chore()))
@@ -1433,6 +1456,7 @@ function gardenInfo() {
   return {
     root, skills: garden.listSkills(root), hive: garden.readMemory(root, 'hive'),
     agents: Object.fromEntries(state.agents.map(a => [a.id, garden.readMemory(root, a.id)])),
+    layers: Object.fromEntries(['hive', ...state.agents.map(a => a.id)].map(key => { const l = layers.load(root, key); return [key, l ? layers.view(l) : null] })),
     versions: Object.fromEntries(['hive', ...state.agents.map(a => a.id)].map(key => [key, garden.memoryVersions(root, key)])),
     night: state.settings.night, busy: [...nightBusy], memoryInject: state.settings.memoryInject, meta: NIGHT,
   }
@@ -2075,12 +2099,17 @@ function ipc() {
   handle('linkSkill', (name, on) => { garden.linkSkill(wsRoot(), String(name || ''), !!on); send('garden-changed') })
   handle('saveMemory', (key, md) => {
     if (key !== 'hive' && !byId(key)) throw new Error('This bee no longer exists')
-    garden.writeMemory(wsRoot(), key, String(md || '').slice(0, 200000), 'user'); send('garden-changed')
+    garden.writeMemory(wsRoot(), key, String(md || '').slice(0, 200000), 'user'); layerSync(wsRoot(), key, String(md || '').slice(0, 200000)); send('garden-changed')
+  })
+  handle('memWrong', (key, id) => {          // "This is wrong": the observation is kept as replaced, and Dreamer is told not to bring it back
+    key = String(key || ''); const root = wsRoot(), l = layers.load(root, key)
+    if (!l || !layers.reject(l, String(id || ''), today())) throw new Error('That entry is no longer there')
+    layerWrite(root, key, l, 'user'); send('garden-changed')
   })
   handle('memoryHistory', key => garden.memoryHistory(wsRoot(), String(key || '')))
   handle('restoreMemory', (key, id) => {
     if (key !== 'hive' && !byId(key)) throw new Error('This bee no longer exists')
-    garden.restoreMemory(wsRoot(), String(key || ''), String(id || '')); send('garden-changed')
+    garden.restoreMemory(wsRoot(), String(key || ''), String(id || '')); layerSync(wsRoot(), String(key || ''), garden.readMemory(wsRoot(), String(key || ''))); send('garden-changed')
   })
   handle('openGarden', kind => {
     const dir = path.join(wsRoot(), kind === 'memory' ? 'memory' : 'skills')

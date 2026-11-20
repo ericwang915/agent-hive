@@ -4,7 +4,7 @@ const $ = s => document.querySelector(s)
 let S = { agents: [], engines: [], settings: {}, max: 40, home: '', names: [], colors: [], presets: {}, maxRounds: 3, teamMax: 6, feed: [], spend: {}, night: {} }
 let view = 'hive', filter = 'all', sub = 'all', query = '', queenLine = '', queenBusy = false
 let F = null                      // hatch / settings form state
-let G = null, skillOpen = new Set(), skillEdit = null, memOpen = new Set(), memEdit = null   // Skills / Memory
+let G = null, skillOpen = new Set(), skillEdit = null, memOpen = new Set(), memEdit = null, memEv = '', memQ = '', memAll = new Set()   // Skills / Memory
 let dashDate = dayKey(), dashData = null
 
 const byId = id => S.agents.find(a => a.id === id)
@@ -800,7 +800,8 @@ function renderGarden() {
   }
   if (view === 'memory') {
     const card = (key, head, md) => {
-      const editing = memEdit === key, open = memOpen.has(key)
+      const editing = memEdit === key, open = memOpen.has(key), lay = G.layers && G.layers[key]
+      if (lay && !editing && (lay.on.length || lay.kept.length || lay.replaced.length)) return layCard(key, head, lay, open)
       return `<div class="mem${open && md && !editing ? ' open' : ''}"><div class="top">${head}${open && md && !editing ? `<span class="grow"></span>${foldBtn('mem-open', `data-k="${key}"`)}` : ''}</div>
       ${editing ? `<textarea id="mem-text" spellcheck="false">${esc(md)}</textarea><div class="acts"><button class="btn sm primary" data-act="mem-save" data-k="${key}">Save</button><button class="btn sm" data-act="mem-cancel">Cancel</button></div>`
     : `${md ? `<div class="body md${open ? '' : ' clip'}">${renderMd(md)}</div>` : '<div class="faint">Empty</div>'}
@@ -809,9 +810,57 @@ function renderGarden() {
     $('#v-memory').innerHTML = `<div class="page-head"><div class="grow"><h1 class="round">Memory</h1></div>
       <label class="check" style="align-items:center"><input type="checkbox" id="mem-inject" ${G.memoryInject ? 'checked' : ''}>Give new sessions memory and skills</label>
       <button class="btn" data-act="open-garden" data-k="memory">${ICON.folder}Folder</button></div>
-      ${nightHtml('dreamer')}<div class="sgrid">${card('hive', `<span class="mem-hive">${ICON.hive || ''}</span><b class="round">Shared memory</b><span class="faint ell" style="font-size:12px">drawn from every bee, given to every bee</span>`, G.hive)}
+      ${nightHtml('dreamer')}${memSearchHtml()}<div class="sgrid" id="mem-grid"${memQ.trim() ? ' hidden' : ''}>${card('hive', `<span class="mem-hive">${ICON.hive || ''}</span><b class="round">Shared memory</b><span class="faint ell" style="font-size:12px">drawn from every bee, given to every bee</span>`, G.hive)}
       ${S.agents.map(a => card(a.id, `<span class="dot" style="background:${esc(a.color)}"></span><b class="round">${esc(a.name)}</b><span class="faint ell" style="font-size:12px">${esc(a.task)}</span>`, G.agents[a.id] || '')).join('')}</div>`
   }
+}
+
+// ───────── Memory: the observations under a page, and the facts under those ─────────
+const mmdd = d => String(d || '').slice(5)
+const memRow = (key, o, cls = '') => `<div class="mx-row${memEv === key + ':' + o.id ? ' on' : ''} ${cls}" data-act="mem-ev" data-k="${key}" data-o="${o.id}"><span class="t">${esc(o.text)}${o.state === 'user' ? '<span class="mx-tag">yours</span>' : ''}</span><span class="n${o.n > 1 ? '' : ' one'}" title="Supported by ${o.n} fact${o.n === 1 ? '' : 's'}">×${o.n}</span><span class="d">${o.state === 'replaced' ? (o.until ? 'until ' + mmdd(o.until) : '') : o.last && o.last !== o.first ? 'confirmed ' + mmdd(o.last) : mmdd(o.first)}</span></div>`
+const memFact = f => { const a = byId(f.bee); return `<div class="e"><span class="w"><span class="dot" style="background:${esc(a ? a.color : '#C9C4BA')}"></span>${esc(f.name || (a && a.name) || 'the user')} · ${mmdd(f.t)}</span><span class="q">${f.quote ? '“' + esc(f.quote) + '”' : esc(f.text)}</span>${a && f.quote ? `<a data-act="mem-fact" data-b="${esc(f.bee)}" data-q="${esc(f.quote.slice(0, 60))}">Open chat →</a>` : ''}</div>` }
+function memEvHtml(key, o) {
+  if (memEv !== key + ':' + o.id) return ''
+  if (o.state === 'replaced') return `<div class="mx-ev old"><div class="by">${o.by ? `Replaced${o.until ? ' on ' + mmdd(o.until) : ''} by “${esc(o.by)}”${o.because ? `, after ${esc(o.because.name || 'a bee')} said: “${esc(o.because.quote)}”` : ''}` : esc(o.why || 'Replaced') + (o.until ? ' on ' + mmdd(o.until) : '')}</div>${o.facts.map(memFact).join('')}</div>`
+  const head = o.facts.length ? `Why the hive believes this · ${o.n} fact${o.n === 1 ? '' : 's'}` : o.state === 'user' ? 'You wrote this. Dreamer does not change or remove it' : 'From before the hive kept its sources'
+  return `<div class="mx-ev"><div class="h">${head}</div>${o.facts.map(memFact).join('')}${o.more ? `<div class="by">and ${o.more} earlier</div>` : ''}
+    <div class="by">First learned ${esc(o.first)}${o.last && o.last !== o.first ? ' · last confirmed ' + esc(o.last) : ''} · <a data-act="mem-wrong" data-k="${key}" data-o="${o.id}">This is wrong</a></div></div>`
+}
+function layCard(key, head, lay, open) {
+  const rows = (list, cls) => list.map(o => memRow(key, o, cls) + memEvHtml(key, o)).join('')
+  const all = memAll.has(key), kept = all ? lay.kept : lay.kept.slice(0, 5)
+  const body = open
+    ? `<div class="mx-sec">On the page · given to every new session</div>${rows(lay.on) || '<div class="faint" style="padding:6px 8px">Nothing yet</div>'}
+      ${lay.kept.length ? `<div class="mx-sec">Kept, not on the page</div>${rows(kept)}${lay.kept.length > kept.length ? `<div class="mx-row more" data-act="mem-all" data-k="${key}"><span class="t faint">${lay.kept.length - kept.length} more</span></div>` : ''}` : ''}
+      ${lay.replaced.length ? `<div class="mx-sec">Replaced</div>${rows(lay.replaced, 'old')}` : ''}`
+    : rows(lay.on.slice(0, 5)) + (lay.on.length > 5 ? `<div class="mx-row more" data-act="mem-open" data-k="${key}"><span class="t faint">${lay.on.length - 5} more</span></div>` : '')
+  return `<div class="mem lay${open ? ' open' : ''}"><div class="top">${head}<span class="faint" style="font-size:12px;white-space:nowrap">· ${lay.on.length} on the page${lay.kept.length ? ` · ${lay.kept.length} kept` : ''}</span>${open ? `<span class="grow"></span>${foldBtn('mem-open', `data-k="${key}"`)}` : ''}</div>
+    <div class="mx-list">${body}</div>
+    <div class="acts"><button class="btn sm ghost" data-act="mem-open" data-k="${key}">${open ? 'Collapse' : 'Expand'}</button><button class="btn sm ghost" data-act="mem-edit" data-k="${key}">Edit</button>${G.versions && G.versions[key] ? `<button class="btn sm ghost" data-act="mem-history" data-k="${key}" title="Earlier versions of this page">History<span class="faint" style="margin-left:5px">${G.versions[key]}</span></button>` : ''}</div></div>`
+}
+// Search goes through everything that was learned, also what is not on a page: every word has to be there
+function memSearchHtml() {
+  const L = Object.entries(G.layers || {}).filter(([, l]) => l)
+  if (!L.length) return ''
+  const facts = L.reduce((n, [, l]) => n + l.facts, 0), obs = L.reduce((n, [, l]) => n + l.obs, 0)
+  return `<div class="mx-search"><input type="text" id="mem-q" value="${esc(memQ)}" placeholder="Search everything the bees have learned, not only what is on the pages" spellcheck="false"><span class="faint">${facts} fact${facts === 1 ? '' : 's'} · ${obs} observation${obs === 1 ? '' : 's'}</span></div><div id="mem-found">${memFoundHtml()}</div>`
+}
+function memFoundHtml() {
+  const ws = memQ.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!ws.length) return ''
+  const hit = s => { s = String(s || '').toLowerCase(); return ws.every(w => s.includes(w)) }
+  const out = []
+  for (const [key, l] of Object.entries(G.layers || {})) {
+    if (!l) continue
+    const a = byId(key), title = key === 'hive' ? 'Shared memory' : a ? a.name : ''
+    if (!title) continue
+    const obs = [...l.on, ...l.kept, ...l.replaced].filter(o => hit(o.text + ' ' + o.facts.map(f => f.text + ' ' + f.quote).join(' ')))
+    const inObs = new Set(obs.flatMap(o => o.facts.map(f => f.t + f.text))), loose = l.loose.filter(f => !inObs.has(f.t + f.text) && hit(f.text + ' ' + f.quote + ' ' + f.words)).slice(-12).reverse()
+    if (!obs.length && !loose.length) continue
+    out.push(`<div class="mem lay open"><div class="top" style="position:static">${key === 'hive' ? `<span class="mem-hive">${ICON.hive || ''}</span>` : `<span class="dot" style="background:${esc(a.color)}"></span>`}<b class="round">${esc(title)}</b><span class="faint" style="font-size:12px">· ${obs.length + loose.length} found</span></div>
+      <div class="mx-list">${obs.slice(0, 30).map(o => memRow(key, o, o.state === 'replaced' ? 'old' : o.state === 'kept' ? 'kept' : '') + memEvHtml(key, o)).join('')}${loose.length ? `<div class="mx-ev" style="margin-top:6px"><div class="h">Facts</div>${loose.map(memFact).join('')}</div>` : ''}</div></div>`)
+  }
+  return out.length ? `<div class="sgrid one">${out.join('')}</div>` : '<div class="guide">Nothing found</div>'
 }
 
 // A skill is written and edited in a window of its own
@@ -1049,6 +1098,10 @@ const ACT = {
     if (await call('saveSkill', name, $('#skill-text').value)) { $('#editor').close(); toast('Saved'); loadGarden() }
   },
   'skill-del': async el => { if (confirm(`Delete ${el.dataset.n}?`) && await call('deleteSkill', el.dataset.n)) loadGarden() },
+  'mem-ev': el => { const k = el.dataset.k + ':' + el.dataset.o; memEv = memEv === k ? '' : k; if (!memQ.trim()) memOpen.add(el.dataset.k); renderGarden() },
+  'mem-all': el => { memAll.add(el.dataset.k); renderGarden() },
+  'mem-fact': el => call('openChat', el.dataset.b, '', el.dataset.q),
+  'mem-wrong': async el => { if (!confirm('Take this off the page? It is kept under Replaced, and Dreamer will not bring it back.')) return; if (await call('memWrong', el.dataset.k, el.dataset.o)) { memEv = ''; await loadGarden() } },
   'mem-open': el => { const k = el.dataset.k; memOpen.has(k) ? memOpen.delete(k) : memOpen.add(k); renderGarden() },
   'mem-edit': el => { memEdit = el.dataset.k; renderGarden(); $('#mem-text').focus() },
   'mem-cancel': () => { memEdit = null; renderGarden() },
@@ -1106,6 +1159,7 @@ document.addEventListener('click', e => {
 })
 document.addEventListener('input', e => {
   const t = e.target
+  if (t.id === 'mem-q') { memQ = t.value; $('#mem-found').innerHTML = memFoundHtml(); $('#mem-grid').hidden = !!memQ.trim(); return }
   if (t.id === 'pal-input') { palSel = 0; renderPal(); return searchMore(t.value, renderPal) }
   if (!F) return
   const k = t.id && INPUT[t.id] ? t.id : t.dataset.input
