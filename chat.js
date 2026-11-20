@@ -150,7 +150,7 @@ function addEntry(e, live) {
       const tok = e.tin || e.tout ? `${fmtTok(e.tin || 0)} in / ${fmtTok(e.tout || 0)} out` : ''
       const parts = e.interrupted ? ['Round interrupted', fmtDur(e.ms || 0)] : ['Round done', fmtDur(e.ms || 0), e.usd ? '$' + e.usd.toFixed(e.usd < 0.1 ? 3 : 2) : '', tok, e.code ? `exit ${e.code}` : e.code == null && e.signal ? e.signal : '']
       node = el('runline', `<span>${parts.filter(Boolean).map(esc).join(' · ')}</span><time>${hmTime(e.t)}</time>`)
-      if (live) { loadChanges(true); refreshFiles() }
+      if (live) { loadChanges(true); refreshFiles(); if (tab === 'media') loadMedia(true) }
       break
     }
   }
@@ -178,24 +178,27 @@ function renderHead() {
   $('#h-task').textContent = '· ' + A.task; $('#h-task').title = 'Browse files'
   $('#h-n').textContent = A.changes && A.changes.files ? A.changes.files : ''
   $('#h-pill').innerHTML = pill(A.status)
-  const b = (a, icon, title) => `<button class="btn sm icon ghost" data-h="${a}" title="${title}">${ICON[icon]}</button>`
+  const b = (a, icon, title, on) => `<button class="btn sm icon ghost${on ? ' on' : ''}" data-h="${a}" title="${title}">${ICON[icon]}</button>`
   const html = (A.status === 'running' ? b('pause', 'pause', 'Pause') : '')
     + (A.status === 'paused' || (A.needsSetup && A.status !== 'setup') || (['stopped', 'error', 'sleeping'].includes(A.status) && A.lastRunAt) ? b('continue', 'play', A.needsSetup ? 'Retry clone' : 'Resume') : '')
-    + (['running', 'paused', 'setup'].includes(A.status) ? b('stop', 'stop', 'Stop') : '') + b('side', 'folder', 'Files sidebar (⌘B)')
+    + (['running', 'paused', 'setup'].includes(A.status) ? b('stop', 'stop', 'Stop') : '') + b('term', 'terminal', 'Terminal (⌃`)', !$('#term').hidden) + b('side', 'folder', 'Files sidebar (⌘B)')
   if ($('#h-btns')._h !== html) { $('#h-btns')._h = html; $('#h-btns').innerHTML = html }
 }
 $('#h-btns').addEventListener('click', e => {
   const h = (e.target.closest('[data-h]') || {}).dataset
   if (!h) return
   if (h.h === 'side') setSide($('#tree').hidden)
+  else if (h.h === 'term') toggleTerm()
   else if (h.h === 'stop') { if (confirm(`Stop ${A.name}?`)) act('stop') }
   else act(h.h)
 })
 function setTab(t) {
   tab = t
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t))
-  for (const k of ['chat', 'changes', 'files']) $('#pane-' + k).hidden = t !== k
+  for (const k of ['chat', 'changes', 'files', 'media']) $('#pane-' + k).hidden = t !== k
+  if (t !== 'media') stopMedia()
   if (t === 'changes') loadChanges()
+  else if (t === 'media') loadMedia()
   else if (t === 'files') setSide(true)
   else $('#input').focus()
 }
@@ -655,8 +658,9 @@ const SLASH = [
   ['/stop', 'Stop', () => act('stop')],
   ['/diff', 'View changes', () => setTab('changes')],
   ['/files', 'Browse files', () => setTab('files')],
+  ['/media', 'Pictures, documents, pages, video and audio in the folder', () => setTab('media')],
   ['/attach', 'Attach file', pickFiles],
-  ['/term', 'Open terminal', () => call('terminal', ID)],
+  ['/term', 'Show or hide the terminal', () => toggleTerm()],
 ]
 let slashSel = 0, slashList = []
 function runSlash(text) {
@@ -870,6 +874,10 @@ document.addEventListener('keydown', e => {
   if (e.metaKey && e.key === '1') { e.preventDefault(); setTab('chat') }
   if (e.metaKey && e.key === '2') { e.preventDefault(); setTab('changes') }
   if (e.metaKey && e.key === '3') { e.preventDefault(); setTab('files') }
+  if (e.metaKey && e.key === '4') { e.preventDefault(); setTab('media') }
+  if (e.ctrlKey && !e.metaKey && e.code === 'Backquote') { e.preventDefault(); return void (e.shiftKey ? (showTerm(true), newTerm()) : toggleTerm()) }
+  if (e.target.closest && e.target.closest('#term')) return          // keys typed in the terminal belong to the shell
+  if (e.key === 'Escape' && tab === 'media' && !e.defaultPrevented && !$('#ctx')) { e.preventDefault(); if (M.cur) closeMedia(); else setTab('chat') }
   if (e.metaKey && e.key === 'b') { e.preventDefault(); setSide($('#tree').hidden) }
   // Esc leaves the file and goes back to the conversation, unless it is closing something smaller first
   if (e.key === 'Escape' && tab === 'files' && !e.defaultPrevented && !$('#ctx') && !(e.target.closest && e.target.closest('#tree input, #v-find')) && !($('#v-find') && !$('#v-find').hidden)) { e.preventDefault(); setTab('chat') }
@@ -897,12 +905,196 @@ function findInChat(q) {
   if (el) el.scrollIntoView({ block: 'center' })
 }
 
+// ───────── Media ─────────
+// Everything in the folder that is meant to be looked at or listened to, newest first. cur: the one being previewed
+const M = { data: null, kind: 'all', cur: null }
+const MKINDS = [['all', 'All'], ['image', 'Images'], ['video', 'Video'], ['audio', 'Audio'], ['web', 'Web pages'], ['doc', 'Docs']]
+const extOf = p => (/\.([A-Za-z0-9]{1,8})$/.exec(p) || ['', ''])[1].toLowerCase()
+const mUrl = m => fileUrl(m.abs) + '?' + Math.round(m.mtime)          // a re-made file shows, not the cached one
+async function loadMedia(quiet) {
+  if (!M.data && !quiet) renderMedia()
+  let r = null
+  try { r = await hive.call('media', ID) } catch {}
+  if (!r || !r.items) { if (!quiet) toast((r && r.error) || 'Could not read the folder', 'err'); return }
+  M.data = r
+  if (M.cur) { const again = r.items.find(m => m.rel === M.cur.rel); if (!again) M.cur = null; else if (again.mtime === M.cur.mtime) return; else M.cur = again }
+  renderMedia()
+}
+function mediaCard(m, i) {
+  const ext = extOf(m.rel)
+  const thumb = m.kind === 'image' ? `<img loading="lazy" src="${esc(mUrl(m))}" alt="">`
+    : m.kind === 'video' ? `<video preload="metadata" muted src="${esc(mUrl(m))}#t=0.1"></video><span class="badge">${ICON.play}</span>`
+      : `<span class="ext">${esc(ext)}</span>`
+  return `<button class="mcard" data-m="${i}" title="${esc(m.rel)}"><div class="mthumb k-${m.kind}">${thumb}${m.kind === 'image' || m.kind === 'video' ? `<span class="badge r">${esc(ext)}</span>` : ''}</div>
+    <div class="mcap"><b>${esc(baseOf(m.rel))}</b><span>${esc([parentOf(m.rel), fmtSize(m.size), ago(m.mtime)].filter(Boolean).join(' · '))}</span></div></button>`
+}
+function renderMedia() {
+  const el = $('#media'), d = M.data
+  if (M.cur) return renderMediaView()
+  if (!d) { el.innerHTML = '<div class="note">Looking through the folder…</div>'; return }
+  const n = k => (k === 'all' ? d.items.length : d.items.filter(m => m.kind === k).length)
+  if (M.kind !== 'all' && !n(M.kind)) M.kind = 'all'
+  M.shown = d.items.filter(m => M.kind === 'all' || m.kind === M.kind)
+  const chips = MKINDS.filter(([k]) => k === 'all' || n(k)).map(([k, label]) => `<button class="mchip${M.kind === k ? ' on' : ''}" data-mk="${k}">${label} <span class="n">${n(k)}</span></button>`).join('')
+  el.innerHTML = `<div class="mbar">${chips}<span class="grow"></span><button class="btn sm ghost" data-mv="refresh">Refresh</button></div>`
+    + (d.items.length ? `<div class="mgrid">${M.shown.map(mediaCard).join('')}${d.more ? `<div class="mfoot">Showing the newest ${d.items.length}. ${d.more} older ones are not listed</div>` : ''}</div>`
+      : '<div class="note">No pictures, documents, web pages, video or audio in this folder yet</div>')
+}
+async function renderMediaView() {
+  const el = $('#media'), m = M.cur, ext = extOf(m.rel)
+  const asText = m.kind === 'doc' && ['md', 'markdown', 'txt', 'csv', 'tsv'].includes(ext), inFiles = m.kind === 'image' || m.kind === 'web' || asText
+  const bar = `<div class="vbar"><button class="btn sm ghost vback" data-mv="back" title="Back to the list (Esc)">← Media</button><span class="grow ell" title="${esc(m.abs)}">${esc(m.rel)}</span><span class="sz">${fmtSize(m.size)}</span>`
+    + (inFiles ? `<button class="btn sm ghost" data-mv="files" title="Open in the Files tab">${m.kind === 'image' ? 'In Files' : 'Edit'}</button>` : '') + `<button class="btn sm" data-mv="open" title="Open in its own app">Open</button><button class="btn sm icon ghost" data-mv="reveal" title="Show in Finder">${ICON.finder}</button></div>`
+  let body = ''
+  if (m.kind === 'image') body = `<div class="stage"><div class="vimg"><img src="${esc(mUrl(m))}" alt=""></div></div>`
+  else if (m.kind === 'video') body = `<div class="stage"><video controls src="${esc(mUrl(m))}"></video></div>`
+  else if (m.kind === 'audio') body = `<div class="stage"><audio controls src="${esc(mUrl(m))}"></audio></div>`
+  else if (m.kind === 'web') body = `<iframe sandbox="allow-scripts" src="${esc(mUrl(m))}"></iframe>`          // the page runs on its own: no access to this window, links do not leave it
+  else if (asText) {
+    const r = await hive.call('readFile', ID, m.rel).catch(() => null)
+    if (M.cur !== m) return
+    if (!r || r.kind !== 'text') body = '<div class="note">This file could not be read as text. Use Open to see it in its own app</div>'
+    else body = (ext === 'md' || ext === 'markdown' ? `<div class="mdoc md">${renderMd(r.text, parentOf(m.abs), S.home)}</div>` : `<pre class="mdoc">${esc(r.text)}</pre>`) + (r.cut ? '<div class="note">Only the first 400 KB is shown</div>' : '')
+  } else body = `<div class="note">${esc(ext.toUpperCase())} files are not previewed here. Use Open to see it in its own app</div>`
+  el.innerHTML = `${bar}<div class="mview">${body}</div>`
+}
+// Leaving a preview stops whatever is playing
+function stopMedia() { document.querySelectorAll('#media video, #media audio').forEach(v => { try { v.pause() } catch {} }) }
+function closeMedia() { stopMedia(); M.cur = null; renderMedia() }
+$('#media').addEventListener('click', e => {
+  const k = e.target.closest('[data-mk]'), c = e.target.closest('[data-m]'), v = (e.target.closest('[data-mv]') || { dataset: {} }).dataset.mv
+  if (k) { M.kind = k.dataset.mk; return renderMedia() }
+  if (c) { M.cur = M.shown[+c.dataset.m] || null; return renderMedia() }
+  if (v === 'refresh') return void loadMedia()
+  if (!M.cur) return
+  const m = M.cur
+  if (v === 'back') closeMedia()
+  else if (v === 'open') call('openMedia', ID, m.rel)
+  else if (v === 'reveal') call('revealPath', ID, m.rel)
+  else if (v === 'files') { stopMedia(); showPath(m.rel, false) }
+})
+
+// ───────── Terminal panel ─────────
+// Shells in the bee's folder, under the conversation. Hiding the panel keeps them running; closing a tab ends that shell
+const T = { list: [], cur: '', timer: 0 }
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+const termTheme = () => ({ background: cssVar('--c-box'), foreground: cssVar('--c-text'), cursor: cssVar('--c-text'), cursorAccent: cssVar('--c-box'), selectionBackground: 'rgba(217, 119, 87, .3)',
+  green: cssVar('--c-ok'), yellow: cssVar('--c-wait'), red: cssVar('--c-err'), magenta: cssVar('--c-relay-ink'), brightBlack: cssVar('--c-faint') })
+const curTerm = () => T.list.find(t => t.tid === T.cur)
+function fitTerm() {
+  const t = curTerm()
+  if (!t || $('#term').hidden) return
+  try { t.fit.fit() } catch {}
+  if (t.cols !== t.x.cols || t.rows !== t.x.rows) { t.cols = t.x.cols; t.rows = t.x.rows; hive.call('termResize', ID, t.tid, t.cols, t.rows) }
+}
+function addTerm(tid, title, buf) {
+  const el = document.createElement('div'); el.className = 'tx'; $('#t-scr').appendChild(el)
+  const x = new Terminal({ fontFamily: '"JetBrains Mono", Menlo, monospace', fontSize: 12.5, lineHeight: 1.25, cursorBlink: true, scrollback: 5000, macOptionIsMeta: true, theme: termTheme(), allowProposedApi: false })
+  const fit = new FitAddon.FitAddon(); x.loadAddon(fit); x.open(el)
+  x.attachCustomKeyEventHandler(e => !(e.ctrlKey && e.code === 'Backquote'))          // ⌃` is ours: it hides the panel
+  x.onData(d => hive.call('termWrite', ID, tid, d))
+  if (buf) x.write(buf)
+  T.list.push({ tid, x, fit, el, title: title || 'shell', busy: false })
+  pickTerm(tid)
+}
+async function newTerm() {
+  const r = await call('termNew', ID, 80, 24)
+  if (r && r.tid) addTerm(r.tid)
+}
+function pickTerm(tid) {
+  T.cur = tid
+  for (const t of T.list) t.el.hidden = t.tid !== tid
+  renderTermTabs()
+  requestAnimationFrame(() => { fitTerm(); const t = curTerm(); if (t && !$('#term').hidden) t.x.focus() })
+}
+function dropTerm(tid) {
+  const i = T.list.findIndex(t => t.tid === tid)
+  if (i < 0) return
+  const [t] = T.list.splice(i, 1)
+  try { t.x.dispose() } catch {} t.el.remove()
+  if (!T.list.length) { T.cur = ''; return showTerm(false) }
+  if (T.cur === tid) pickTerm(T.list[Math.min(i, T.list.length - 1)].tid); else renderTermTabs()
+}
+function renderTermTabs() {
+  $('#t-tabs').innerHTML = T.list.map(t => `<button class="tab${t.tid === T.cur ? ' on' : ''}${t.busy ? ' busy' : ''}" data-tt="${t.tid}" title="${t.busy ? esc(t.title) + ' is running' : 'Idle'}"><i></i><span class="nm">${esc(t.title)}</span><span class="x" data-tx="${t.tid}" title="Close this terminal">✕</span></button>`).join('')
+}
+async function pollTerms() {
+  if ($('#term').hidden || !T.list.length) return
+  const list = await hive.call('termInfo', ID).catch(() => null)
+  if (!Array.isArray(list)) return
+  let changed = false
+  for (const i of list) { const t = T.list.find(x => x.tid === i.tid); if (t && (t.title !== i.title || t.busy !== i.busy)) { t.title = i.title; t.busy = i.busy; changed = true } }
+  if (changed) renderTermTabs()
+}
+function showTerm(on) {
+  const el = $('#term')
+  if (!on) $('#col').classList.remove('term-max')
+  el.hidden = !on
+  try { localStorage.setItem('hive-term', on ? '1' : '0') } catch {}
+  $('#h-btns')._h = ''; renderHead()
+  clearInterval(T.timer)
+  if (!on) return void input.focus()
+  T.timer = setInterval(pollTerms, 1500)
+  $('#t-cwd').textContent = tilde(A.sessionCwd || A.workspace || '', S.home)
+  if (!T.list.length) newTerm(); else pickTerm(T.cur || T.list[0].tid)
+}
+// ⌃`: show and focus; when the terminal already has the keyboard, hide
+function toggleTerm() {
+  const el = $('#term'), inside = !el.hidden && el.contains(document.activeElement)
+  if (el.hidden) showTerm(true)
+  else if (inside || !curTerm()) showTerm(false)
+  else curTerm().x.focus()
+}
+// A reloaded window finds its shells still running
+async function restoreTerms() {
+  const list = await hive.call('termList', ID).catch(() => null)
+  if (!Array.isArray(list) || !list.length) return
+  let open = '0'
+  try { open = localStorage.getItem('hive-term') || '0' } catch {}
+  for (const t of list) addTerm(t.tid, t.title, t.buf)
+  if (open === '1') showTerm(true)
+}
+{
+  const ic2 = d => ic(d)
+  $('#t-new').innerHTML = ICON.plus; $('#t-hide').innerHTML = ICON.x
+  $('#t-send').innerHTML = ic2('<path d="M8 12.5V4M4.5 7.5L8 4l3.5 3.5"/>'); $('#t-ext').innerHTML = ic2('<path d="M9.5 3H13v3.5M13 3L7.5 8.5M11.5 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1h2.5"/>')
+  $('#t-max').innerHTML = ic2('<path d="M4 10l4-4 4 4"/>')
+  let h = 250
+  try { h = +localStorage.getItem('hive-term-h') || 250 } catch {}
+  $('#term').style.height = h + 'px'
+  $('#t-grip').addEventListener('mousedown', e => {
+    e.preventDefault()
+    const y0 = e.clientY, h0 = $('#term').offsetHeight
+    const move = ev => { $('#term').style.height = Math.max(90, Math.min(h0 + y0 - ev.clientY, innerHeight - 220)) + 'px' }
+    const up = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); try { localStorage.setItem('hive-term-h', $('#term').offsetHeight) } catch {} }
+    addEventListener('mousemove', move); addEventListener('mouseup', up)
+  })
+  new ResizeObserver(() => fitTerm()).observe($('#t-scr'))
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { for (const t of T.list) t.x.options.theme = termTheme() })
+  $('#term .tbar').addEventListener('click', e => {
+    const x = e.target.closest('[data-tx]'), tt = e.target.closest('[data-tt]'), b = (e.target.closest('[data-t]') || { dataset: {} }).dataset.t
+    if (x) return void hive.call('termClose', ID, x.dataset.tx).then(() => dropTerm(x.dataset.tx))
+    if (tt) return pickTerm(tt.dataset.tt)
+    if (b === 'new') newTerm()
+    else if (b === 'hide') showTerm(false)
+    else if (b === 'ext') call('terminal', ID)
+    else if (b === 'max') { const on = $('#col').classList.toggle('term-max'); $('#t-max').title = on ? 'Restore' : 'Maximize'; $('#t-max').style.transform = on ? 'rotate(180deg)' : '' }
+    else if (b === 'send') {
+      const sel = curTerm() ? curTerm().x.getSelection().replace(/[ \t]+$/gm, '').trim() : ''
+      if (!sel) return toast('Select some text in the terminal first')
+      $('#col').classList.remove('term-max')
+      input.value = (input.value ? input.value.replace(/\n*$/, '\n\n') : '') + '```\n' + sel + '\n```\n'
+      input.dispatchEvent(new Event('input', { bubbles: true })); input.focus()
+    }
+  })
+}
+
 // ───────── Boot ─────────
 async function boot() {
   S = await hive.call('init')
   A = S.agents.find(a => a.id === ID)
   if (!A) { document.body.innerHTML = '<div class="note" style="padding:80px;text-align:center">This bee is gone</div>'; return }
-  const TABS = ['chat', 'changes', 'files'], tab0 = new URLSearchParams(location.search).get('tab')
+  const TABS = ['chat', 'changes', 'files', 'media'], tab0 = new URLSearchParams(location.search).get('tab')
   if (tab0 !== 'chat' && TABS.includes(tab0)) setTab(tab0)
   const log = await hive.call('log', ID)
   if (Array.isArray(log) && log.length) log.forEach(e => addEntry(e, false))
@@ -925,6 +1117,10 @@ async function boot() {
   })
   hive.on('entry', ({ id, entry }) => { if (id === ID) addEntry(entry, true) })
   hive.on('partial', p => { if (p.id === ID) setLive(p.end ? null : p) })
+  hive.on('toggleTerm', () => toggleTerm())
+  hive.on('term', ({ tid, data }) => { const t = T.list.find(x => x.tid === tid); if (t) t.x.write(data) })
+  hive.on('termExit', tid => dropTerm(tid))
+  restoreTerms()
   hive.on('tab', t => setTab(TABS.includes(t) ? t : 'chat'))
   hive.on('find', q => findInChat(q))
   hive.on('file', p => openFromOutside(p))

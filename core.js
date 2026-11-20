@@ -29,30 +29,36 @@ function parseInit(o) {
   })
   return { servers, skills: (Array.isArray(o.skills) ? o.skills : []).map(String).sort() }
 }
+// Is the approval card attached to this run? For "ask", and for a bee that uses the user's Chrome at every level
+const card = (a, ctx) => !!(ctx && ctx.mcp && (a.permission === 'ask' || a.chrome))
 const ENGINES = {
   claude: {
-    label: 'Claude Code', cmd: 'claude', models: ['claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
+    label: 'Claude Code', cmd: 'claude', install: 'curl -fsSL https://claude.ai/install.sh | bash', url: 'https://code.claude.com/docs/en/setup', models: ['claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
     // Exact versions, so the button says what runs; the aliases opus / sonnet / haiku / fable still work when typed
     names: { 'claude-fable-5-2': 'Fable 5.2', 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' },
     args: (a, p, ctx = {}) => ['-p', p, '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--disallowedTools', [HEADLESS_OFF, ...(a.noMcp ? [] : a.mcpOff || []).map(mcpPrefix)].join(','), '--append-system-prompt', BEE_SYS, ...m('--model', a),
-      ...(a.permission === 'full' ? ['--dangerously-skip-permissions']
-        : a.permission === 'plan' ? ['--permission-mode', 'plan']
-        : ['--permission-mode', 'acceptEdits',
-          ...(a.permission === 'ask' && ctx.mcp ? ['--mcp-config', ctx.mcp, '--permission-prompt-tool', 'mcp__hive__approve'] : [])]),
+      // ctx.mcp: the approval card is attached. Always for "ask"; for a bee that uses the user's Chrome at every level, since each browser action
+      // waits for an OK. Such a bee cannot skip permissions outright: with full access the app allows everything but the browser itself
+      ...(a.permission === 'full' && !card(a, ctx) ? ['--dangerously-skip-permissions']
+        : ['--permission-mode', a.permission === 'plan' ? 'plan' : 'acceptEdits',
+          ...(card(a, ctx) ? ['--mcp-config', ctx.mcp, '--permission-prompt-tool', 'mcp__hive__approve'] : [])]),
       // no skills: Claude Code's skills and slash commands are left out. Not for a command such as /compact, which this flag would also switch off
       ...(a.noSkills && !String(p).startsWith('/') ? ['--disable-slash-commands'] : []),
+      // the user's own Chrome, through the Claude in Chrome extension.
+      // An "ask" rule for the whole browser server: Claude Code would otherwise let most of its tools through without a question
+      ...(a.chrome ? ['--chrome', '--settings', '{"permissions":{"ask":["mcp__claude-in-chrome"]}}'] : []),
       // built-in tools only: leave out the MCP servers from the user's own Claude Code setup (their tool lists ride along on every round)
-      ...(a.noMcp ? ['--strict-mcp-config', ...(a.permission === 'ask' && ctx.mcp ? [] : ['--mcp-config', '{"mcpServers":{}}'])] : []),
+      ...(a.noMcp ? ['--strict-mcp-config', ...(card(a, ctx) ? [] : ['--mcp-config', '{"mcpServers":{}}'])] : []),
       ...(a.sessionId ? ['--resume', a.sessionId] : [])],
   },
   codex: {
-    label: 'Codex CLI', cmd: 'codex', models: ['gpt-5.3-codex', 'gpt-5.2'],
+    label: 'Codex CLI', cmd: 'codex', install: 'npm install -g @openai/codex', url: 'https://github.com/openai/codex', models: ['gpt-5.3-codex', 'gpt-5.2'],
     args: (a, p) => ['exec', '--json', '--skip-git-repo-check', ...m('-m', a),
       ...(a.permission === 'full' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write']),
       ...(a.sessionId ? ['resume', a.sessionId] : []), p],
   },
   gemini: {
-    label: 'Gemini CLI', cmd: 'gemini', models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+    label: 'Gemini CLI', cmd: 'gemini', install: 'npm install -g @google/gemini-cli', url: 'https://github.com/google-gemini/gemini-cli', models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
     // The folder is trusted through the environment: --skip-trust only exists from 0.39 on, and older versions stop at an option they do not know
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' },
     args: (a, p) => ['-p', p, '-o', 'stream-json', ...m('-m', a),
@@ -61,7 +67,7 @@ const ENGINES = {
   },
   'cursor-agent': {
     // Cursor now installs its CLI as "agent"; "cursor-agent" is the older name. --trust: a headless run cannot answer the workspace-trust question
-    label: 'Cursor Agent', cmd: 'cursor-agent', alt: ['agent'], models: [],
+    label: 'Cursor Agent', cmd: 'cursor-agent', alt: ['agent'], install: 'curl https://cursor.com/install -fsS | bash', url: 'https://cursor.com/docs/cli/installation', models: [],
     args: (a, p) => ['-p', p, '--output-format', 'stream-json', '--trust', ...m('--model', a),
       ...(a.permission === 'full' ? ['--force'] : []),
       ...(a.sessionId ? ['--resume', a.sessionId] : [])],
@@ -69,7 +75,7 @@ const ENGINES = {
   grok: { label: 'Grok CLI', cmd: 'grok', template: 'grok -p {prompt}' },
   // Antigravity's CLI. Without full access it edits files but cannot run commands: a headless run has nobody to ask
   antigravity: {
-    label: 'Antigravity', cmd: 'agy', models: [],
+    label: 'Antigravity', cmd: 'agy', url: 'https://antigravity.google/docs/getting-started?tab=cli', models: [],
     args: (a, p) => ['-p', p, '--output-format', 'stream-json', ...m('--model', a),
       ...(a.permission === 'full' ? ['--dangerously-skip-permissions'] : ['--mode', 'accept-edits']),
       ...(a.sessionId ? ['--conversation', a.sessionId] : [])],
@@ -104,6 +110,13 @@ function command(a, prompt, ctx) {
   return { cmd: out[0], args: out.slice(1) }
 }
 
+// How to get an engine that is not there, as one line for an error message
+function howTo(id) {
+  const e = ENGINES[id]
+  if (!e || !(e.install || e.url)) return ''
+  const how = e.install ? `run this in Terminal: ${e.install}${e.url ? ` (more: ${e.url})` : ''}` : `see ${e.url}`
+  return `To install ${e.label}, ${how}. Then run \`${binOf(e)}\` once in Terminal to sign in, and try again`
+}
 const cmdOf = a => { const e = ENGINES[a.engine] || {}; return e.args ? binOf(e) : String(a.template || e.template || '').trim().split(/\s+/)[0] || '' }
 const validModel = s => s === '' || s == null || (/^[\w.:/[\]=,-]+$/.test(s) && !s.startsWith('-'))
 
@@ -543,7 +556,7 @@ function pickName(used = [], rnd = Math.random) {
 }
 
 module.exports = { HEADLESS_OFF, BEE_SYS, mcpPrefix, parseInit,
-  MAX_ROUNDS, TEAM_MAX, clipReply, ENGINES, command, templateArgs, cmdOf, binOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
+  MAX_ROUNDS, TEAM_MAX, clipReply, ENGINES, command, howTo, templateArgs, cmdOf, binOf, validModel, onPath, slotKey, usageOf, contextOf, compactWhy, kTok, snippet, BIG, makeParser, descOf,
   PRESETS, relayPrompt, verdictOf, feedbackPrompt, relayPlan,
   EMPTY_TREE, git, tryGit, repoInfo, headOf, snapshot, syncWorktree, worktreeDiff, wtPath,
   validGitUrl, validBranch, gitSteps, gitPlanText, sameUrl, parseRemote, prUrl, repoLabel,

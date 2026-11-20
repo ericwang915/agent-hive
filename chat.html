@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https: file:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https: file:; media-src file:; frame-src file:">
 <title>Agent Hive</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="style.css">
 <style>
 /* Chat window palette (light and dark) */
@@ -205,6 +206,56 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 .mvar { border: 0; background: transparent; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; color: var(--c-dim) }
 .mvar:hover { color: var(--c-text) }
 .mvar.on { background: var(--c-box); color: var(--c-accent); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .12) }
+/* Media */
+#pane-media:not([hidden]) { display: flex; overflow: hidden }
+#media { flex: 1; min-width: 0; display: flex; flex-direction: column }
+.mbar { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--c-line) }
+.mchip { border: 1px solid var(--c-line); background: transparent; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; color: var(--c-dim); display: inline-flex; align-items: center; gap: 5px }
+.mchip:hover { color: var(--c-text) }
+.mchip.on { background: var(--c-text); border-color: var(--c-text); color: var(--c-bg); font-weight: 600 }
+.mchip .n { opacity: .65; font-variant-numeric: tabular-nums }
+.mgrid { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; align-content: start }
+.mcard { border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-box); overflow: hidden; cursor: pointer; padding: 0; text-align: left; display: flex; flex-direction: column; min-width: 0 }
+.mcard:hover { border-color: var(--c-accent) }
+.mthumb { position: relative; height: 110px; background: var(--c-code); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--c-dim) }
+.mthumb img, .mthumb video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none }
+.mthumb .ext { font: 700 15px var(--mono); letter-spacing: .04em; text-transform: uppercase }
+.mthumb.k-web .ext { color: var(--c-relay-ink) } .mthumb.k-audio .ext { color: var(--c-ok) } .mthumb.k-video .ext { color: var(--c-accent) }
+.mthumb .badge { position: absolute; left: 6px; bottom: 6px; font: 600 10px var(--mono); text-transform: uppercase; padding: 2px 5px; border-radius: 4px; background: rgba(0, 0, 0, .6); color: #fff }
+.mthumb .badge.r { left: auto; right: 6px }
+.mthumb .badge .ic { width: 10px; height: 10px; display: block }
+.mcap { padding: 7px 9px 8px; min-width: 0 }
+.mcap b { display: block; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.mcap span { display: block; font-size: 11px; color: var(--c-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px }
+.mfoot { grid-column: 1 / -1; color: var(--c-faint); font-size: 12px; text-align: center; padding: 6px }
+.mview { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column }
+.mview .stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 22px }
+.mview video { max-width: 100%; max-height: 100%; border-radius: 8px; background: #000 }
+.mview audio { width: min(520px, 100%) }
+.mview iframe { flex: 1; width: 100%; border: 0; background: #fff }
+.mview .mdoc { padding: 18px 26px 40px; max-width: 860px; width: 100%; margin: 0 auto; user-select: text; font-size: 14px }
+.mview pre.mdoc { font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; max-width: none }
+/* Terminal panel */
+#term { flex: none; height: 250px; min-height: 90px; display: flex; flex-direction: column; border-top: 1px solid var(--c-line); background: var(--c-box); position: relative }
+#term .grip { position: absolute; top: -3px; left: 0; right: 0; height: 6px; cursor: row-resize; z-index: 2 }
+#term .tbar { flex: none; height: 32px; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--c-line); background: var(--c-head) }
+#term .tt { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--c-dim); margin-right: 10px; flex: none }
+#t-tabs { display: flex; gap: 2px; min-width: 0; overflow: hidden }
+#term .tab { border: 0; background: transparent; height: 22px; padding: 0 4px 0 9px; border-radius: 6px; font: 12px var(--mono); color: var(--c-dim); display: inline-flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer }
+#term .tab.on { background: var(--c-box); color: var(--c-text); box-shadow: 0 1px 2px rgba(0, 0, 0, .08) }
+#term .tab i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--c-ok) }
+#term .tab.busy i { background: var(--c-wait) }
+#term .tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px }
+#term .tab .x { opacity: .45; font-size: 10px; padding: 2px 4px; border-radius: 4px }
+#term .tab .x:hover { opacity: 1; background: var(--c-line) }
+#term .cwd { font: 11.5px var(--mono); color: var(--c-faint); margin-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+#t-scr { flex: 1; min-height: 0; padding: 6px 0 4px 12px; overflow: hidden }
+#t-scr .tx { width: 100%; height: 100% }
+#t-scr .xterm-viewport { background: transparent !important }
+#col.term-max > .pane, #col.term-max > #foot { display: none }
+#col.term-max > #term { flex: 1; height: auto !important; border-top: 0 }
+#col.term-max > #term .grip { display: none }
+#h-btns .btn.on { background: color-mix(in srgb, var(--c-accent) 16%, transparent); color: var(--c-accent) }
 #slash { left: 22px }
 .menu .mi.f code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text) }
 #perm-menu { min-width: 300px }
@@ -216,7 +267,7 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 <body>
 <header id="head">
   <span id="h-bee"></span><b id="h-name" class="round ell"></b><span id="h-rank"></span><span id="h-task" class="ell"></span>
-  <div class="tabs"><button data-tab="chat" class="on" title="⌘1">Chat</button><button data-tab="changes" title="⌘2">Changes <span class="n" id="h-n"></span></button><button data-tab="files" title="⌘3">Files</button></div>
+  <div class="tabs"><button data-tab="chat" class="on" title="⌘1">Chat</button><button data-tab="changes" title="⌘2">Changes <span class="n" id="h-n"></span></button><button data-tab="files" title="⌘3">Files</button><button data-tab="media" title="⌘4">Media</button></div>
   <span class="grow"></span><span id="h-pill"></span><div id="h-btns"></div>
 </header>
 <div id="main">
@@ -225,6 +276,7 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
 <div class="pane" id="pane-chat"><div id="tl"></div></div>
 <div class="pane" id="pane-changes" hidden><div id="changes"></div></div>
 <div class="pane" id="pane-files" hidden><section id="view"></section></div>
+<div class="pane" id="pane-media" hidden><section id="media"></section></div>
 <footer id="foot">
   <div id="approvals"></div>
   <div class="menu" id="slash" hidden></div>
@@ -246,10 +298,17 @@ details.file[open] summary { border-bottom: 1px solid var(--c-line) }
   </div>
   <div id="hint"></div>
 </footer>
+<section id="term" hidden>
+  <div class="grip" id="t-grip"></div>
+  <div class="tbar"><span class="tt">Terminal</span><div id="t-tabs"></div><button class="btn sm icon ghost" data-t="new" title="New terminal (⌃⇧`)" id="t-new"></button><span class="grow"></span><span class="cwd" id="t-cwd"></span><button class="btn sm icon ghost" data-t="send" title="Put the selected text into the message box" id="t-send"></button><button class="btn sm icon ghost" data-t="ext" title="Open Terminal.app in this folder" id="t-ext"></button><button class="btn sm icon ghost" data-t="max" title="Maximize" id="t-max"></button><button class="btn sm icon ghost" data-t="hide" title="Hide (⌃`)" id="t-hide"></button></div>
+  <div id="t-scr"></div>
+</section>
 </div>
 </div>
 <script src="node_modules/marked/marked.min.js"></script>
 <script src="node_modules/dompurify/dist/purify.min.js"></script>
+<script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script src="team.js"></script>
 <script src="common.js"></script>
 <script src="chat.js"></script>

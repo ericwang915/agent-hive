@@ -374,13 +374,13 @@ function openHatch(pre = {}) {
   F = a ? {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
     sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, event: { ...{ type: 'commit', branch: '', remote: false, what: ['pr'], ids: [], on: 'done', cooldown: 5 }, ...(a.schedule.event || {}) }, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}), asDaily: !!onlyOf(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : a.schedule) },
-    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [], noSkills: !!a.noSkills,
+    sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [], noSkills: !!a.noSkills, chrome: !!a.chrome,
     after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
     mode: 'create', name: '', task: '', taskTouched: false, wsCustom: '', gitUrl: '', gitBranch: '',
     color: S.colors.find(c => !usedColors.has(c)) || S.colors[S.agents.length % S.colors.length], engine: firstInstalled(), model: '', template: '', prompt: '',
     sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, event: { type: 'commit', branch: '', remote: false, what: ['pr'], ids: [], on: 'done', cooldown: 5 } },
-    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [], noSkills: false,
+    sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [], noSkills: false, chrome: false,
     after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false }, engineTouched: false,
   }
   if (!a) {
@@ -413,7 +413,7 @@ function buildForm() {
     <div class="field" id="sec-ws"></div>
     <div class="field" id="sec-git"></div>
     <div class="field"><div class="lab">Color</div><div class="swatches" id="sec-color"></div></div>
-    <div class="field"><div class="lab">Engine</div><div class="engines" id="sec-engine"></div><div id="sec-model" style="margin-top:10px"></div></div>
+    <div class="field"><div class="lab">Engine</div><div class="engines" id="sec-engine"></div><div id="sec-install"></div><div id="sec-model" style="margin-top:10px"></div></div>
     <div class="field"><div class="lab">Prompt <span class="opt">optional, required for schedules</span></div><textarea id="f-prompt" rows="4" placeholder="What should it do">${esc(F.prompt)}</textarea></div>
     <div class="two">
       <div class="field"><div class="lab">Schedule</div><div id="sec-sched"></div></div>
@@ -528,7 +528,12 @@ function updGit() {
 }
 
 function updEngine() {
-  $('#sec-engine').innerHTML = S.engines.map(e => `<button type="button" class="engine${F.engine === e.id ? ' on' : ''}${e.installed && !e.custom ? ' ok' : ''}" data-act="f-engine" data-e="${e.id}" ${e.installed ? '' : 'disabled'}><b>${esc(e.label)}</b><span>${e.custom ? 'Your own CLI' : e.installed ? 'Installed' : 'Not found'}</span></button>`).join('')
+  $('#sec-engine').innerHTML = S.engines.map(e => `<button type="button" class="engine${F.engine === e.id ? ' on' : ''}${e.installed && !e.custom ? ' ok' : ''}" data-act="f-engine" data-e="${e.id}" ${e.installed ? '' : `disabled title="${esc(e.install ? 'Not found. Install: ' + e.install : e.url ? 'Not found. See ' + e.url : 'Not found on this Mac')}"`}><b>${esc(e.label)}</b><span>${e.custom ? 'Your own CLI' : e.installed ? 'Installed' : 'Not found'}</span></button>`).join('')
+  // nothing to run a bee on: say how to get the first CLI, before a run fails for the lack of one
+  const none = !S.engines.some(x => x.installed && !x.custom), cc = eng('claude')
+  $('#sec-install').innerHTML = none ? `<div class="hint warn" style="margin-top:10px">No agent CLI was found on this Mac, so a bee has nothing to run on. To install Claude Code, run this in Terminal, then run <code>claude</code> once to sign in:
+    <div class="row" style="margin:6px 0"><code class="grow" style="user-select:all">${esc(cc.install)}</code><button type="button" class="btn sm" data-act="copy-install">Copy</button><button type="button" class="btn sm" data-act="recheck">Check again</button></div>
+    <a href="${esc(cc.url)}" target="_blank" rel="noreferrer">Other ways to install</a>${S.engines.filter(x => x.url && x.id !== 'claude').map(x => ` · <a href="${esc(x.url)}" target="_blank" rel="noreferrer">${esc(x.label)}</a>`).join('')}</div>` : ''
   const e = eng(F.engine), el = $('#sec-model')
   if (e.template !== null) {
     if (!F.template) F.template = e.template || ''
@@ -600,18 +605,21 @@ function updBeh() {
   const relay = F.mode === 'edit' ? F.inRelay : !!F.afterWs
   el.innerHTML = `<label class="check"><input type="checkbox" data-change="f-sleep" ${F.sleepResume ? 'checked' : ''}><span>Pause on lid close, resume on open</span></label>
   <label class="check"><input type="checkbox" data-change="f-fresh" ${F.freshSchedule ? 'checked' : ''}><span>Scheduled runs start a new session<span class="faint"> · keeps the cost of each run flat; memory and skills still carry over</span></span></label>
+  ${F.engine === 'claude' ? `<label class="check"><input type="checkbox" data-change="f-chrome" ${F.chrome ? 'checked' : ''}><span>Use my Chrome<span class="faint"> · this bee can open pages, click, fill in forms and read the console in your own Chrome, signed in as you. Needs the <a href="https://claude.ai/chrome" target="_blank" rel="noreferrer">Claude in Chrome</a> extension. Every browser action waits for your OK, whatever the permission level below</span></span></label><div class="hint warn" id="f-chrome-hint" style="margin:-2px 0 6px 26px" hidden></div>` : ''}
   ${F.engine === 'claude' ? `<label class="check"><input type="checkbox" data-change="f-noskills" ${F.noSkills ? 'checked' : ''}><span>No Claude Code skills<span class="faint"> · this bee cannot use any of the skills listed on the Skills page under "From Claude Code"</span></span></label>` + mcpHtml() : ''}
   <div><div class="row"><span class="mute" style="font-size:12px">Permissions</span><div class="seg">${Object.entries(PERM).map(([k, v]) => `<button type="button" class="${F.permission === k ? 'on' : ''}" data-act="f-perm" data-k="${k}">${v[0]}</button>`).join('')}</div></div>
     <div class="hint">${PERM[F.permission][1]}</div>${(F.permission === 'ask' || F.permission === 'plan') && F.engine !== 'claude' ? '<div class="hint warn">Only works with Claude Code; this engine runs as Auto-edit</div>' : ''}</div>
   ${relay ? '' : `<label class="check"><input type="checkbox" data-change="f-isolate" ${F.isolate ? 'checked' : ''}><span>Own branch<span class="faint"> · changes stay on its branch until you merge${F.mode === 'edit' ? '; switching starts a new session' : ''}</span></span></label>`}
   ${F.mode === 'edit' ? '' : `<label class="check"><input type="checkbox" data-change="f-start" ${F.startNow ? 'checked' : ''}><span>Start right after hatching</span></label>`}`
+  // Use my Chrome is on and the extension is nowhere to be found: say so here, before the bee finds out mid-task
+  if (F.engine === 'claude' && F.chrome) hive.call('chromeExt').then(ok => { const h = $('#f-chrome-hint'); if (h && !ok) { h.hidden = false; h.innerHTML = 'The Claude in Chrome extension was not found in your browser. <a href="https://claude.ai/chrome" target="_blank" rel="noreferrer">Install it</a>, sign in with the same account as Claude Code, then restart Chrome. Until then this bee has no browser.' } }).catch(() => {})
 }
 
 async function submitForm() {
   const s = F.sched, relay = F.mode === 'create' && F.after.ids.length
   const cfg = {
     name: F.name.trim(), task: (relay ? F.afterTask : F.task).trim(), workspace: relay ? '' : F.wsCustom, color: F.color, engine: F.engine, model: F.model.trim(), template: F.template,
-    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff, noSkills: F.noSkills,
+    prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff, noSkills: F.noSkills, chrome: F.engine === 'claude' && F.chrome,
     schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom, event: s.mode === 'event' ? s.event : undefined },
     git: relay || F.mode === 'edit' ? null : { url: F.gitUrl.trim(), branch: F.gitBranch.trim() },
     after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop } : null,
@@ -666,6 +674,7 @@ const CHANGE = {
   'f-sleep': el => { F.sleepResume = el.checked },
   'f-fresh': el => { F.freshSchedule = el.checked },
   'f-noskills': el => { F.noSkills = el.checked },
+  'f-chrome': el => { F.chrome = el.checked; updBeh() },
   'f-mcp': el => { const n = el.dataset.n, off = new Set(F.noMcp && CS ? CS.servers.map(s => s.name) : F.mcpOff); el.checked ? off.delete(n) : off.add(n); setMcpOff([...off]) },
   'f-isolate': el => { F.isolate = el.checked },
   'f-start': el => { F.startNow = el.checked },
@@ -955,6 +964,8 @@ const foundRun = i => { const x = FOUND.items[i]; if (x) x.run() }
 // ───────── Click actions ─────────
 const act = (id, name, text, opts) => call('action', id, name, text, opts)
 const ACT = {
+  'copy-install': async () => { try { await navigator.clipboard.writeText(eng('claude').install); toast('Copied') } catch { toast('Could not copy', 'err') } },
+  recheck: async () => { const list = await call('recheck'); if (!list) return; S.engines = list; const got = list.find(x => x.installed && !x.custom); if (got) { F.engine = got.id; toast(`${got.label} found`) } else toast('Still not found. Open a new Terminal window and check that the command runs there', 'err'); updEngine() },
   view: el => show(el.dataset.view),
   filter: el => { filter = el.dataset.f; renderHive() },
   sub: el => { sub = el.dataset.k; renderHive() },

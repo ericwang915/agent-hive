@@ -176,4 +176,38 @@ function search(root, q, max = 10, now = Date.now()) {
   return hits.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].length - b[2].length || a[2].localeCompare(b[2])).slice(0, max).map(h => h[2])
 }
 
-module.exports = { search, list, read, readAt, locate, inside, entry, create, rename, write, grep, MAX_TEXT, MAX_LIST }
+// Media tab: the pictures, documents, web pages, video and audio under root, newest first. Dependency and VCS folders are skipped
+const MEDIA = {
+  image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'],
+  video: ['mp4', 'mov', 'webm', 'm4v'],
+  audio: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'],
+  web: ['html', 'htm'],
+  doc: ['md', 'markdown', 'txt', 'pdf', 'csv', 'tsv', 'rtf', 'docx', 'pptx', 'xlsx', 'key', 'pages', 'numbers'],
+}
+const KIND = new Map(Object.entries(MEDIA).flatMap(([k, list]) => list.map(e => [e, k])))
+const mediaKind = p => { const m = /\.([A-Za-z0-9]{1,8})$/.exec(String(p || '')); return (m && KIND.get(m[1].toLowerCase())) || '' }
+const MEDIA_SKIP = new Set(['node_modules', '.git', '.venv', 'venv', '__pycache__', '.next', '.DS_Store'])
+function media(root, max = 600, cap = 20000) {
+  const r = real(root)
+  if (!r) return { items: [], more: 0 }
+  const out = [], todo = ['']
+  let seen = 0
+  while (todo.length && seen < cap) {
+    const rel = todo.shift()
+    let ents = []
+    try { ents = fs.readdirSync(path.join(r, rel), { withFileTypes: true }) } catch {}
+    for (const d of ents) {
+      if (MEDIA_SKIP.has(d.name)) continue
+      seen++
+      const p = rel ? rel + '/' + d.name : d.name
+      if (d.isDirectory()) { todo.push(p); continue }
+      const kind = d.isFile() && mediaKind(d.name)
+      if (!kind) continue
+      try { const st = fs.statSync(path.join(r, p)); out.push({ rel: p, abs: path.join(r, p), kind, size: st.size, mtime: st.mtimeMs }) } catch {}
+    }
+  }
+  out.sort((a, b) => b.mtime - a.mtime || a.rel.localeCompare(b.rel))
+  return { items: out.slice(0, max), more: Math.max(0, out.length - max) }
+}
+
+module.exports = { media, mediaKind, search, list, read, readAt, locate, inside, entry, create, rename, write, grep, MAX_TEXT, MAX_LIST }

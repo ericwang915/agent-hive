@@ -1,7 +1,7 @@
 {
   "name": "agent-hive",
   "productName": "Agent Hive",
-  "version": "1.4.6",
+  "version": "1.5.0",
   "description": "A macOS desktop app for running a hive of coding-agent CLIs (Claude Code, Codex, Gemini, Cursor Agent) with schedules, relay teams, group chats and a Queen that leads them.",
   "main": "main.js",
   "scripts": {
@@ -11,8 +11,11 @@
     "dist:signed": "electron-builder --mac --publish never -c.mac.identity=\"$CSC_NAME\""
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "dompurify": "^3.2.0",
-    "marked": "^15.0.0"
+    "marked": "^15.0.0",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "electron": "^38.0.0",
@@ -35,8 +38,12 @@
       "*.css",
       "icon.png",
       "!test.js",
-      "package.json"
+      "package.json",
+      "!node_modules/node-pty/prebuilds/win32-*",
+      "!node_modules/node-pty/{deps,src,third_party,scripts,typings,binding.gyp}",
+      "!node_modules/**/*.map"
     ],
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },

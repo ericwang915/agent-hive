@@ -1,6 +1,6 @@
 // Main process: state, process management, scheduling, relay execution, git operations, approval server, notifications, Queen, night bees, IPC
 'use strict'
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, powerSaveBlocker, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, powerMonitor, powerSaveBlocker, screen, Menu } = require('electron')
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http'), crypto = require('crypto')
 const { spawn, execFile, execFileSync } = require('child_process')
 const { rankOf } = require('./common')
@@ -44,6 +44,7 @@ const fmtCost = u => (u.usd ? '$' + u.usd.toFixed(2) : u.tin + u.tout ? fmtTok(u
 // (one that is already set stays as it is). They are only handed on to the CLIs
 const SHELL_ENV = ['DEEPSEEK_API_KEY', 'DSH_HOME', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'CODEX_API_KEY', 'CURSOR_API_KEY']
 function importPath() {
+  if (process.env.HIVE_PATH) { process.env.PATH = process.env.HIVE_PATH; return }       // tests: a machine with other CLIs than this one
   try {
     const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'echo __PATH__$PATH; ' + SHELL_ENV.map(k => `echo __${k}__$${k}`).join('; ')], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
     const mm = out.match(/__PATH__(.+)/)
@@ -268,7 +269,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
     try { pre = garden.preamble(wsRoot(), a) } catch {}
     if (pre) { full = pre + '\n\n' + prompt; log(a, { role: 'system', text: 'New session: included Dreamer\'s memory and Gardener\'s skill list' }) }
   }
-  try { c = core.command(one ? { ...a, sessionId: undefined } : a, full, { mcp: a.engine === 'claude' && a.permission === 'ask' && approvePort ? mcpConfig(a) : null }) } catch (e) { return fail(a, e.message) }
+  try { c = core.command(one ? { ...a, sessionId: undefined } : a, full, { mcp: a.engine === 'claude' && (a.permission === 'ask' || a.chrome) && approvePort ? mcpConfig(a) : null }) } catch (e) { return fail(a, e.message) }
 
   const child = spawn(c.cmd, c.args, { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(c.env || {}), ELECTRON_RUN_AS_NODE: undefined } })
   const p = { child, interrupted: false }
@@ -276,9 +277,18 @@ function run(a, prompt, why = 'manual', meta = {}) {
   a.status = 'running'; a.runStart = a.lastRunAt = Date.now(); if (!one) a.sessionCwd = cwd; delete a.interrupted
   const said = [], use = { usd: 0, tin: 0, tout: 0 }
   let partial = null, partialTimer = null          // the reply while it streams, sent to the chat window at most every 70ms
-  let lastErr = '', lastLog = '', done = false
+  let lastErr = '', lastLog = '', done = false, noChrome = false
   const parser = core.makeParser(
-    e => { if (e.role === 'assistant' && !e.sub) said.push(e.text); if (e.role === 'error') lastErr = e.text; log(a, e) },
+    e => {
+      if (e.role === 'assistant' && !e.sub) said.push(e.text); if (e.role === 'error') lastErr = e.text; log(a, e)
+      // the bee reached for the browser and nothing answered: say what is missing, once per run
+      if (a.chrome && !noChrome && e.role === 'out' && CHROME_OFF.test(e.text)) {
+        noChrome = true
+        const why = chromeExt() ? 'Chrome did not answer. Check that Chrome is open and that the Claude in Chrome extension is signed in with the same account as Claude Code, then restart Chrome' : `The Claude in Chrome extension is not installed. Install it from ${CHROME_URL}, sign in with the same account as Claude Code, then restart Chrome`
+        log(a, { role: 'system', text: `This bee could not use your Chrome. ${why}` })
+        event(a, `Could not use Chrome: ${chromeExt() ? 'the extension did not answer' : 'the Claude in Chrome extension is not installed'}`, 'warn')
+      }
+    },
     sid => { if (!one && a.sessionId !== sid) { a.sessionId = sid; save() } },
     u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout },
     cx => { if (!one) { a.context = { ...(a.context || {}), ...cx }; push() } },
@@ -296,7 +306,7 @@ function run(a, prompt, why = 'manual', meta = {}) {
     send('partial', { id: a.id, end: true })
     procs.delete(a.id)
     if (!alive(a)) return updatePower()
-    if (err) { lastErr = err.code === 'ENOENT' ? `Failed to start: ${c.cmd} command not found` : `Failed to start: ${err.message}`; log(a, { role: 'error', text: lastErr }) }
+    if (err) { lastErr = err.code === 'ENOENT' ? `Failed to start: the ${c.cmd} command was not found on this Mac.${core.howTo(a.engine) ? ' ' + core.howTo(a.engine) : ''}` : `Failed to start: ${err.message}`; log(a, { role: 'error', text: lastErr }) }
     const ms = Date.now() - a.runStart
     log(a, { role: 'run', text: '', ms, code, signal, interrupted: p.interrupted, ...use })
     denyAll(a)
@@ -700,6 +710,9 @@ function startApprovals() {
       const a = byId(q.agent), tool = String(q.tool || 'tool').slice(0, 100)
       if (!a || !procs.has(a.id)) return answer({ behavior: 'deny', message: 'This bee is not running' })
       if ((a.allowTools || []).includes(tool)) return answer({ behavior: 'allow' })
+      // a bee that uses the user's Chrome has the card attached at every permission level, for the browser alone:
+      // anything else is answered the way that level would have answered it without the card
+      if (a.permission !== 'ask' && !/^mcp__claude-in-chrome__/.test(tool)) return answer(a.permission === 'full' ? { behavior: 'allow' } : { behavior: 'deny', message: a.permission === 'plan' ? 'Not allowed while planning' : 'Not allowed at this permission level: the user set this bee to edit files only' })
       const id = crypto.randomUUID(), input = core.descOf(q.input).slice(0, 2000)
       const desc = q.input && typeof q.input.description === 'string' ? q.input.description.slice(0, 200) : ''
       a.approvals = [...(a.approvals || []), { id, tool, input, desc }]
@@ -740,7 +753,7 @@ const brainBad = new Map()                              // engine → { until, w
 const brainLabel = e => core.ENGINES[e].label
 const brainsHere = () => BRAINS.filter(e => core.onPath(core.binOf(core.ENGINES[e])))
 const brainsUp = () => brainsHere().filter(e => !(brainBad.has(e) && brainBad.get(e).until > Date.now()))
-const NO_BRAIN = 'No agent CLI was found on this machine (claude, codex, gemini, agy, cursor-agent or dsh)'
+const NO_BRAIN = `No agent CLI was found on this Mac (claude, codex, gemini, agy, cursor-agent or dsh). ${core.howTo('claude')}`
 const brainWhy = () => [...brainBad].map(([e, x]) => `${brainLabel(e)}: ${x.why}`).join('; ')
 function brainFail(e, why) {
   const first1 = !brainBad.has(e) || brainBad.get(e).until <= Date.now()
@@ -841,7 +854,7 @@ ${parts.join('\n\n')}`, chore()) : `No activity in the hive on ${date}.`
 
 async function queenDraft(text) {
   const installed = enginesInfo().filter(e => e.installed && e.template === null).map(e => e.id)
-  if (!installed.length) throw new Error('No usable agent engine was found on this machine')
+  if (!installed.length) throw new Error(NO_BRAIN)
   const d = new Date()
   const out = await once(`You are Queen. Help the user set up a new coding agent bee in Agent Hive. Current time: ${ymd(d)}T${core.hm(d)} (${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]}). Default workspace root: ${wsRoot()}. Available engines: ${installed.join(', ')}.
 
@@ -1519,7 +1532,7 @@ function parseSettings(c) {
     name, engine: c.engine, model, template, prompt,
     color: COLORS.includes(c.color) ? c.color : COLORS[0],
     permission: PERMS.includes(c.permission) ? c.permission : 'full',
-    sleepResume: c.sleepResume !== false, isolate: !!c.isolate, freshSchedule: c.freshSchedule !== false, noMcp: !!c.noMcp, noSkills: !!c.noSkills,
+    sleepResume: c.sleepResume !== false, isolate: !!c.isolate, freshSchedule: c.freshSchedule !== false, noMcp: !!c.noMcp, noSkills: !!c.noSkills, chrome: !!c.chrome && c.engine === 'claude',
     mcpOff: (Array.isArray(c.mcpOff) ? c.mcpOff : []).filter(n => typeof n === 'string' && n.length <= 120).slice(0, 200),
     schedule: parseSchedule(c.schedule, prompt, c.selfId),
   }
@@ -1710,8 +1723,22 @@ function enginesInfo() {
   return Object.entries(core.ENGINES).map(([id, e]) => ({
     id, label: e.label, cmd: e.cmd, template: e.args ? null : e.template,
     models: listed[id]?.length ? listed[id] : e.models || [], names: named[id] || e.names || {}, noModel: !!e.noModel,
-    installed: id === 'custom' ? true : core.onPath(e.args ? core.binOf(e) : e.cmd), custom: id === 'custom', brain: BRAINS.includes(id),
+    installed: id === 'custom' ? true : core.onPath(e.args ? core.binOf(e) : e.cmd), custom: id === 'custom', install: e.install || '', url: e.url || '', brain: BRAINS.includes(id),
   }))
+}
+// "Use my Chrome": is the Claude in Chrome extension installed in any profile of a browser Claude Code can connect to?
+const CHROME_URL = 'https://claude.ai/chrome', CHROME_EXT = 'fcoeoabgfenejglbffodgkkbkcdhcgfn'
+const CHROME_OFF = /Browser extension is not connected|No browsers are connected/i
+const BROWSER_DIRS = process.platform === 'darwin'
+  ? ['Google/Chrome', 'Google/Chrome Beta', 'Microsoft Edge', 'BraveSoftware/Brave-Browser', 'Arc/User Data', 'Vivaldi', 'com.operasoftware.Opera'].map(d => path.join(HOME, 'Library/Application Support', d))
+  : ['google-chrome', 'microsoft-edge', 'BraveSoftware/Brave-Browser', 'vivaldi', 'opera'].map(d => path.join(HOME, '.config', d))
+function chromeExt() {
+  for (const dir of BROWSER_DIRS) {
+    let profiles = []
+    try { profiles = fs.readdirSync(dir) } catch { continue }
+    for (const p of ['', ...profiles]) try { if (fs.readdirSync(path.join(dir, p, 'Extensions', CHROME_EXT)).length) return true } catch {}
+  }
+  return false
 }
 // "id - Name" per line from cursor-agent, "id<tab>Name" from agy
 const MODEL_LIST = { 'cursor-agent': [['--list-models'], /^(\S+) - (.+)$/], antigravity: [['models'], /^([\w.-]+)\t(.*)$/] }
@@ -1832,17 +1859,55 @@ function openChat(id, tab, find, file) {
   guard(w)
   w.loadFile(path.join(__dirname, 'chat.html'), { query: { id, ...(tab ? { tab } : {}), ...(find ? { find } : {}), ...(file ? { file } : {}) } })
   chats.set(id, w)
-  w.on('closed', () => { if (chats.get(id) === w) chats.delete(id) })
+  w.on('closed', () => { if (chats.get(id) === w) { chats.delete(id); termKill(t => t.bee === id) } })
 }
 
 // ───────── IPC ─────────
 // every handler error becomes {error}; the pages show it as a toast
+// The menu bar: the standard menus, plus View → Terminal for the chat window in front
+function appMenu() {
+  const term = () => { const w = BrowserWindow.getFocusedWindow(); if (w && [...chats.values()].includes(w)) w.webContents.send('toggleTerm') }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu' }, { role: 'fileMenu' }, { role: 'editMenu' },
+    { label: 'View', submenu: [{ label: 'Terminal', accelerator: 'Ctrl+`', click: term }, { type: 'separator' }, { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+    { role: 'windowMenu' },
+  ]))
+}
+
+// ───────── Terminal panel ─────────
+// Shells opened from a bee's chat window, in the bee's folder. They live as long as that window; the last output is kept so a reloaded window can show it again
+const terms = new Map()          // tid → { pty, bee, buf }
+const TERM_KEEP = 200000
+const tclamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi))
+let termSeq = 0
+function termOpen(a, cwd, cols, rows) {
+  if ([...terms.values()].filter(t => t.bee === a.id).length >= 8) throw new Error('Eight terminals are open for this bee already. Close one first')
+  const pty = require('node-pty')
+  try { fs.chmodSync(path.join(__dirname, 'node_modules', 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'), 0o755) } catch {}      // an install with scripts off leaves the helper not executable
+  const shellPath = process.env.SHELL && fs.existsSync(process.env.SHELL) ? process.env.SHELL : '/bin/zsh'
+  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'AgentHive' }
+  delete env.ELECTRON_RUN_AS_NODE
+  const p = pty.spawn(shellPath, ['-l'], { name: 'xterm-256color', cols: tclamp(+cols || 80, 20, 500), rows: tclamp(+rows || 24, 4, 300), cwd, env })
+  const tid = 't' + ++termSeq, t = { pty: p, bee: a.id, buf: '', shell: path.basename(shellPath) }
+  terms.set(tid, t)
+  const to = () => { const w = chats.get(a.id); return w && !w.isDestroyed() ? w.webContents : null }
+  p.onData(d => { t.buf = (t.buf + d).slice(-TERM_KEEP); const w = to(); if (w) w.send('term', { tid, data: d }) })
+  p.onExit(() => { terms.delete(tid); const w = to(); if (w) w.send('termExit', tid) })
+  return tid
+}
+const termOf = (id, tid) => { const t = terms.get(String(tid)); if (!t || t.bee !== id) throw new Error('That terminal is closed'); return t }
+const termInfo = (tid, t) => { let proc = ''; try { proc = path.basename(t.pty.process || '') } catch {} return { tid, title: proc || t.shell, busy: !!proc && proc !== t.shell && proc !== '-' + t.shell } }
+function termKill(pick) { for (const [tid, t] of terms) if (pick(t)) { terms.delete(tid); try { t.pty.kill() } catch {} } }
+
 const handle = (ch, fn) => ipcMain.handle(ch, async (_e, ...args) => { try { const r = await fn(...args); return r === undefined ? { ok: true } : r } catch (e) { return { error: String((e && e.message) || e) } } })
 const need = id => { const a = byId(id); if (!a) throw new Error('This bee no longer exists'); return a }
 const IMG = /\.(png|jpe?g|gif|webp|svg|bmp|heic|tiff?)$/i
 
 function ipc() {
   handle('claudeSetup', force => claudeSetup(!!force))
+  handle('chromeExt', () => chromeExt())
+  // the user installed a CLI while the app was open: read PATH from the login shell again
+  handle('recheck', () => { importPath(); const list = enginesInfo(); send('engines', list); roomsPush(); return list })
   handle('checkUpdate', () => checkUpdate())
   handle('upgrade', () => upgrade())
   handle('init', () => ({
@@ -1888,6 +1953,12 @@ function ipc() {
   handle('discard', id => { discard(need(id)); push() })
   handle('openPr', id => openPr(need(id)))
   handle('mergeBack', id => { mergeBack(need(id)); push() })
+  handle('termNew', (id, cols, rows) => { const a = need(id); return { tid: termOpen(a, filesRoot(a), cols, rows) } })
+  handle('termList', id => [...terms].filter(([, t]) => t.bee === id).map(([tid, t]) => ({ ...termInfo(tid, t), buf: t.buf })))
+  handle('termInfo', id => [...terms].filter(([, t]) => t.bee === id).map(([tid, t]) => termInfo(tid, t)))
+  handle('termWrite', (id, tid, data) => { termOf(id, tid).pty.write(String(data || '').slice(0, 1e6)) })
+  handle('termResize', (id, tid, cols, rows) => { try { termOf(id, tid).pty.resize(tclamp(+cols || 80, 20, 500), tclamp(+rows || 24, 4, 300)) } catch {} })
+  handle('termClose', (id, tid) => { termKill(t => t === terms.get(String(tid)) && t.bee === id) })
   handle('terminal', id => { execFile('open', ['-a', 'Terminal', dirOf(need(id))]) })
   handle('attach', (id, name, b64) => {
     const buf = Buffer.from(String(b64 || ''), 'base64')
@@ -1910,7 +1981,7 @@ function ipc() {
     return { path: f, name: path.basename(f) }
   })
   handle('feed', () => state.feed)
-  handle('openChat', (id, tab, find, file) => openChat(id, tab === 'changes' || tab === 'files' ? tab : '', typeof find === 'string' ? find.slice(0, 100) : '', typeof file === 'string' ? file.slice(0, 1024) : ''))
+  handle('openChat', (id, tab, find, file) => openChat(id, ['changes', 'files', 'media'].includes(tab) ? tab : '', typeof find === 'string' ? find.slice(0, 100) : '', typeof file === 'string' ? file.slice(0, 1024) : ''))
   handle('searchAll', q => searchAll(q))
   handle('outputs', () => outputs())
   handle('openOutput', (id, abs, how) => openOutput(id, String(abs || ''), how === 'open' ? 'open' : 'reveal'))
@@ -1937,6 +2008,12 @@ function ipc() {
   handle('renamePath', (id, from, to) => files.rename(filesRoot(need(id)), String(from || '').slice(0, 1024), String(to || '').slice(0, 1024)))
   handle('writeFile', (id, rel, text, o) => files.write(filesRoot(need(id)), String(rel || '').slice(0, 1024), text, { mtime: +(o && o.mtime) || 0, force: !!(o && o.force) }))
   handle('trashPath', async (id, rel) => { await shell.trashItem(files.entry(filesRoot(need(id)), String(rel || '').slice(0, 1024))) })
+  handle('media', id => files.media(filesRoot(need(id))))
+  handle('openMedia', (id, rel) => {          // in its own app; only the kinds the Media tab lists, only inside the folder
+    const abs = files.inside(filesRoot(need(id)), String(rel || '').slice(0, 1024))
+    if (!files.mediaKind(abs)) throw new Error('That kind of file is not opened from here')
+    shell.openPath(abs)
+  })
   handle('grepFiles', (id, q) => files.grep(filesRoot(need(id)), String(q || '').slice(0, 200)))
   handle('locate', (id, list) => { const root = filesRoot(need(id)); return (Array.isArray(list) ? list.slice(0, 400) : []).map(p => files.locate(root, p, HOME)) })
   handle('revealPath', (id, p) => {
@@ -2029,6 +2106,7 @@ else {
     load()
     startApprovals()
     ipc()
+    appMenu()
     loadModels()
     showMain()
     const look = () => checkUpdate().catch(() => {})
@@ -2049,5 +2127,5 @@ else {
     app.on('activate', showMain)
   })
   app.on('window-all-closed', () => {})       // closing all windows does not quit; bees keep running in the background
-  app.on('before-quit', () => { if (!quitting) { quitting = true; for (const c of qprocs.values()) try { process.kill(-c.pid, 'SIGTERM') } catch {} sleepAll(); saveNow() } })
+  app.on('before-quit', () => { if (!quitting) { quitting = true; for (const c of qprocs.values()) try { process.kill(-c.pid, 'SIGTERM') } catch {} termKill(() => true); sleepAll(); saveNow() } })
 }
