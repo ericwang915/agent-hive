@@ -59,7 +59,7 @@ npm start
 ### Requirements
 
 - macOS 12 or later
-- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini`, `agy`, `dsh` or Cursor's `agent` (older installs: `cursor-agent`). Queen, the daily report and the night bees need `claude`.
+- At least one agent CLI on your `PATH`: [`claude`](https://docs.claude.com/en/docs/claude-code), `codex`, `gemini`, `agy`, `dsh` or Cursor's `agent` (older installs: `cursor-agent`). Queen, the daily report and the night bees use whichever of these CLIs works: Claude Code first, then the next one that answers. A CLI that is installed but not usable (not logged in, for example) is skipped.
 - `git` for diffs, commits, branches and pull requests. `gh` is optional and used to open pull requests.
 
 ## What you can do with it
@@ -164,7 +164,7 @@ Yes. If the CLI works in your terminal, it works as a bee, with the same account
 
 ### Which coding agents does it support?
 
-Claude Code, Codex CLI, Gemini CLI, Antigravity (`agy`), DeepSeek Harness (`dsh`) and Cursor Agent out of the box, plus any command line that accepts a prompt (a custom template with `{prompt}`). Queen, the daily report and the night bees need Claude Code.
+Claude Code, Codex CLI, Gemini CLI, Antigravity (`agy`), DeepSeek Harness (`dsh`) and Cursor Agent out of the box, plus any command line that accepts a prompt (a custom template with `{prompt}`). Queen, the daily report and the night bees use whichever of these CLIs works: Claude Code first, then the next one that answers. A CLI that is installed but not usable (not logged in, for example) is skipped. In a group's settings you can also pick the CLI and the model Queen runs on.
 
 ### How is it different from Claude Code subagents or agent teams?
 

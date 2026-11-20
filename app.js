@@ -1297,7 +1297,7 @@ function renderRoomMeta() {
   const running = r.status === 'running', pend = r.pending || [], bees = roomBees(r), busy = roomBusy(r)
   setHtml($('#room-bee'), roomIcon(r, 34))
   $('#room-name').textContent = r.name
-  $('#room-sub').textContent = r.queen && !r.installed ? 'Needs claude installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : (r.squads || []).length ? `${r.squads.map(q => q.name).join(', ')} running` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}${ctxNote(r.context, ' · ')}`
+  $('#room-sub').textContent = r.queen && !r.installed ? 'Queen needs an agent CLI installed' : running ? 'Queen is thinking…' : pend.length ? `Waiting for ${pend.map(p => p.name).join(', ')}` : (r.squads || []).length ? `${r.squads.map(q => q.name).join(', ')} running` : busy.length ? `${busy.map(a => a.name).join(', ')} working` : `${bees.length} bee${bees.length === 1 ? '' : 's'}${r.queen ? ' · Queen leads' : ''}${ctxNote(r.context, ' · ')}`
   $('#room-stop').hidden = !running && !pend.length && !busy.length && !r.routing && !(r.squads || []).length
   $('#room-newbtn').hidden = !r.queen
   $('#room-input').placeholder = r.queen ? 'Message Queen, @ to mention' : 'Message the group, @ to mention'
@@ -1358,25 +1358,35 @@ async function openQueenRoom() {
 // New group / group settings
 function openGroup(id) {
   const r = id ? R.rooms.find(x => x.id === id) : null
-  GF = r ? { id: r.id, name: r.name, members: new Set(r.members), queen: r.queen, model: r.model || '' } : { name: '', members: new Set(), queen: true }
+  GF = r ? { id: r.id, name: r.name, members: new Set(r.members), queen: r.queen, engine: r.engine || (r.model ? 'claude' : ''), model: r.model || '' } : { name: '', members: new Set(), queen: true, engine: '', model: '' }
   $('#group-form').innerHTML = `
   <div class="dlg-head">${queenSvg(40)}<div class="grow"><h2 class="round">${r ? 'Group settings' : 'New group'}</h2></div><button type="button" class="btn icon ghost" data-act="group-close">${ICON.x}</button></div>
   <div class="dlg-body">
     <div class="field"><div class="lab">Name</div><input type="text" id="g-name" maxlength="30" style="width:100%" placeholder="Group name" value="${esc(GF.name)}"></div>
     <label class="g-queen"><input type="checkbox" id="g-queen" ${GF.queen ? 'checked' : ''}>${queenSvg(34)}<span><b>Queen leads</b><span class="sub" style="display:block">She picks bees, dispatches work and sums up. Unchecked: messages go to every member.</span></span></label>
-    <div class="field" id="g-model-row" ${GF.queen ? '' : 'hidden'}><div class="lab">Queen's model</div><select id="g-model"><option value="">Default</option>${GF.model && !(eng('claude').models || []).includes(GF.model) ? `<option value="${esc(GF.model)}" selected>${esc(GF.model)}</option>` : ''}${(eng('claude').models || []).map(m => `<option value="${esc(m)}" ${GF.model === m ? 'selected' : ''}>${esc(eng('claude').names?.[m] || m)}</option>`).join('')}</select></div>
+    <div class="field" id="g-model-row" ${GF.queen ? '' : 'hidden'}><div class="lab">Queen runs on</div><div class="row" style="gap:8px"><select id="g-engine" class="grow"><option value="">Automatic: the first CLI that works</option>${S.engines.filter(e => e.brain && (e.installed || e.id === GF.engine)).map(e => `<option value="${e.id}" ${GF.engine === e.id ? 'selected' : ''}>${esc(e.label)}${e.installed ? '' : ' (not installed)'}</option>`).join('')}</select><select id="g-model" class="grow"></select></div><div class="hint" id="g-engine-hint"></div></div>
     <div class="field"><div class="lab">Members <span class="opt" id="g-count"></span></div><div class="g-list">${S.agents.length ? S.agents.map(a => `<label class="g-row"><input type="checkbox" data-g="${a.id}" ${GF.members.has(a.id) ? 'checked' : ''}>${beeOf(a, 28)}<span class="grow"><b>${esc(a.name)}</b><span class="sub ell" style="display:block">${esc(a.task)} · ${esc(eng(a.engine).label)}</span></span>${pill(a.status)}</label>`).join('') : '<div class="hint">No bees yet</div>'}</div></div>
   </div>
   <div class="dlg-foot">${r ? `<button type="button" class="btn danger" data-act="group-delete">Delete group</button>` : ''}<span class="grow"></span><button type="button" class="btn" data-act="group-close">Cancel</button><button type="submit" class="btn primary">${r ? 'Save' : 'New group'}</button></div>`
   const count = () => { $('#g-count').textContent = `${GF.members.size} selected` }
   $('#group-form').onchange = e => { const t = e.target; if (t.dataset.g) { t.checked ? GF.members.add(t.dataset.g) : GF.members.delete(t.dataset.g); count() } if (t.id === 'g-queen') $('#g-model-row').hidden = !t.checked
-    if (t.id === 'g-queen') GF.queen = t.checked }
-  count()
+    if (t.id === 'g-queen') GF.queen = t.checked
+    if (t.id === 'g-engine') { GF.engine = t.value; GF.model = ''; models() }
+    if (t.id === 'g-model') GF.model = t.value }
+  // the models of the chosen CLI; with Automatic, or a CLI that takes no model, there is nothing to choose
+  const models = () => {
+    const e = GF.engine ? eng(GF.engine) : null, list = e && !e.noModel ? e.models || [] : [], sel = $('#g-model')
+    if (!e || e.noModel) GF.model = ''
+    sel.innerHTML = `<option value="">Default model</option>${GF.model && !list.includes(GF.model) ? `<option value="${esc(GF.model)}" selected>${esc(GF.model)}</option>` : ''}${list.map(m => `<option value="${esc(m)}" ${GF.model === m ? 'selected' : ''}>${esc(e.names?.[m] || m)}</option>`).join('')}`
+    sel.hidden = !e || e.noModel
+    $('#g-engine-hint').textContent = e ? `If ${e.label} does not answer, Queen carries on with the next CLI that works.` : 'Claude Code first, then the next one that answers.'
+  }
+  models(); count()
   $('#group').showModal()
   $('#g-name').focus()
 }
 async function submitGroup() {
-  const cfg = { queenModel: $('#g-model') ? $('#g-model').value : '', name: $('#g-name').value.trim() || (GF.queen ? 'Queen and the bees' : [...GF.members].map(id => (byId(id) || {}).name).filter(Boolean).slice(0, 3).join(', ')), members: [...GF.members], queen: GF.queen }
+  const cfg = { queenEngine: GF.engine || '', queenModel: GF.engine ? GF.model || '' : '', name: $('#g-name').value.trim() || (GF.queen ? 'Queen and the bees' : [...GF.members].map(id => (byId(id) || {}).name).filter(Boolean).slice(0, 3).join(', ')), members: [...GF.members], queen: GF.queen }
   const made = GF.id ? await call('roomUpdate', GF.id, cfg) : await call('roomCreate', cfg)
   if (!made) return
   const id = GF.id || made.id
@@ -1534,6 +1544,7 @@ async function bootRoom() {
   R.rooms = S.rooms || []
   hive.on('update', u => { S.update = u; renderUpdate(); if ($('#prefs').open) renderPrefs() })
   hive.on('show-settings', () => openPrefs())
+  hive.on('engines', list => { S.engines = list })
   renderUpdate()
   hive.on('room-entry', addRoomEntry)
   hive.on('rooms', list => {

@@ -732,9 +732,62 @@ function denyAll(a) {
 
 // ───────── Queen ─────────
 // opts.model: a specific model; opts.bare: skip the user's MCP servers so it starts fast; opts.timeout in ms
-function once(prompt, opts = {}) {
+// ───────── Which CLI does the thinking: Queen, the daily report, the night bees, routing ─────────
+// Any installed CLI will do, tried in this order. Installed is not the same as working (not logged in, an account the CLI no longer serves),
+// so one that fails is set aside for a while and the next one takes over; the first that answers is used from then on
+const BRAINS = (process.env.HIVE_BRAINS ? process.env.HIVE_BRAINS.split(',') : ['claude', 'codex', 'gemini', 'antigravity', 'cursor-agent', 'dsh']).filter(e => core.ENGINES[e] && core.ENGINES[e].args)      // HIVE_BRAINS: another order, for tests
+const brainBad = new Map()                              // engine → { until, why }
+const brainLabel = e => core.ENGINES[e].label
+const brainsHere = () => BRAINS.filter(e => core.onPath(core.binOf(core.ENGINES[e])))
+const brainsUp = () => brainsHere().filter(e => !(brainBad.has(e) && brainBad.get(e).until > Date.now()))
+const NO_BRAIN = 'No agent CLI was found on this machine (claude, codex, gemini, agy, cursor-agent or dsh)'
+const brainWhy = () => [...brainBad].map(([e, x]) => `${brainLabel(e)}: ${x.why}`).join('; ')
+function brainFail(e, why) {
+  const first1 = !brainBad.has(e) || brainBad.get(e).until <= Date.now()
+  brainBad.set(e, { until: Date.now() + 30 * 60000, why: first(String(why || 'no answer').trim().split('\n').pop().replace(/^Error:\s*/, '').split(/(?<=[.!?])\s/)[0].replace(/[.:]$/, ''), 120) })
+  const next = brainsUp()[0]
+  if (first1) event({ id: 'hive', name: 'Agent Hive', color: '#F6C86B' }, `${brainLabel(e)} did not answer (${brainBad.get(e).why})${next ? `; using ${brainLabel(next)} instead` : ''}`, 'info')
+  return next
+}
+// One prompt in, one text out, from the first CLI that answers
+async function once(prompt, opts = {}) {
+  let list = brainsUp()
+  if (!list.length) { if (!brainsHere().length) throw new Error(NO_BRAIN); brainBad.clear(); list = brainsHere() }       // all set aside: time to try them again
+  let last
+  for (const e of list) {
+    try { const out = await (e === 'claude' ? onceClaude(prompt, opts) : onceOther(e, prompt, opts)); brainBad.delete(e); return out }
+    catch (err) { if (err.interrupted || err.slow) throw err; last = err; brainFail(e, err.message) }
+  }
+  throw last
+}
+// The same through any other engine: its usual headless command in an empty folder, the last thing it said is the answer
+function onceOther(engine, prompt, opts = {}) {
   return new Promise((resolve, reject) => {
-    if (!core.onPath('claude')) return reject(new Error('Queen needs the claude command installed on this machine'))
+    const dir = path.join(DIR, 'once')
+    let c
+    try { fs.mkdirSync(dir, { recursive: true }); c = core.command({ engine, workspace: dir, permission: 'ask' }, prompt) } catch (e) { return reject(e) }
+    const child = spawn(c.cmd, c.args, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(c.env || {}), ELECTRON_RUN_AS_NODE: undefined } })
+    const said = []
+    let err = '', bad = '', slow = false
+    const parser = core.makeParser(e => { if (e.role === 'assistant' && String(e.text).trim()) said.push(e.text); else if (e.role === 'error') bad = e.text }, () => {}, u => addSpend(null, u))
+    const timer = setTimeout(() => { slow = true; child.kill('SIGTERM') }, opts.timeout || 15 * 60000)
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
+    child.stdout.on('data', d => parser.feed(d)); child.stderr.on('data', d => { err = (err + d).slice(-4000) })
+    child.on('error', e => { clearTimeout(timer); reject(e) })
+    child.on('close', (code, signal) => {
+      clearTimeout(timer); parser.end()
+      if (slow) return reject(Object.assign(new Error('It took too long'), { slow: true }))
+      if (signal || [130, 137, 143].includes(code)) return reject(Object.assign(new Error('It was interrupted'), { interrupted: true }))
+      const text = said.length ? String(said[said.length - 1]).trim() : ''
+      if (code || !text) return reject(new Error(first(bad || errLine(err) || `${c.cmd} exit code ${code}`, 300)))
+      resolve(text)
+    })
+  })
+}
+// What a CLI printed when it failed, down to the line that says why
+const errLine = err => { const ls = String(err || '').split('\n').map(l => l.trim()).filter(Boolean); return (ls.reverse().find(l => /error|not supported|unauthor|login|log in|denied|quota|limit|expired/i.test(l) && !/^at /.test(l)) || ls[0] || '').replace(/^.*?(?=Error:)/, '') }
+function onceClaude(prompt, opts = {}) {
+  return new Promise((resolve, reject) => {
     const child = spawn('claude', ['-p', prompt, '--output-format', 'json', ...(opts.model ? ['--model', opts.model] : []), ...(opts.bare ? ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'] : [])], { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
     let out = '', err = ''
     let slow = false
@@ -743,7 +796,7 @@ function once(prompt, opts = {}) {
     child.on('error', e => { clearTimeout(timer); reject(e) })
     child.on('close', (code, signal) => {
       clearTimeout(timer)
-      if (slow) return reject(new Error('It took too long'))
+      if (slow) return reject(Object.assign(new Error('It took too long'), { slow: true }))
       // killed from outside (the app quitting, the Mac going to sleep): not a failure of the job itself
       if (signal || [130, 137, 143].includes(code)) return reject(Object.assign(new Error('It was interrupted'), { interrupted: true }))
       let o = null
@@ -833,8 +886,8 @@ function readRoom(r, n = 400) {
 }
 const roomPublic = r => ({
   id: r.id, name: r.name, members: r.members, queen: !!r.queen, main: !!r.main, model: r.model || '', last: r.last || '', lastAt: r.lastAt || r.createdAt,
-  status: qprocs.has(r.id) ? 'running' : 'idle', context: r.sessionId && r.context && r.context.used ? r.context : null, squads: Object.values(r.squads || {}).map(q => ({ flow: q.flow, name: q.name, steps: q.order.map(id => ({ id, ...q.steps[id] })) })), routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
-  pending: Object.entries(r.mission.pending).map(([id, p]) => ({ id, ...p })), installed: core.onPath('claude'),
+  engine: r.engine || '', status: qprocs.has(r.id) ? 'running' : 'idle', context: r.sessionId && r.context && r.context.used ? r.context : null, squads: Object.values(r.squads || {}).map(q => ({ flow: q.flow, name: q.name, steps: q.order.map(id => ({ id, ...q.steps[id] })) })), routing: !!r.routing, runStart: r.runStart || 0, asks: r.asks, queued: r.queue.length, session: !!r.sessionId,
+  pending: Object.entries(r.mission.pending).map(([id, p]) => ({ id, ...p })), installed: brainsHere().length > 0, brain: r.brain || '',
 })
 let roomsTimer = null
 function roomsPush() {
@@ -848,9 +901,24 @@ const newRoom = o => ({ id: crypto.randomUUID(), name: 'Group', members: [], que
 function queenRun(r, prompt, tidy) {
   const m = r.mission
   if (qprocs.has(r.id)) { r.queue.push(prompt); return roomsPush() }
-  if (!core.onPath('claude')) return roomLog(r, { ...QUEEN, kind: 'error', text: 'Queen needs the claude command installed on this machine' })
+  // the CLI she thinks with: the first one that works. Claude Code gets the hive tools; any other writes its actions as text (queen.js)
+  const up = brainsUp()
+  let eng = up.includes(r.engine) ? r.engine : up[0]      // the one chosen for this group when it works, else the first that does
+  if (!eng) {
+    if (!brainsHere().length) return roomLog(r, { ...QUEEN, kind: 'error', text: `Queen needs an agent CLI. ${NO_BRAIN}` })
+    const why = brainWhy()
+    brainBad.clear()                                       // the next message tries them all again
+    return roomLog(r, { ...QUEEN, kind: 'error', text: `None of the installed agent CLIs answered (${why}). Check that one of them works in your terminal, then send the message again` })
+  }
+  if ((r.brain || 'claude') !== eng) {                 // a session belongs to the CLI that made it: the next one starts from the end of the chat
+    if (r.sessionId) r.carry = qt.digest(readRoom(r, 60))
+    r.sessionId = ''; r.context = null; r.tidied = false; r.chars = 0
+  }
+  r.brain = eng
+  const viaTools = eng === 'claude'
+  const model = eng === (r.engine || 'claude') && !core.ENGINES[eng].noModel ? r.model || '' : ''       // the model was picked for one CLI; another runs on its own default
   if (m.turns >= qt.LIMITS.turns) return roomLog(r, { ...QUEEN, kind: 'system', text: `Queen has taken ${m.turns} turns on this task and stopped. Send a new message to continue.` })
-  if (!tidy && !r.tidied && r.sessionId) {
+  if (viaTools && !tidy && !r.tidied && r.sessionId) {
     const reason = core.compactWhy({ engine: 'claude', sessionId: r.sessionId, context: r.context, lastEndAt: r.lastEndAt }, state.settings)
     if (reason) {
       r.queue.unshift(prompt); r.tidied = true; r.before = r.context.used
@@ -858,40 +926,87 @@ function queenRun(r, prompt, tidy) {
       return queenRun(r, '/compact', true)
     }
   }
+  if (!viaTools && !tidy && !r.tidied && r.sessionId) {
+    const reason = qt.sumWhy(r.chars, state.settings)
+    if (reason) {
+      r.queue.unshift(prompt); r.tidied = true
+      roomLog(r, { ...QUEEN, kind: 'system', text: `Queen: ${reason}` })
+      return queenRun(r, qt.SUM_ASK, true)
+    }
+  }
   if (!tidy) { r.tidied = false; m.turns++; m.turnDispatch = [] }
-  const cfg = JSON.stringify({ mcpServers: { hive: { command: process.execPath, args: [path.join(__dirname, 'hive-mcp.js')], env: { ELECTRON_RUN_AS_NODE: '1', HIVE_PORT: String(approvePort), HIVE_TOKEN: approveToken, HIVE_ROOM: r.id } } } })
   const dir = path.join(DIR, 'queen', r.id)
   fs.mkdirSync(dir, { recursive: true })
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(r.model ? ['--model', r.model] : []), '--append-system-prompt', qt.SYS,
-    '--mcp-config', cfg, '--strict-mcp-config', '--allowedTools', qt.toolNames().join(','), '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task,Artifact',
-    ...(r.sessionId ? ['--resume', r.sessionId] : [])]
-  const child = spawn('claude', args, { cwd: dir, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
+  let cmd, args, env = {}
+  if (viaTools) {
+    const cfg = JSON.stringify({ mcpServers: { hive: { command: process.execPath, args: [path.join(__dirname, 'hive-mcp.js')], env: { ELECTRON_RUN_AS_NODE: '1', HIVE_PORT: String(approvePort), HIVE_TOKEN: approveToken, HIVE_ROOM: r.id } } } })
+    cmd = 'claude'
+    // a session that starts after another CLI held this conversation, or after a restart from notes, is told where things stand
+    const asked = !r.sessionId && r.carry && !tidy ? `This conversation has been going on for a while. Where it stands:\n${r.carry}\n\n———\n\n${prompt}` : prompt
+    args = ['-p', asked, '--output-format', 'stream-json', '--verbose', ...(model ? ['--model', model] : []), '--append-system-prompt', qt.SYS,
+      '--mcp-config', cfg, '--strict-mcp-config', '--allowedTools', qt.toolNames().join(','), '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task,Artifact',
+      ...(r.sessionId ? ['--resume', r.sessionId] : [])]
+  } else {
+    // her first message in a session carries who she is; every message carries the cards and a reminder of how to act
+    let cards = ''
+    try { cards = queenCards(r) } catch (e) { cards = `(could not list the bees: ${e.message})` }
+    const head = r.sessionId ? '' : `${qt.SYS_TEXT}\n\n———\n\n${r.carry ? `This conversation has been going on for a while. Where it stands:\n${r.carry}\n\n———\n\n` : ''}`
+    const full = tidy ? prompt : `${head}Hive now:\n${cards}\n\n———\n\n${prompt}\n\n(To act, end your reply with a \`\`\`hive block of JSON lines; without it nothing is dispatched.)`
+    r.chars = (r.chars || 0) + full.length
+    const c = core.command({ engine: eng, model, workspace: dir, permission: 'ask', sessionId: r.sessionId || undefined }, full)
+    cmd = c.cmd; args = c.args; env = c.env || {}
+  }
+  const child = spawn(cmd, args, { cwd: dir, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env, ELECTRON_RUN_AS_NODE: undefined } })
   qprocs.set(r.id, child); r.stopped = false; r.runStart = Date.now()
-  const use = { usd: 0, tin: 0, tout: 0 }
-  let err = '', done = false
+  const use = { usd: 0, tin: 0, tout: 0 }, said = []
+  let err = '', bad = '', done = false, spoke = false
   const parser = core.makeParser(e => {
-    if (tidy) { if (e.role === 'error') err = e.text; return }
-    if (e.role === 'assistant') roomLog(r, { ...QUEEN, kind: 'say', text: e.text })
-    else if (e.role === 'error') roomLog(r, { ...QUEEN, kind: 'error', text: e.text })
+    if (tidy) { if (e.role === 'error') err = e.text; else if (!viaTools && e.role === 'assistant') said.push(e.text); return }
+    if (e.role === 'assistant') { spoke = true; if (viaTools) roomLog(r, { ...QUEEN, kind: 'say', text: e.text }); else said.push(e.text) }
+    else if (e.role === 'error') { bad = e.text; if (viaTools) roomLog(r, { ...QUEEN, kind: 'error', text: e.text }) }
     else if (e.role === 'tool' && /list_bees$/.test(e.name)) roomLog(r, { ...QUEEN, kind: 'system', text: 'Queen looked at the bees in the group' })
   }, sid => { r.sessionId = sid }, u => { use.usd += u.usd; use.tin += u.tin; use.tout += u.tout }, cx => { r.context = { ...(r.context || {}), ...cx }; roomsPush() })
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
   child.stdout.on('data', d => parser.feed(d))
-  child.stderr.on('data', d => { err = (err + d).slice(-600) })
-  const finish = (code, e) => {
+  child.stderr.on('data', d => { err = (err + d).slice(-4000) })
+  // this CLI did not get anywhere: set it aside and give the same message to the next one. Not once she has spoken or dispatched: that turn is not repeated
+  const handOver = why => {
+    if (tidy || r.stopped || spoke || m.turnDispatch.length) return false
+    const next = brainFail(eng, why)
+    if (!next) return false
+    roomLog(r, { ...QUEEN, kind: 'system', text: `${brainLabel(eng)} did not answer (${brainBad.get(eng).why}). Queen carries on with ${brainLabel(next)}` })
+    m.turns--; r.queue.unshift(prompt)
+    return true
+  }
+  const finish = async (code, e) => {
     if (done) return
     done = true
     parser.end()
-    qprocs.delete(r.id); delete r.runStart
     r.lastEndAt = Date.now()
     addSpend(null, use)
+    let again = ''
+    if (state.rooms.includes(r)) {
+      const why = e ? e.message : code ? first(bad || errLine(err) || `exit code ${code}`, 200) : !viaTools && !tidy && !said.join('').trim() ? first(bad || errLine(err) || 'it said nothing', 200) : ''
+      if (why && !r.stopped && handOver(why)) {}
+      else if (e) roomLog(r, { ...QUEEN, kind: 'error', text: `Queen failed to start: ${e.message}` })
+      else if (tidy && r.stopped) {}
+      else if (tidy && !viaTools) {                          // close the long session; the next message opens a new one with her notes, or with the end of the chat when she wrote none
+        const notes = code || e ? '' : qt.parseActions(said.join('\n\n')).text
+        const was = Math.round((r.chars || 0) / 4)
+        r.carry = notes ? notes.slice(0, 16000) : qt.digest(readRoom(r, 60))
+        r.sessionId = ''; r.chars = 0; r.context = null
+        roomLog(r, { ...QUEEN, kind: 'system', text: notes ? `Queen's conversation summed up (it held about ${core.kTok(was)} tokens); she carries on from her notes` : 'Queen could not sum up her conversation; she carries on from the last messages of this chat' })
+      }
+      else if (tidy) roomLog(r, { ...QUEEN, kind: 'system', text: r.context && r.before && r.context.used < r.before ? `Queen's conversation compacted: ${core.kTok(r.before)} → ${core.kTok(r.context.used)} tokens` : 'Queen could not compact her conversation; carrying on as it is' })
+      else if (why && !r.stopped) roomLog(r, { ...QUEEN, kind: 'error', text: `Queen failed (${brainLabel(eng)}): ${why}` })
+      else if (!viaTools && !r.stopped) { brainBad.delete(eng); r.chars = (r.chars || 0) + said.join('').length; if (r.sessionId) delete r.carry; try { again = await queenActs(r, said.join('\n\n')) } catch (x) { roomLog(r, { ...QUEEN, kind: 'error', text: `Queen's actions failed: ${x.message}` }) } }
+      else if (!why) { brainBad.delete(eng); if (r.sessionId && !tidy) delete r.carry }
+    }
+    qprocs.delete(r.id); delete r.runStart
     for (const k of [...r.asks]) { const f = asks.get(k.id); if (f) f(false) }
     r.asks = []
     if (state.rooms.includes(r)) {
-      if (e) roomLog(r, { ...QUEEN, kind: 'error', text: `Queen failed to start: ${e.message}` })
-      else if (tidy && r.stopped) {}
-      else if (tidy) roomLog(r, { ...QUEEN, kind: 'system', text: r.context && r.before && r.context.used < r.before ? `Queen's conversation compacted: ${core.kTok(r.before)} → ${core.kTok(r.context.used)} tokens` : 'Queen could not compact her conversation; carrying on as it is' })
-      else if (code && !r.stopped) roomLog(r, { ...QUEEN, kind: 'error', text: `Queen failed (exit code ${code})${err.trim() ? ': ' + first(err.trim().split('\n').pop(), 200) : ''}` })
+      if (again && !r.stopped) r.queue.unshift(again)
       const next = r.queue.shift()
       if (next) queenRun(r, next)
       else if (qt.shouldWake(m)) queenWake(r)
@@ -901,6 +1016,36 @@ function queenRun(r, prompt, tidy) {
   child.on('error', e => finish(null, e))
   child.on('close', code => finish(code))
   roomsPush(); updatePower()
+}
+// The cards Queen would get from list_bees, as text for a CLI that has no tools
+function queenCards(r) {
+  const A = membersOf(r), m = r.mission
+  return JSON.stringify({
+    group: r.name, bees: A.map(a => qt.beeCard(a, state.agents, { busy: procs.has(a.id), memory: garden.readMemory(wsRoot(), a.id) })),
+    squads: qt.squadsOf(state.agents).map(sq => qt.squadCard(sq, squadBusy(sq))),
+    waiting_on: Object.values(m.pending).map(p => p.name), hive_capacity: `${state.agents.length}/${MAX}`,
+    engines_installed: enginesInfo().filter(e => e.installed && e.template === null).map(e => e.id), budget_used_up: overBudget(),
+  }, null, 1)
+}
+// Queen wrote her reply and, in a ```hive block, what she wants done. Show the reply, carry out the actions, and return what she has to be told
+// (an action that failed, or one whose answer she is waiting for); '' when everything simply went out
+async function queenActs(r, reply) {
+  const { text, actions, bad } = qt.parseActions(reply)
+  if (text) roomLog(r, { ...QUEEN, kind: 'say', text })
+  const out = [], tell = []
+  for (const a of actions.slice(0, qt.LIMITS.perTurn + 2)) {
+    if (r.stopped) return ''
+    const what = `${a.tool}${a.args.bee || a.args.squad || a.args.name ? ' ' + (a.args.bee || a.args.squad || a.args.name) : ''}`
+    try {
+      const res = await queenTool(r.id, a.tool, a.args, () => {})
+      out.push(`- ${what}: ${res.text}`)
+      if (!['dispatch', 'run_squad', 'stop'].includes(a.tool)) tell.push(what)
+    } catch (e) { out.push(`- ${what}: FAILED. ${e.message}`); tell.push(what) }
+  }
+  for (const b of bad) { out.push(`- could not read this action, it was not carried out: ${b}`); tell.push('bad') }
+  if (actions.length > qt.LIMITS.perTurn + 2) { out.push(`- the rest of your actions were not carried out: at most ${qt.LIMITS.perTurn} per reply`); tell.push('many') }
+  if (!tell.length) return ''
+  return `Results of your actions:\n${out.join('\n')}\n\nGo on from here: tell the user where things stand, and add a hive block only if something more has to be done.`
 }
 function queenWake(r) {
   const m = r.mission, msg = qt.wakeMessage(m)
@@ -1006,13 +1151,7 @@ async function queenTool(roomId, tool, args, onClose) {
   const r = needRoom(roomId), m = r.mission, A = membersOf(r)
   const find = ref => { const x = qt.findBee(A, ref); if (x.error) throw new Error(x.error + ' (only bees in this group can be commanded)'); return x.bee }
   switch (tool) {
-    case 'list_bees':
-      return { text: JSON.stringify({
-        group: r.name, bees: A.map(a => qt.beeCard(a, state.agents, { busy: procs.has(a.id), memory: garden.readMemory(wsRoot(), a.id) })),
-        squads: qt.squadsOf(state.agents).map(sq => qt.squadCard(sq, squadBusy(sq))),
-        waiting_on: Object.values(m.pending).map(p => p.name), hive_capacity: `${state.agents.length}/${MAX}`,
-        engines_installed: enginesInfo().filter(e => e.installed && e.template === null).map(e => e.id), budget_used_up: overBudget(),
-      }, null, 1) }
+    case 'list_bees': return { text: queenCards(r) }
     case 'dispatch': {
       const bee = find(args.bee), kind = args.kind === 'ask' ? 'ask' : 'task', task = String(args.task || '').trim().slice(0, 20000)
       if (squadRunOf(bee.id)) throw new Error(`${bee.name}'s squad is running; wait for the squad to report back`)
@@ -1111,8 +1250,7 @@ const ROUTE_MODEL = { claude: 'haiku', codex: 'gpt-5.1-codex-mini' }
 async function routeTo(r, bees, recent, text) {
   const prompt = qt.routePrompt(r.name, bees.map(b => ({ name: b.name, folder: b.task, about: b.prompt || (b.tail || []).join(' / ') })), recent, text)
   try {
-    if (core.onPath('claude')) return qt.parseRoute(await once(prompt, { model: ROUTE_MODEL.claude, bare: true, timeout: 45000 }), bees)
-    if (core.onPath('codex')) return qt.parseRoute(await new Promise((res, rej) => execFile('codex', ['exec', '--skip-git-repo-check', '-s', 'read-only', '-m', ROUTE_MODEL.codex, prompt], { cwd: DIR, timeout: 45000, maxBuffer: 4 << 20, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } }, (e, out) => (e ? rej(e) : res(out)))), bees)
+    return qt.parseRoute(await once(prompt, { model: ROUTE_MODEL.claude, bare: true, timeout: 45000 }), bees)
   } catch {}
   return null
 }
@@ -1175,13 +1313,14 @@ function roomStop(r) {
   r.mission = qt.newMission()                             // clear first, so the stopped bees do not wake Queen again
   const child = qprocs.get(r.id)
   if (child) { try { process.kill(-child.pid, 'SIGTERM') } catch {} }
+  for (const k of [...(r.asks || [])]) { const f = asks.get(k.id); if (f) f(false) }      // a question she was waiting on is answered with no
   for (const id of ids) { const a = byId(id); if (a) { if (a.ctx) a.ctx = { ...a.ctx, why: 'chat' }; actions.stop(a) } }
   roomLog(r, { ...QUEEN, name: r.name, kind: 'system', text: ids.size ? `Stopped (stopped ${ids.size} bee${ids.size === 1 ? '' : 's'})` : 'Stopped' })
   push()
 }
 function roomNew(r) {
   if (qprocs.has(r.id) || Object.keys(r.mission.pending).length) throw new Error('This task is still in progress. Stop it before starting a new conversation')
-  r.sessionId = ''; r.mission = qt.newMission(); delete r.context; r.tidied = false
+  r.sessionId = ''; r.mission = qt.newMission(); delete r.context; r.tidied = false; r.chars = 0; delete r.carry
   roomLog(r, { ...QUEEN, kind: 'system', text: 'Started a new conversation. Queen no longer remembers the earlier one' })
 }
 function parseRoom(c, prev) {
@@ -1571,7 +1710,7 @@ function enginesInfo() {
   return Object.entries(core.ENGINES).map(([id, e]) => ({
     id, label: e.label, cmd: e.cmd, template: e.args ? null : e.template,
     models: listed[id]?.length ? listed[id] : e.models || [], names: named[id] || e.names || {}, noModel: !!e.noModel,
-    installed: id === 'custom' ? true : core.onPath(e.args ? core.binOf(e) : e.cmd), custom: id === 'custom',
+    installed: id === 'custom' ? true : core.onPath(e.args ? core.binOf(e) : e.cmd), custom: id === 'custom', brain: BRAINS.includes(id),
   }))
 }
 // "id - Name" per line from cursor-agent, "id<tab>Name" from agy
@@ -1589,6 +1728,7 @@ function loadModels() {
         const name = mm[2].replace(/\s*\((current|default)[^)]*\)/gi, '').trim()
         if (name && name !== mm[1]) (named[id] ||= {})[mm[1]] = name
       }
+      send('engines', enginesInfo())                     // the window asked for the list before this CLI had answered
     })
   }
 }
@@ -1835,7 +1975,15 @@ function ipc() {
   })
   handle('rooms', () => state.rooms.map(roomPublic))
   handle('room', id => { const r = needRoom(id); return { entries: readRoom(r), room: roomPublic(r) } })
-  handle('roomCreate', c => { const r = newRoom(parseRoom(c)); if (typeof c.queenModel === 'string' && core.validModel(c.queenModel) && c.queenModel.length <= 80) r.model = c.queenModel; if (c.main && r.queen && !state.rooms.some(x => x.main)) r.main = true; state.rooms.push(r); roomsPush(); return { id: r.id } })
+  // Which CLI and model Queen runs on in this group: '' is automatic (the first CLI that works) and that CLI's own default model
+  const queenPick = (r, c) => {
+    const e = c.queenEngine, mo = c.queenModel                // check both before either is stored
+    if (typeof e === 'string' && e && !BRAINS.includes(e)) throw new Error('Queen cannot run on this CLI')
+    if (typeof mo === 'string' && (!core.validModel(mo) || mo.length > 80)) throw new Error('Invalid model name')
+    if (typeof e === 'string') r.engine = e
+    if (typeof mo === 'string') r.model = mo
+  }
+  handle('roomCreate', c => { const r = newRoom(parseRoom(c)); queenPick(r, c || {}); if (c.main && r.queen && !state.rooms.some(x => x.main)) r.main = true; state.rooms.push(r); roomsPush(); return { id: r.id } })
   handle('roomUpdate', (id, c) => {
     const r = needRoom(id)
     if (c && typeof c.model === 'string') { if (!core.validModel(c.model) || c.model.length > 80) throw new Error('Invalid model name'); r.model = c.model }
@@ -1844,8 +1992,9 @@ function ipc() {
       if (!name) throw new Error('Give the group a name')
       r.name = name
     } else {
-      Object.assign(r, parseRoom(c, r))
-      if (typeof c.queenModel === 'string' && core.validModel(c.queenModel) && c.queenModel.length <= 80) r.model = c.queenModel
+      const next = parseRoom(c, r)
+      queenPick(r, c)
+      Object.assign(r, next)
     }
     roomsPush()
   })

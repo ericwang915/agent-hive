@@ -66,7 +66,7 @@ npm start
 ### 环境要求
 
 - macOS 12 或更高版本
-- `PATH` 里至少有一个 agent CLI：[`claude`](https://docs.claude.com/en/docs/claude-code)、`codex`、`gemini`、`agy`、`dsh`，或 Cursor 的 `agent`（旧版本叫 `cursor-agent`）。Queen、每日报告和夜间蜜蜂需要 `claude`。
+- `PATH` 里至少有一个 agent CLI：[`claude`](https://docs.claude.com/en/docs/claude-code)、`codex`、`gemini`、`agy`、`dsh`，或 Cursor 的 `agent`（旧版本叫 `cursor-agent`）。Queen、每日报告和夜间蜜蜂会用这些 CLI 里能用的那个：优先 Claude Code，不行就自动换下一个能应答的。装了但用不了的 CLI（比如没登录）会被跳过。
 - `git`：用于 diff、提交、分支和 PR。`gh` 可选，用来开 PR。
 
 ## 能用它做什么
@@ -157,7 +157,7 @@ Hive 页面默认是蜂巢视图，也可以切回经典的卡片视图。每支
 
 ### 支持哪些编程 agent？
 
-开箱支持 Claude Code、Codex CLI、Gemini CLI、Antigravity（`agy`）、DeepSeek Harness（`dsh`）和 Cursor Agent，另外支持任何接受提示词的命令行（带 `{prompt}` 的自定义模板）。Queen、每日报告和夜间蜜蜂需要 Claude Code。
+开箱支持 Claude Code、Codex CLI、Gemini CLI、Antigravity（`agy`）、DeepSeek Harness（`dsh`）和 Cursor Agent，另外支持任何接受提示词的命令行（带 `{prompt}` 的自定义模板）。Queen、每日报告和夜间蜜蜂会用这些 CLI 里能用的那个：优先 Claude Code，不行就自动换下一个能应答的。装了但用不了的 CLI（比如没登录）会被跳过。在群设置里也可以给 Queen 指定 CLI 和模型。
 
 ### 我的代码会离开我的电脑吗？
 
