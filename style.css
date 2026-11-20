@@ -540,7 +540,7 @@ dialog::backdrop { background: rgba(40, 34, 26, .34); backdrop-filter: blur(2px)
 .rm-card.result.direct { background: var(--card) }
 .rm-card.result.direct .md { max-height: 300px; overflow: hidden; font-size: 13.5px }
 .rm-card.result.direct.long .md { -webkit-mask-image: linear-gradient(#000 78%, transparent) }
-.rm-card.result.open .md { max-height: none; -webkit-mask-image: none }
+.rm-card.result.open .md, .rm-card.result.direct.long.open .md { max-height: none; -webkit-mask-image: none }
 .rm-card.result.open .tx { -webkit-line-clamp: unset; display: block }
 .rm-more { display: block; border: 0; background: transparent; padding: 4px 0 0; margin-top: 2px; font-size: 12.5px; font-weight: 600; color: var(--clay-ink); cursor: pointer }
 .rm-more:hover { text-decoration: underline }
