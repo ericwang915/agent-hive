@@ -20,6 +20,8 @@ function parseEvent(c, agents = [], selfId = '') {
     e.ids = [...new Set((Array.isArray(c.ids) ? c.ids : []).map(String))].filter(id => id !== selfId && agents.some(a => a.id === id)).slice(0, 20)
     if (!e.ids.length) throw new Error('Pick the bee to wait for')
     e.on = ON.includes(c.on) ? c.on : 'done'
+    const when = String(c.when || '').replace(/\s+/g, ' ').trim().slice(0, 500)
+    if (when) { e.when = when; if (c.unsure === 'start') e.unsure = 'start' }
   }
   return e
 }

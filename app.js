@@ -375,13 +375,13 @@ function openHatch(pre = {}) {
     mode: 'edit', id: a.id, name: a.name, task: a.task, wsCustom: a.workspace, color: a.color, engine: a.engine, model: a.model || '', template: a.template || '', prompt: a.prompt || '',
     sched: { time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, ...a.schedule, event: { ...{ type: 'commit', branch: '', remote: false, what: ['pr'], ids: [], on: 'done', cooldown: 5 }, ...(a.schedule.event || {}) }, ...(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : {}), asDaily: !!onlyOf(a.schedule.mode === 'weekdays' ? { mode: 'weekly', days: [1, 2, 3, 4, 5] } : a.schedule) },
     sleepResume: a.sleepResume !== false, permission: a.permission, isolate: !!a.isolate, startNow: false, freshSchedule: a.freshSchedule !== false, noMcp: !!a.noMcp, mcpOff: a.mcpOff || [], noSkills: !!a.noSkills, chrome: !!a.chrome,
-    after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
+    after: a.after ? { ids: Team.upIds(a), prompt: a.after.prompt, loop: !!a.after.loop, when: a.after.when || '', unsure: a.after.unsure === 'start' ? 'start' : 'skip' } : null, inRelay: Team.inTeam(S.agents, a.id), git: a.git,
   } : {
     mode: 'create', name: '', task: '', taskTouched: false, wsCustom: '', gitUrl: '', gitBranch: '',
     color: S.colors.find(c => !usedColors.has(c)) || S.colors[S.agents.length % S.colors.length], engine: firstInstalled(), model: '', template: '', prompt: '',
     sched: { mode: 'manual', time: '09:00', at: defaultAt(), every: 60, days: [1, 2, 3, 4, 5], dom: 1, event: { type: 'commit', branch: '', remote: false, what: ['pr'], ids: [], on: 'done', cooldown: 5 } },
     sleepResume: true, permission: 'full', isolate: false, startNow: true, freshSchedule: true, noMcp: false, mcpOff: [], noSkills: false, chrome: false,
-    after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false }, engineTouched: false,
+    after: { ids: [], role: 'review', prompt: S.presets.review.prompt, loop: false, when: '', unsure: 'skip' }, engineTouched: false,
   }
   if (!a) {
     F.name = pre.name || pickName()
@@ -453,6 +453,13 @@ function afterShape() {
   const peers = Team.teamOf(A, ids[0]).filter(m => d[m.id] === depth)
   return { depth, peers, parallel: peers.length > 0 }
 }
+// "Only when": the handoff happens only if this sentence is true of what the bee before said
+function whenHtml(when, unsure, input, act, from) {
+  return `<div><div class="lab" style="font-size:12px;font-weight:600;margin-bottom:6px">Only when <span class="opt" style="font-weight:400;color:var(--faint)">optional · in your own words · checked against ${esc(from)}'s last reply</span></div>
+    <input type="text" ${input} value="${esc(when || '')}" maxlength="500" placeholder="e.g. the conversion rate is below 5% · tests failed · it found new P0 issues" spellcheck="false" style="width:100%">
+    <div class="when-more row" style="flex-wrap:wrap;gap:6px;margin-top:8px"${when ? '' : ' hidden'}><span class="mute" style="font-size:12px">If it cannot be told</span><div class="seg sm">${[['skip', 'Do not start'], ['start', 'Start anyway']].map(([k, l]) => `<button type="button" class="${(unsure || 'skip') === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${l}</button>`).join('')}</div><span class="grow"></span><span class="faint" style="font-size:12px">One small model call per handoff. Have ${esc(from)} state the value at the end of its reply</span></div></div>`
+}
+const whenMore = el => { const m = el.parentElement.querySelector('.when-more'); if (m) m.hidden = !el.value.trim() }
 function updRelay() {
   if (!F) return            // the dialog was closed while a check was still on its way
   const el = $('#sec-relay')
@@ -460,6 +467,7 @@ function updRelay() {
     if (!F.after) { el.innerHTML = F.inRelay ? '<div class="lab">Relay</div><div class="ro">Team lead</div>' : ''; return }
     const par = Team.isParallel(S.agents, F.id)
     el.innerHTML = `<div class="lab">Relay</div><div class="relay-box" style="margin-top:0"><div>${F.after.ids.length > 1 ? 'Merges' : 'After'} <b>${esc(upNames(byId(F.id)).join(', '))}</b> <span class="faint">· fixed</span></div>
+      ${whenHtml(F.after.when, F.after.unsure, 'id="f-after-when"', 'f-unsure', upNames(byId(F.id)).join(', '))}
       <div><div class="lab" style="font-size:12px;font-weight:600;margin-bottom:6px">Prompt on handoff</div><textarea id="f-after-prompt" rows="4">${esc(F.after.prompt)}</textarea></div>
       ${loopCheck(par)}</div>`
     return
@@ -481,6 +489,7 @@ function updRelay() {
       : `<div class="hint" style="margin:0">Parallel with ${esc(sh.peers.map(p => p.name).join(', '))}, each in its own worktree.</div>`) + (sh.peers.some(p => p.after && p.after.loop) ? `<div class="hint warn" style="margin:0">${esc(sh.peers.filter(p => p.after && p.after.loop).map(p => p.name).join(', '))} now sends its feedback back to ${esc(lead ? lead.name : 'the lead')}. Bees that work in parallel cannot do that, so it will be switched off when you hatch this one.</div>` : '') : ''
     box = `<div class="relay-box"><div>${shape} <span class="faint">shared folder ${esc(F.afterTask)}</span></div>${par}
       <div class="row" style="flex-wrap:wrap"><span class="mute" style="font-size:12px">Role</span><div class="seg">${[['review', 'Review'], ['merge', 'Merge'], ['test', 'Tests'], ['custom', 'Custom']].map(([k, l]) => `<button type="button" class="${F.after.role === k ? 'on' : ''}" data-act="f-role" data-k="${k}">${l}</button>`).join('')}</div></div>
+      ${whenHtml(F.after.when, F.after.unsure, 'id="f-after-when"', 'f-unsure', ups.join(', '))}
       <div><div class="lab" style="font-size:12px;font-weight:600;margin-bottom:6px">Prompt on handoff <span class="opt" style="font-weight:400;color:var(--faint)">{from} upstream name · {reply} upstream summary</span></div><textarea id="f-after-prompt" rows="4">${esc(F.after.prompt)}</textarea></div>
       ${loopCheck(sh.parallel, lead)}</div>`
   }
@@ -559,7 +568,8 @@ function eventFormHtml(e) {
     github: `${EV_WHAT.map(([k, l]) => `<label class="check" style="align-items:center"><input type="checkbox" data-change="f-ev-what" data-k="${k}" ${e.what.includes(k) ? 'checked' : ''} style="margin:0">${l}</label>`).join('')}
       <div class="hint${S.hasGh ? '' : ' warn'}" style="width:100%;margin:0">${S.hasGh ? 'Asks GitHub every 5 minutes through the gh CLI, for the repository in this bee\'s folder.' : 'Needs the gh CLI, which was not found on this Mac. Install it and run "gh auth login".'}</div>`,
     bee: `${others.length ? `<div class="ev-bees">${others.map(a => `<label class="check" style="align-items:center"><input type="checkbox" data-change="f-ev-bee" data-k="${a.id}" ${e.ids.includes(a.id) ? 'checked' : ''} style="margin:0"><span class="dot" style="background:${esc(a.color)}"></span>${esc(a.name)}</label>`).join('')}</div>` : '<span class="hint" style="margin:0">No other bees yet</span>'}${seg(EV_ON, e.on, 'f-ev-on')}
-      <div class="hint" style="width:100%;margin:0">Runs with that bee's last reply attached. Works across folders and squads.</div>`,
+      <div class="hint" style="width:100%;margin:0">Runs with that bee's last reply attached. Works across folders and squads.</div>
+      <div style="width:100%">${whenHtml(e.when, e.unsure, 'data-input="f-ev-when"', 'f-ev-unsure', 'that bee')}</div>`,
   }[e.type]
   return `${seg(EV_TYPES, e.type, 'f-ev-type')}<div class="ev-body">${body}</div><div class="ev-cool">At most once every <input type="number" min="0" max="1440" data-input="f-ev-cool" value="${e.cooldown}" style="width:70px"> min</div>`
 }
@@ -622,7 +632,7 @@ async function submitForm() {
     prompt: F.prompt, permission: F.permission, sleepResume: F.sleepResume, isolate: F.isolate, startNow: F.startNow, freshSchedule: F.freshSchedule, noMcp: F.noMcp, mcpOff: F.mcpOff, noSkills: F.noSkills, chrome: F.engine === 'claude' && F.chrome,
     schedule: { mode: s.mode, time: s.time, at: s.at, every: +s.every, days: s.days, dom: +s.dom, event: s.mode === 'event' ? s.event : undefined },
     git: relay || F.mode === 'edit' ? null : { url: F.gitUrl.trim(), branch: F.gitBranch.trim() },
-    after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop } : null,
+    after: F.after && F.after.ids.length ? { ids: F.after.ids, prompt: F.after.prompt, loop: F.after.loop, when: F.after.when || '', unsure: F.after.unsure } : null,
   }
   if (!cfg.name) return toast('Give the bee a name', 'err')
   if (F.mode === 'create' && !cfg.task) return toast('Enter a folder name', 'err')
@@ -659,6 +669,8 @@ const INPUT = {
   'f-git-branch': v => { F.gitBranch = v; checkGit() },
   'f-template': v => { F.template = v; updPreview() },
   'f-prompt': v => { F.prompt = v },
+  'f-after-when': (v, el) => { F.after.when = v; if (el) whenMore(el) },
+  'f-ev-when': (v, el) => { F.sched.event.when = v; if (el) whenMore(el) },
   'f-after-prompt': v => { F.after.prompt = v; if (F.after.role && F.after.role !== 'custom' && v !== S.presets[F.after.role].prompt) { F.after.role = 'custom'; document.querySelectorAll('[data-act="f-role"]').forEach(b => b.classList.toggle('on', b.dataset.k === 'custom')) } },
   'f-ev-branch': v => { F.sched.event.branch = v }, 'f-ev-cool': v => { F.sched.event.cooldown = Math.max(0, +v || 0) },
   'f-time': v => { F.sched.time = v }, 'f-at': v => { F.sched.at = v }, 'f-dom': v => { F.sched.dom = v }, 'f-every': v => { F.sched.every = v },
@@ -1019,6 +1031,8 @@ const ACT = {
   'f-ev-type': el => { F.sched.event.type = el.dataset.k; updSched() },
   'f-ev-remote': el => { F.sched.event.remote = el.dataset.k === 'remote'; updSched() },
   'f-ev-on': el => { F.sched.event.on = el.dataset.k; updSched() },
+  'f-unsure': el => { F.after.unsure = el.dataset.k; el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)) },
+  'f-ev-unsure': el => { F.sched.event.unsure = el.dataset.k; el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)) },
   'f-only': el => { const k = el.dataset.k; Object.assign(F.sched, k ? { mode: 'weekly', days: k === 'weekdays' ? [1, 2, 3, 4, 5] : [0, 6], asDaily: true } : { mode: 'daily', asDaily: false }); updSched() },
   'f-perm': el => { F.permission = el.dataset.k; updBeh() },
   // Garden
@@ -1093,7 +1107,7 @@ document.addEventListener('input', e => {
   if (t.id === 'pal-input') { palSel = 0; renderPal(); return searchMore(t.value, renderPal) }
   if (!F) return
   const k = t.id && INPUT[t.id] ? t.id : t.dataset.input
-  if (k && INPUT[k]) INPUT[k](t.value)
+  if (k && INPUT[k]) INPUT[k](t.value, t)
 })
 document.addEventListener('change', async e => {
   const t = e.target

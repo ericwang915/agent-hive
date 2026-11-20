@@ -817,4 +817,18 @@ fs.rmSync(tmp, { recursive: true, force: true })
   eq(q.digest([{ who: 'user', text: 'fix the bug' }, { kind: 'system', text: 'x' }, { who: 'queen', name: 'Queen', text: ' on it ' }, { name: 'Mochi', text: '' }]), 'User: fix the bug\nQueen: on it')
   eq(q.digest([{ who: 'user', text: 'a'.repeat(50) }, { who: 'user', text: 'last' }], 20), 'User: last')
 }
+{ // handoff conditions
+  const c = require('./core'), ev = require('./events')
+  eq(c.parseGate('VERDICT: NO\nWHY: the rate is 7.2%, not below 5%'), { ok: false, why: 'the rate is 7.2%, not below 5%' })
+  eq(c.parseGate('**VERDICT:** yes\n**WHY:** 转化率为 4.1%').ok, true); eq(c.parseGate('VERDICT：UNSURE').ok, null); eq(c.parseGate('I think so').ok, null); eq(c.parseGate('').why, 'the check gave no clear answer')
+  eq(c.gateLine({ ok: true, why: 'rate is 4%' }, 'Bob', 'rate below 5%'), { gate: 'yes', start: true, text: 'Handed to Bob. Condition: rate below 5%. rate is 4%.' })
+  eq(c.gateLine({ ok: false, why: 'rate is 7%.' }, 'Bob', 'rate below 5%').start, false)
+  eq([c.gateLine({ ok: null, why: 'x' }, 'Bob', 'w').start, c.gateLine({ ok: null, why: 'x' }, 'Bob', 'w', 'start').start, c.gateLine({ ok: null, why: '' }, 'Bob', 'w', 'start').gate], [false, true, 'unsure'])
+  assert.ok(c.gatePrompt('  rate\n below 5% ', 'Ann', 'x'.repeat(30000)).length < 16500 && c.gatePrompt('rate\nbelow', 'Ann', 'r').includes('Condition: rate below\n'))
+  const A = { id: 'a', name: 'A', status: 'idle' }, B = { id: 'b', name: 'B', status: 'idle', after: { ids: ['a'], prompt: '{reply}', when: ' rate below 5% ', unsure: 'start' } }, C = { id: 'c', name: 'C', status: 'idle', after: { ids: ['a'], prompt: '{reply}' } }
+  const st = c.relayPlan([A, B, C], A, 'rate 4%', { why: 'manual' }).filter(s => s.run)
+  eq(st.map(s => [s.run, s.when, s.unsure, s.said]), [['b', 'rate below 5%', 'start', 'rate 4%'], ['c', undefined, undefined, undefined]])
+  eq(ev.parseEvent({ type: 'bee', ids: ['a'], when: ' tests  failed ', unsure: 'start' }, [A, B], 'b'), { type: 'bee', cooldown: 5, ids: ['a'], on: 'done', when: 'tests failed', unsure: 'start' })
+  eq('when' in ev.parseEvent({ type: 'bee', ids: ['a'], unsure: 'start' }, [A, B], 'b'), false)
+}
 console.log('ok')

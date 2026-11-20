@@ -342,7 +342,10 @@ function run(a, prompt, why = 'manual', meta = {}) {
       if ((a.ctx || {}).why === 'chat' && !silent) chatHandoff(a, reply)
       if (n || !talk) event(a, text, 'done', alert)
       else if (alert && !silent) notify(a, a.name, text)
-      doSteps(steps)
+      // a handoff with a condition waits for the check; in a squad run the plan is followed as it is
+      const gated = squadRunOf(a.id) ? [] : steps.filter(s => s.run && s.when)
+      doSteps(steps.filter(s => !gated.includes(s)))
+      for (const s of gated) gateHandoff(a, s)
       planned = steps
     }
     // dispatched by Queen / mentioned in a group: hand the result back to the group (a sleeping bee hands it in after it wakes and finishes)
@@ -354,6 +357,29 @@ function run(a, prompt, why = 'manual', meta = {}) {
   }
   child.on('error', e => finish(null, null, e))
   child.on('close', (code, signal) => finish(code, signal))
+  push()
+}
+
+// ───────── Handoff conditions ─────────
+const whenOf = o => { const when = core.cleanWhen(o && o.when); return when ? { when, ...(o.unsure === 'start' ? { unsure: 'start' } : {}) } : {} }
+// → {ok: true | false | null, why}. Never throws: a check that cannot run is "could not be told"
+async function gateAsk(when, from, reply) {
+  if (!String(reply || '').trim()) return { ok: null, why: `${from} gave no reply to check` }
+  try { return core.parseGate(await once(core.gatePrompt(when, from, reply), { model: ROUTE_MODEL.claude, bare: true, timeout: 90000 })) }
+  catch (e) { return { ok: null, why: `the check did not run (${first(String((e && e.message) || e).split(/(?<=[.!?)])\s/)[0].replace(/[.:]$/, ''), 160)})` } }
+}
+function gateSay(a, line) { log(a, { role: 'system', text: line.text, gate: line.gate }); event(a, line.text, 'relay', !line.start) }
+async function gateHandoff(a, s) {
+  const b0 = byId(s.run)
+  if (!b0) return
+  log(a, { role: 'system', text: `Checking the condition for ${b0.name}: ${s.when}` }); push()
+  const v = await gateAsk(s.when, s.from || a.name, s.said)
+  const b = byId(s.run), up = byId(a.id)
+  if (!b) return
+  const line = core.gateLine(v, b.name, s.when, s.unsure)
+  if (up) gateSay(up, line)
+  if (line.start) { doSteps([{ ...s, when: undefined, said: undefined }]); drainFolder(b) }
+  else log(b, { role: 'system', text: `Not started after ${s.from || a.name}. ${line.text.replace(/^Not handed to [^.]*\. /, '')}`, gate: line.gate })
   push()
 }
 
@@ -560,8 +586,17 @@ function eventsAfter(a, outcome, reply, oneOff) {
   for (const b of state.agents) {
     if (!evs.beeMatch(b, a, outcome) || !b.prompt) continue
     if (depth > EV_DEPTH) { log(b, { role: 'system', text: `Not started by ${a.name} this time: ${EV_DEPTH} event runs in a row already` }); continue }
-    const st = (b.evt = b.evt || {})
-    st.pending = { title: `${a.name} ${outcome === 'error' ? 'failed' : 'finished a round'}. Its last reply:`, lines: [String(reply || '(no reply)').trim().slice(-4000)], depth }
+    const pend = () => { const st = (b.evt = b.evt || {}); st.pending = { title: `${a.name} ${outcome === 'error' ? 'failed' : 'finished a round'}. Its last reply:`, lines: [String(reply || '(no reply)').trim().slice(-4000)], depth } }
+    const ev = b.schedule.event
+    if (!ev.when) { pend(); continue }
+    gateAsk(ev.when, a.name, reply).then(v => {          // "Only when": the check decides whether this bee wakes
+      const b2 = byId(b.id), up = byId(a.id)
+      if (!b2 || !evs.beeMatch(b2, a, outcome)) return
+      const line = core.gateLine(v, b2.name, ev.when, ev.unsure)
+      if (up) gateSay(up, line)
+      if (line.start) { pend(); setTimeout(eventTick, 200) } else log(b2, { role: 'system', text: `Not started after ${a.name}. ${line.text.replace(/^Not handed to [^.]*\. /, '')}`, gate: line.gate })
+      push()
+    })
   }
   setTimeout(eventTick, 200)
 }
@@ -1562,7 +1597,7 @@ function create(c) {
     if (team.length + 1 > core.TEAM_MAX) throw new Error(`A team can have at most ${core.TEAM_MAX} bees`)
     if (team.some(t => t.isolate)) throw new Error('A bee on its own branch cannot be part of a relay')
     a.workspace = ups[0].workspace; a.task = ups[0].task; a.isolate = false
-    a.after = { ids, prompt: String(c.after.prompt || '').trim().slice(0, 20000) || core.PRESETS[ids.length > 1 ? 'merge' : 'review'].prompt, loop: !!c.after.loop }
+    a.after = { ids, prompt: String(c.after.prompt || '').trim().slice(0, 20000) || core.PRESETS[ids.length > 1 ? 'merge' : 'review'].prompt, loop: !!c.after.loop, ...whenOf(c.after) }
     // joining a step where another bee already works makes it a parallel step, and those cannot send work back (every round would double):
     // rather than refuse, switch that off for the bees on the step and say so in their chats
     const layer = Team.layerOf([...state.agents, a], a.id)
@@ -1702,7 +1737,7 @@ function update(id, c) {
   const a = byId(id)
   if (!a) throw new Error('This bee no longer exists')
   const s = parseSettings({ ...c, engine: c.engine || a.engine, selfId: id })
-  const after = a.after && c.after ? { ...a.after, prompt: String(c.after.prompt || '').trim().slice(0, 20000) || a.after.prompt, loop: !!c.after.loop } : a.after
+  const after = a.after && c.after ? { ...a.after, prompt: String(c.after.prompt || '').trim().slice(0, 20000) || a.after.prompt, loop: !!c.after.loop, when: undefined, unsure: undefined, ...('when' in c.after ? whenOf(c.after) : whenOf(a.after)) } : a.after
   if (after) checkLoop(state.agents.map(x => (x === a ? { ...a, after } : x)), a.id)
   if (inRelay(a)) s.isolate = false
   if (s.engine !== a.engine || s.isolate !== !!a.isolate) {           // engine changed / own branch toggled: start a new session

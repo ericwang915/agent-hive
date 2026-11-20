@@ -144,7 +144,7 @@ function addEntry(e, live) {
       else node = el('logblk', esc(e.text))
       break
     }
-    case 'system': node = el('sys', esc(e.text)); break
+    case 'system': { const m = e.gate && /^(.*?\.)( .*)?$/s.exec(e.text); node = el('sys', m ? `<b class="gate-${esc(e.gate)}">${esc(m[1])}</b>${esc(m[2] || '')}` : esc(e.text)); break }
     case 'run': {
       tl.querySelectorAll('.step.tool.wait').forEach(n => n.classList.remove('wait'))
       const tok = e.tin || e.tout ? `${fmtTok(e.tin || 0)} in / ${fmtTok(e.tout || 0)} out` : ''
