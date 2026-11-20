@@ -1896,6 +1896,7 @@ function guard(w) {          // external links open in the browser; no navigatio
   w.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' } })
   w.webContents.on('will-navigate', (e, url) => { e.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url) })
 }
+let editWanted = ''      // a bee whose settings the main window should open once it has loaded
 function showMain() {
   if (mainWin && !mainWin.isDestroyed()) { mainWin.show(); mainWin.focus(); return }
   mainWin = new BrowserWindow({ width: 1380, height: 900, minWidth: 880, minHeight: 600, titleBarStyle: 'hiddenInset', backgroundColor: '#FBFAF7', title: 'Agent Hive', webPreferences })
@@ -2054,6 +2055,14 @@ function ipc() {
     const r = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: fs.existsSync(wsRoot()) ? wsRoot() : HOME })
     return r.canceled ? '' : r.filePaths[0]
   })
+  // The gear in a bee's chat window: its settings open in the main window, which may have to be made first
+  handle('editBee', id => {
+    need(id)
+    const fresh = !mainWin || mainWin.isDestroyed()
+    showMain()
+    if (fresh) editWanted = id; else mainWin.webContents.send('edit-bee', id)
+  })
+  handle('editWanted', () => { const id = editWanted; editWanted = ''; return id })
   handle('reveal', id => { shell.openPath(dirOf(need(id))) })
   // File browser: the folder the bee's session runs in
   const filesRoot = a => (a.sessionCwd && fs.existsSync(a.sessionCwd) ? a.sessionCwd : dirOf(a))

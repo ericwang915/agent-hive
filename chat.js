@@ -181,7 +181,7 @@ function renderHead() {
   const b = (a, icon, title, on) => `<button class="btn sm icon ghost${on ? ' on' : ''}" data-h="${a}" title="${title}">${ICON[icon]}</button>`
   const html = (A.status === 'running' ? b('pause', 'pause', 'Pause') : '')
     + (A.status === 'paused' || (A.needsSetup && A.status !== 'setup') || (['stopped', 'error', 'sleeping'].includes(A.status) && A.lastRunAt) ? b('continue', 'play', A.needsSetup ? 'Retry clone' : 'Resume') : '')
-    + (['running', 'paused', 'setup'].includes(A.status) ? b('stop', 'stop', 'Stop') : '') + b('term', 'terminal', 'Terminal (⌃`)', !$('#term').hidden) + b('side', 'folder', 'Files sidebar (⌘B)')
+    + (['running', 'paused', 'setup'].includes(A.status) ? b('stop', 'stop', 'Stop') : '') + b('edit', 'gear', 'Settings') + b('term', 'terminal', 'Terminal (⌃`)', !$('#term').hidden) + b('side', 'folder', 'Files sidebar (⌘B)')
   if ($('#h-btns')._h !== html) { $('#h-btns')._h = html; $('#h-btns').innerHTML = html }
 }
 $('#h-btns').addEventListener('click', e => {
@@ -189,6 +189,7 @@ $('#h-btns').addEventListener('click', e => {
   if (!h) return
   if (h.h === 'side') setSide($('#tree').hidden)
   else if (h.h === 'term') toggleTerm()
+  else if (h.h === 'edit') hive.call('editBee', A.id)
   else if (h.h === 'stop') { if (confirm(`Stop ${A.name}?`)) act('stop') }
   else act(h.h)
 })

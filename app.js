@@ -1666,6 +1666,8 @@ async function boot() {
   hive.on('night-busy', b => { if (G) { G.busy = b; if (!skillEdit && !memEdit) renderGarden() } })
   hive.on('garden-changed', () => { if ((view === 'skills' && !skillEdit) || (view === 'memory' && !memEdit)) loadGarden() })
   hive.on('show', v => (String(v).startsWith('room:') ? openRoom(v.slice(5)) : show(v)))
+  hive.on('edit-bee', id => { if (byId(id)) openHatch({ edit: id }) })
+  hive.call('editWanted').then(id => { if (id && byId(id)) openHatch({ edit: id }) })
   bootRoom()
   window.addEventListener('resize', debounce(renderHive, 80))
   setInterval(() => { renderFeed(); renderHive() }, 60000)          // "3 min ago", "next …"
