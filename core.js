@@ -422,10 +422,10 @@ function parseGate(text) {
 }
 // The line in the chat. to: the bee that would start
 function gateLine(v, to, when, unsure) {
-  const cond = `Condition: ${cleanWhen(when)}.`, why = v.why ? ' ' + v.why.replace(/[.。]?$/, '.') : ''
-  if (v.ok === true) return { gate: 'yes', start: true, text: `Handed to ${to}. ${cond}${why}` }
-  if (v.ok === false) return { gate: 'no', start: false, text: `Not handed to ${to}. ${cond}${why}` }
-  return unsure === 'start' ? { gate: 'unsure', start: true, text: `Handed to ${to} anyway. ${cond} It could not be told:${why || ' no answer.'}` } : { gate: 'unsure', start: false, text: `Not handed to ${to}. ${cond} It could not be told:${why || ' no answer.'}` }
+  const why = v.why ? v.why.replace(/[.。]?$/, '.') : ''
+  if (v.ok === true) return { gate: 'yes', start: true, text: `Handed to ${to}. ${why}`.trim() }
+  if (v.ok === false) return { gate: 'no', start: false, text: `Not handed to ${to}. ${why}`.trim() }
+  return { gate: 'unsure', start: unsure === 'start', text: `${unsure === 'start' ? `Handed to ${to} anyway` : `Not handed to ${to}`}. Could not tell: ${why || 'no answer.'}` }
 }
 
 // What to do after a bee finishes a clean run. Pure function; returns steps:

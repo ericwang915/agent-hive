@@ -455,11 +455,13 @@ function afterShape() {
 }
 // "Only when": the handoff happens only if this sentence is true of what the bee before said
 function whenHtml(when, unsure, input, act, from) {
-  return `<div><div class="lab" style="font-size:12px;font-weight:600;margin-bottom:6px">Only when <span class="opt" style="font-weight:400;color:var(--faint)">optional · in your own words · checked against ${esc(from)}'s last reply</span></div>
-    <input type="text" ${input} value="${esc(when || '')}" maxlength="500" placeholder="e.g. the conversion rate is below 5% · tests failed · it found new P0 issues" spellcheck="false" style="width:100%">
-    <div class="when-more row" style="flex-wrap:wrap;gap:6px;margin-top:8px"${when ? '' : ' hidden'}><span class="mute" style="font-size:12px">If it cannot be told</span><div class="seg sm">${[['skip', 'Do not start'], ['start', 'Start anyway']].map(([k, l]) => `<button type="button" class="${(unsure || 'skip') === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${l}</button>`).join('')}</div><span class="grow"></span><span class="faint" style="font-size:12px">One small model call per handoff. Have ${esc(from)} state the value at the end of its reply</span></div></div>`
+  const EG = ['tests failed', 'the conversion rate is below 5%', 'it found new P0 issues', 'more than 3 files changed']
+  return `<div class="when"><div class="lab" style="font-size:12px;font-weight:600;margin-bottom:6px">Only when <span class="opt" style="font-weight:400;color:var(--faint)">optional · a condition on ${esc(from)}'s reply</span></div>
+    <input type="text" ${input} value="${esc(when || '')}" maxlength="500" placeholder="Leave empty to always hand off" spellcheck="false" style="width:100%">
+    <div class="when-eg">e.g. ${EG.map(x => `<button type="button" data-act="when-eg">${esc(x)}</button>`).join('')}</div>
+    <label class="check when-more" style="margin-top:6px"${when ? '' : ' hidden'}><input type="checkbox" data-change="${act}" ${unsure === 'start' ? 'checked' : ''}><span>Start anyway if the reply does not say</span></label></div>`
 }
-const whenMore = el => { const m = el.parentElement.querySelector('.when-more'); if (m) m.hidden = !el.value.trim() }
+const whenMore = el => { const m = el.closest('.when').querySelector('.when-more'); if (m) m.hidden = !el.value.trim() }
 function updRelay() {
   if (!F) return            // the dialog was closed while a check was still on its way
   const el = $('#sec-relay')
@@ -681,6 +683,7 @@ const CHANGE = {
     setAfter(row); updRelay(); updWs(); updGit(); updEngine(); lockTask()
   },
   'f-loop': el => { F.after.loop = el.checked },
+  'f-unsure': el => { F.after.unsure = el.checked ? 'start' : 'skip' }, 'f-ev-unsure': el => { F.sched.event.unsure = el.checked ? 'start' : 'skip' },
   'f-ev-what': el => { const s = new Set(F.sched.event.what); el.checked ? s.add(el.dataset.k) : s.delete(el.dataset.k); F.sched.event.what = [...s] },
   'f-ev-bee': el => { const s = new Set(F.sched.event.ids); el.checked ? s.add(el.dataset.k) : s.delete(el.dataset.k); F.sched.event.ids = [...s] },
   'f-sleep': el => { F.sleepResume = el.checked },
@@ -1031,8 +1034,7 @@ const ACT = {
   'f-ev-type': el => { F.sched.event.type = el.dataset.k; updSched() },
   'f-ev-remote': el => { F.sched.event.remote = el.dataset.k === 'remote'; updSched() },
   'f-ev-on': el => { F.sched.event.on = el.dataset.k; updSched() },
-  'f-unsure': el => { F.after.unsure = el.dataset.k; el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)) },
-  'f-ev-unsure': el => { F.sched.event.unsure = el.dataset.k; el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)) },
+  'when-eg': el => { const i = el.closest('.when').querySelector('input[type=text]'); i.value = el.textContent; i.dispatchEvent(new Event('input', { bubbles: true })); i.focus() },
   'f-only': el => { const k = el.dataset.k; Object.assign(F.sched, k ? { mode: 'weekly', days: k === 'weekdays' ? [1, 2, 3, 4, 5] : [0, 6], asDaily: true } : { mode: 'daily', asDaily: false }); updSched() },
   'f-perm': el => { F.permission = el.dataset.k; updBeh() },
   // Garden

@@ -372,14 +372,14 @@ function gateSay(a, line) { log(a, { role: 'system', text: line.text, gate: line
 async function gateHandoff(a, s) {
   const b0 = byId(s.run)
   if (!b0) return
-  log(a, { role: 'system', text: `Checking the condition for ${b0.name}: ${s.when}` }); push()
+  log(a, { role: 'system', text: `Checking for ${b0.name}: ${s.when}` }); push()
   const v = await gateAsk(s.when, s.from || a.name, s.said)
   const b = byId(s.run), up = byId(a.id)
   if (!b) return
   const line = core.gateLine(v, b.name, s.when, s.unsure)
   if (up) gateSay(up, line)
   if (line.start) { doSteps([{ ...s, when: undefined, said: undefined }]); drainFolder(b) }
-  else log(b, { role: 'system', text: `Not started after ${s.from || a.name}. ${line.text.replace(/^Not handed to [^.]*\. /, '')}`, gate: line.gate })
+  else log(b, { role: 'system', text: `Not started after ${s.from || a.name} (only when ${s.when}). ${line.text.replace(/^Not handed to [^.]*\. /, '')}`, gate: line.gate })
   push()
 }
 
@@ -589,12 +589,13 @@ function eventsAfter(a, outcome, reply, oneOff) {
     const pend = () => { const st = (b.evt = b.evt || {}); st.pending = { title: `${a.name} ${outcome === 'error' ? 'failed' : 'finished a round'}. Its last reply:`, lines: [String(reply || '(no reply)').trim().slice(-4000)], depth } }
     const ev = b.schedule.event
     if (!ev.when) { pend(); continue }
+    log(a, { role: 'system', text: `Checking for ${b.name}: ${ev.when}` })
     gateAsk(ev.when, a.name, reply).then(v => {          // "Only when": the check decides whether this bee wakes
       const b2 = byId(b.id), up = byId(a.id)
       if (!b2 || !evs.beeMatch(b2, a, outcome)) return
       const line = core.gateLine(v, b2.name, ev.when, ev.unsure)
       if (up) gateSay(up, line)
-      if (line.start) { pend(); setTimeout(eventTick, 200) } else log(b2, { role: 'system', text: `Not started after ${a.name}. ${line.text.replace(/^Not handed to [^.]*\. /, '')}`, gate: line.gate })
+      if (line.start) { pend(); setTimeout(eventTick, 200) } else log(b2, { role: 'system', text: `Not started after ${a.name} (only when ${ev.when}). ${line.text.replace(/^Not handed to [^.]*\. /, '')}`, gate: line.gate })
       push()
     })
   }
