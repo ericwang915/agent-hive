@@ -45,7 +45,40 @@ const RANK_LOOK = [
 
 // Bee: two antennae, rounded-rect body, a faint belly stripe, two eyes, two blush spots, a smile
 // anim = status name, picks the animation: running flaps + sways, idle floats gently, paused breathes slowly, sleeping shows z's, error shivers, setup wobbles, stopped is still and grey
+// ───────── Skins ─────────
+// A skin is who the bees are drawn as. "classic" is the drawing below; the others are pictures in skins/<id>/<colour>/:
+// seven faces (happy, grin, love, wow, flat, sad, sleep) and a few moving loops (a-run, a-idle, a-sleep, a-error), one set per bee colour
+const SKIN_COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']      // the same list as COLORS in main.js
+const SKINS = {
+  bee: { name: 'Honey bee', about: 'The hive’s own bees, drawn as stickers', loops: ['run', 'idle', 'sleep', 'error'] },
+  maid: { name: 'Maid café', about: 'Anime maids, one hair colour per bee', loops: ['run', 'idle', 'sleep', 'error'] },
+  classic: { name: 'Classic', about: 'The simple bee Agent Hive started with', drawn: true },
+}
+const SKIN_DEFAULT = 'bee'
+let SKIN = SKIN_DEFAULT
+const setSkin = id => { SKIN = SKINS[id] ? id : SKIN_DEFAULT }
+const LOOP_OF = { running: 'run', setup: 'run', idle: 'idle', sleeping: 'sleep', error: 'error' }, LOOP_MIN = 26      // smaller than this an idle bee is a still picture
+const rgbOf = h => [1, 3, 5].map(i => parseInt(String(h).slice(i, i + 2), 16) || 0)
+const skinIdx = color => {
+  const i = SKIN_COLORS.indexOf(color)
+  if (i >= 0) return i
+  const c = rgbOf(color); let best = 5, d = Infinity
+  SKIN_COLORS.forEach((x, k) => { const r = rgbOf(x), e = (r[0] - c[0]) ** 2 + (r[1] - c[1]) ** 2 + (r[2] - c[2]) ** 2; if (e < d) { d = e; best = k } })
+  return best
+}
+// The picture sits on a canvas a quarter larger than the bee's box, so a hop or a swaying pigtail is not cut off
+function skinSvg(id, color, mood, size, crown, anim, extra, rank) {
+  const sk = SKINS[id], loop = LOOP_OF[anim], moving = loop && sk.loops.includes(loop) && (size >= LOOP_MIN || loop !== 'idle')
+  const file = `skins/${id}/${skinIdx(color)}/${moving ? 'a-' + loop : mood === 'sleep' && anim === 'paused' ? 'flat' : mood}.webp`
+  const gem = rank ? `<circle cx="34" cy="34" r="4.2" fill="${RANKS[rank].c}" stroke="#fff" stroke-width="1.3"/>` : ''
+  return `<svg class="bee img${moving ? ' lp' : ''}${anim ? ' a-' + anim : ''}" width="${size}" height="${size}" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+<g class="bee-all"><image href="${file}" x="-5" y="-7.6" width="50" height="50"/>
+${crown ? '<path transform="translate(20 1.5) scale(.7) translate(-20 -12.5)" d="M13.5 12.5l-1.2-6.2 4.3 3 3.4-4.6 3.4 4.6 4.3-3-1.2 6.2z" fill="#F0A93B" stroke="#B9741A" stroke-width="1.2" stroke-linejoin="round"/>' : ''}${gem}${extra}</g>
+<g class="zzz" fill="#7C83C9" font-family="Nunito, sans-serif" font-weight="800"><text class="z1" x="32" y="7" font-size="7">z</text><text class="z2" x="36.5" y="2.5" font-size="5">z</text></g>
+</svg>`
+}
 function beeSvg(color, mood = 'happy', size = 44, crown = false, anim = '', extra = '', rank = 0) {
+  if (!SKINS[SKIN].drawn) return skinSvg(SKIN, color, mood, size, crown, anim, extra, rank)
   const look = RANK_LOOK[rank] || {}, wf = look.wing ? look.wing[0] : '#fff', ws = look.wing ? look.wing[1] : '#CFE3F2', tip = look.tip || '#3A2E22'
   const eyes = mood === 'sleep'
     ? '<path d="M12.6 21.5h4.4M23 21.5h4.4" stroke="#3A2E22" stroke-width="1.7" stroke-linecap="round"/>'
@@ -268,4 +301,4 @@ async function call(ch, ...args) {
 const animT = () => `--t:${Math.round(performance.now())}`
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends, eventText }
+  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, SKINS, SKIN_COLORS, setSkin, skinIdx, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends, eventText }

@@ -11,6 +11,7 @@ const NIGHT = garden.NIGHT
 app.setName('Agent Hive')
 if (process.env.HIVE_DATA) app.setPath('userData', path.resolve(process.env.HIVE_DATA))      // use a separate data directory in tests
 const HOME = os.homedir(), MAX = 40
+const SKIN_IDS = ['bee', 'maid', 'classic']      // the skins common.js knows (SKINS)
 const COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']
 const PERMS = ['ask', 'safe', 'full', 'plan'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'event']
 const GATED = { event: 'event run', schedule: 'scheduled run', handoff: 'relay handoff', feedback: 'review feedback', resume: 'auto-resume', queen: 'task from Queen' }
@@ -60,7 +61,8 @@ function load() {
   try { s = JSON.parse(fs.readFileSync(STATE, 'utf8')) } catch {}
   const now = new Date(), st = s.settings || {}
   state = { agents: Array.isArray(s.agents) ? s.agents : [], feed: (Array.isArray(s.feed) ? s.feed : []).filter(f => !LEGACY_FEED.test(String(f.text))), spend: s.spend || { day: today(), usd: 0, tok: 0 } }
-  state.settings = { workspaceRoot: path.join(HOME, 'AgentHive'), reportTime: '18:00', budget: 0, memoryInject: true, compactAt: 50, compactCold: true, choreModel: 'sonnet', autoUpdate: false, updateNotify: true, ...st }
+  state.settings = { workspaceRoot: path.join(HOME, 'AgentHive'), reportTime: '18:00', budget: 0, memoryInject: true, compactAt: 50, compactCold: true, choreModel: 'sonnet', autoUpdate: false, updateNotify: true, skin: 'bee', ...st }
+  if (!SKIN_IDS.includes(state.settings.skin)) state.settings.skin = 'bee'
   if (state.settings.lastReportKey === undefined) state.settings.lastReportKey = slotKey({ mode: 'daily', time: state.settings.reportTime }, now) || ''
   const night = {}
   for (const k in NIGHT) {     // don't run right after the first launch
@@ -2163,6 +2165,7 @@ function ipc() {
     if (patch.compactAt !== undefined) st.compactAt = Math.max(0, Math.min(95, Math.round(+patch.compactAt) || 0))
     if (typeof patch.compactCold === 'boolean') st.compactCold = patch.compactCold
     if (typeof patch.updateNotify === 'boolean') st.updateNotify = patch.updateNotify
+    if (SKIN_IDS.includes(patch.skin) && patch.skin !== st.skin) { st.skin = patch.skin; send('skin', st.skin); for (const w of BrowserWindow.getAllWindows()) if (w !== mainWin && !w.isDestroyed()) w.webContents.reload() }      // a chat window draws every picture anew
     if (typeof patch.autoUpdate === 'boolean') { st.autoUpdate = patch.autoUpdate; if (st.autoUpdate) setTimeout(autoUpgrade, 500) }
     if (typeof patch.choreModel === 'string' && core.validModel(patch.choreModel) && patch.choreModel.length <= 80) st.choreModel = patch.choreModel
     save()

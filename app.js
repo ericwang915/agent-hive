@@ -26,7 +26,7 @@ function renderSide() {
   renderChats()
   const sp = S.spend && S.spend.day === dayKey() ? S.spend : { usd: 0, tok: 0 }
   const run = S.agents.filter(a => a.status === 'running').length, sch = S.agents.filter(scheduled).length
-  setHtml($('#cap'), `<div class="cap-row"><div class="today-line grow" title="${S.agents.length} of ${S.max} bees hatched${S.settings.budget ? ' · budget $' + S.settings.budget : ''}">${run} running · ${sch} scheduled · ${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok)}</div><button class="btn sm icon ghost" data-act="prefs" title="Settings">${ICON.gear}</button></div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
+  setHtml($('#cap'), `<div class="cap-row"><div class="today-line grow" title="${S.agents.length} of ${S.max} bees hatched${S.settings.budget ? ' · budget $' + S.settings.budget : ''}">${run} running · ${sch} scheduled · ${sp.usd || !sp.tok ? fmtUsd(sp.usd) : fmtTok(sp.tok)}</div><button class="btn sm icon ghost${view === 'settings' ? ' on' : ''}" data-act="prefs" title="Settings">${ICON.gear}</button></div><div class="bar" title="Hive capacity ${S.agents.length} / ${S.max}"><i style="width:${Math.min(100, S.agents.length / S.max * 100)}%"></i></div>`)
   renderFeed()
 }
 // ───────── Chats ─────────
@@ -88,12 +88,13 @@ function renderFeed() {
 
 function show(v) {
   view = v
-  for (const [id] of VIEWS) $('#v-' + id).hidden = id !== v
+  for (const id of [...VIEWS.map(x => x[0]), 'settings']) $('#v-' + id).hidden = id !== v
   renderSide()
   if (v === 'hive') renderHive()
   if (v === 'dash') loadDash()
   if (v === 'skills' || v === 'memory') loadGarden()
   if (v === 'files') loadOutputs()
+  if (v === 'settings') { prefsNote = ''; renderSettings() }
   $('#main').scrollTop = 0
 }
 
@@ -1126,8 +1127,8 @@ const ACT = {
   'out-copy': async el => { const x = OUT.shown[+el.dataset.i]; if (!x) return; try { await navigator.clipboard.writeText(x.kind === 'link' ? x.url : x.abs); toast('Copied') } catch { toast('Could not copy', 'err') } },
   'squad-rename': el => renameSquad(el),
   found: el => foundRun(+el.dataset.i),
-  prefs: () => openPrefs(),
-  'prefs-close': () => $('#prefs').close(),
+  prefs: () => show('settings'),
+  skin: el => pickSkin(el.dataset.id),
   'prefs-check': () => checkNow(),
   'f-mcp-all': () => setMcpOff([]),
   'f-mcp-none': () => CS && setMcpOff(CS.servers.map(s => s.name)),
@@ -1214,34 +1215,58 @@ async function doUpgrade() {
   if (u.inPlace && !confirm(`Upgrade Agent Hive from ${u.current} to ${u.version}?\n\nThe app restarts when the download is done.${n ? ` ${n} running bee${n === 1 ? '' : 's'} will pause and pick up where ${n === 1 ? 'it' : 'they'} left off.` : ''}`)) return
   await call('upgrade')
 }
-// Settings (the gear at the bottom of the sidebar): the version and how new ones arrive
+// ───────── Settings (the gear at the bottom of the sidebar) ─────────
 let prefsNote = ''
-function renderPrefs() {
-  const u = S.update, st = S.settings, busy = u && u.state !== 'available'
+// A bee drawn in a skin other than the one in use, for the previews
+const beeAs = (id, ...a) => { const k = SKIN; SKIN = id; try { return beeSvg(...a) } finally { SKIN = k } }
+function renderSettings() {
+  if (view !== 'settings') return
+  const u = S.update, st = S.settings, busy = u && u.state !== 'available', c = S.colors.length ? S.colors : SKIN_COLORS
   const status = u ? (u.state === 'downloading' ? `Downloading ${esc(u.version)}…` : u.state === 'installing' ? 'Restarting…' : `Version ${esc(u.version)} is out`) : prefsNote || 'You have the latest version'
-  $('#prefs').innerHTML = `
-  <div class="dlg-head">${queenSvg(40)}<div class="grow"><h2 class="round">Settings</h2></div><button type="button" class="btn icon ghost" data-act="prefs-close">${ICON.x}</button></div>
-  <div class="dlg-body">
-    <div class="pref-ver"><div class="grow"><b>Agent Hive ${esc(S.version || '')}</b><div class="sub${u ? ' new' : ''}">${status}</div></div>
-      ${u ? `<button class="btn primary" data-act="upgrade"${busy ? ' disabled' : ''}>${S.canSwap ? 'Upgrade now' : 'Open download page'}</button>` : `<button class="btn" data-act="prefs-check">Check now</button>`}</div>
-    <label class="check"><input type="checkbox" data-pref="autoUpdate" ${st.autoUpdate ? 'checked' : ''} ${S.canSwap ? '' : 'disabled'}><span><b>Install new versions automatically</b><span class="sub">${S.canSwap ? 'Downloads the release, checks that it is signed by the same developer and restarts, once no bee is working.' : 'Not available for this copy: it runs from source or from a place that cannot be replaced.'}</span></span></label>
-    <label class="check"><input type="checkbox" data-pref="updateNotify" ${st.updateNotify !== false ? 'checked' : ''}><span><b>Tell me when a new version is out</b><span class="sub">A notification, once per version. The Upgrade button in the sidebar appears either way.</span></span></label>
-  </div>
-  <div class="dlg-foot"><span class="grow"></span><button type="button" class="btn primary" data-act="prefs-close">Done</button></div>`
+  const skin = ([id, k]) => `<button class="skin${SKIN === id ? ' on' : ''}" data-act="skin" data-id="${id}">
+    <div class="skin-pv">${beeAs(id, c[4], 'happy', 58, false, 'running')}${beeAs(id, c[1], 'grin', 42, false, 'idle')}${beeAs(id, c[2], 'sleep', 42, false, 'sleeping')}${beeAs(id, c[5], 'love', 42)}</div>
+    <div class="skin-nm"><b class="round">${esc(k.name)}</b>${SKIN === id ? `<span class="skin-on">${ICON.check}In use</span>` : ''}</div><div class="sub">${esc(k.about)}</div></button>`
+  const row = (label, sub, ctl) => `<div class="set-row"><div class="grow"><b>${label}</b><div class="sub">${sub}</div></div>${ctl}</div>`
+  const chk = (key, on, label, sub, dis) => `<label class="set-row"><div class="grow"><b>${label}</b><div class="sub">${sub}</div></div><input type="checkbox" class="sw" data-pref="${key}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}></label>`
+  setHtml($('#v-settings'), `
+  <div class="page-head"><div class="grow"><h1 class="round">Settings</h1></div></div>
+  <div class="set-sec"><h3 class="round">Appearance</h3><div class="sub">Who the bees are drawn as, everywhere in the app. Each bee keeps its own colour.</div>
+    <div class="skins">${Object.entries(SKINS).map(skin).join('')}</div></div>
+  <div class="set-sec"><h3 class="round">Daily report and spending</h3>
+    ${row('Daily report', 'The Queen writes up the day at this time.', `<input type="time" data-set="reportTime" value="${esc(st.reportTime || '18:00')}">`)}
+    ${row('Daily budget', 'Bees stop starting new rounds once the day has cost this much. Empty means no limit.', `<span class="set-unit">$<input type="number" data-set="budget" min="0" step="1" placeholder="No limit" value="${st.budget || ''}"></span>`)}</div>
+  <div class="set-sec"><h3 class="round">Sessions</h3>
+    ${row('Compact a session when it is this full', 'A Claude Code bee over this share of its context window is compacted before its next round. With a 1M-token window the share counts against 200k. 0 turns it off.', `<span class="set-unit"><input type="number" data-set="compactAt" min="0" max="95" step="5" value="${st.compactAt || 0}">%</span>`)}
+    ${chk('compactCold', st.compactCold !== false, 'Also compact after a long pause', 'A session over 100k tokens that sat idle for an hour has lost its prompt cache; compacting it first is cheaper than reading all of it again.')}
+    ${row('Model for chores', 'The daily report, the Dreamer and the Gardener use this model.', `<select data-set="choreModel">${[['', 'Default'], ['haiku', 'haiku'], ['sonnet', 'sonnet'], ['opus', 'opus']].map(([v, l]) => `<option value="${v}"${(st.choreModel || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`)}</div>
+  <div class="set-sec"><h3 class="round">Updates</h3>
+    ${row(`Agent Hive ${esc(S.version || '')}`, `<span class="${u ? 'new' : ''}">${status}</span>`, u ? `<button class="btn primary" data-act="upgrade"${busy ? ' disabled' : ''}>${S.canSwap ? 'Upgrade now' : 'Open download page'}</button>` : `<button class="btn" data-act="prefs-check">Check now</button>`)}
+    ${chk('autoUpdate', st.autoUpdate, 'Install new versions automatically', S.canSwap ? 'Downloads the release, checks that it is signed by the same developer and restarts, once no bee is working.' : 'Not available for this copy: it cannot replace itself. Use the download page.', !S.canSwap)}
+    ${chk('updateNotify', st.updateNotify !== false, 'Tell me when a new version is out', 'A notification, once per version. The Upgrade button in the sidebar appears either way.')}</div>`)
 }
-function openPrefs() { prefsNote = ''; renderPrefs(); if (!$('#prefs').open) $('#prefs').showModal() }
+async function pickSkin(id) {
+  if (id === SKIN || !SKINS[id]) return
+  const r = await call('settings', { skin: id })
+  if (r) S.settings = r               // the windows redraw when main says "skin"
+}
+// Every picture of a bee is redrawn in the new skin
+function applySkin(id) {
+  setSkin(id); S.settings.skin = SKIN
+  buildHive(); buildDash(); show(view); renderRoomMeta(); if (R.open && curRoom()) renderRoom()
+}
 async function checkNow() {
-  prefsNote = 'Checking…'; renderPrefs()
+  prefsNote = 'Checking…'; renderSettings()
   const r = await hive.call('checkUpdate')
   if (r && r.error) prefsNote = `Could not check: ${r.error}`; else { prefsNote = ''; S.update = r || null; renderUpdate() }
-  renderPrefs()
+  renderSettings()
 }
-$('#prefs').addEventListener('change', async e => {
-  const k = e.target.dataset.pref
+$('#v-settings').addEventListener('change', async e => {
+  const t = e.target, k = t.dataset.pref || t.dataset.set
   if (!k) return
-  const r = await call('settings', { [k]: e.target.checked })
+  const r = await call('settings', { [k]: t.dataset.pref ? t.checked : t.type === 'number' ? +t.value || 0 : t.value })
   if (r) S.settings = r
-  renderPrefs()
+  if (k === 'reportTime') renderHive()
+  renderSettings()
 })
 let R = { rooms: [], cur: null, open: false, entries: {}, unread: {} }
 let GF = null                                             // new / edit group form
@@ -1623,8 +1648,9 @@ document.addEventListener('dblclick', e => { if (e.target.id === 'room-name' && 
 async function bootRoom() {
   buildRoom()
   R.rooms = S.rooms || []
-  hive.on('update', u => { S.update = u; renderUpdate(); if ($('#prefs').open) renderPrefs() })
-  hive.on('show-settings', () => openPrefs())
+  hive.on('update', u => { S.update = u; renderUpdate(); renderSettings() })
+  hive.on('show-settings', () => show('settings'))
+  hive.on('skin', id => applySkin(id))
   hive.on('engines', list => { S.engines = list })
   renderUpdate()
   hive.on('room-entry', addRoomEntry)
@@ -1647,6 +1673,7 @@ async function loadQueenLine() {
 async function boot() {
   S = await hive.call('init')
   queenBusy = !!S.queenBusy
+  setSkin(S.settings.skin)
   buildHive(); buildDash()
   show('hive')
   loadQueenLine()

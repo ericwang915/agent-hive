@@ -138,6 +138,10 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .bee.a-setup .wing-r { animation: wing-flap-r .5s ease-in-out infinite alternate }
 /* Stopped: still, slightly faded */
 .bee.a-stopped { filter: grayscale(.55); opacity: .78 }
+/* Picture skins: a moving loop brings its own motion, so the drawn bee's bobbing is switched off for it */
+.bee.img.lp .bee-all { animation: none }
+.bee.img.a-stopped { filter: grayscale(.9); opacity: .72 }
+.bee.img.lp.a-sleeping .zzz { display: none }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important } }
 
 /* ── Markdown ── */
@@ -241,7 +245,6 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .cap-row { display: flex; align-items: center; gap: 4px; margin-bottom: 8px }
 .cap-row .today-line { margin-bottom: 0; min-width: 0 }
 .cap-row .btn { margin-right: -6px; color: var(--mute) }
-#prefs { width: min(460px, 92vw) }
 #editor { width: min(820px, 94vw) }
 #editor[open] { display: flex; flex-direction: column; max-height: 90vh }
 #editor .dlg-body { flex: 1; min-height: 0 }
@@ -255,10 +258,28 @@ label.check.off { opacity: .5; cursor: not-allowed }
 .mh-body { border: 1px solid var(--line); border-radius: 11px; padding: 12px 16px; overflow-y: auto; font-size: 13px; background: var(--soft) }
 #editor .ed-ic { color: #5E9B55; display: flex } #editor .ed-ic .ic { width: 26px; height: 26px }
 #editor .dlg-foot .hint { font-size: 12px; color: var(--faint) }
-#prefs .check { align-items: flex-start; gap: 10px }
-#prefs .check input { margin-top: 3px }
-#prefs .sub { display: block; font-size: 12.5px; color: var(--mute); line-height: 1.45; margin-top: 2px }
-#prefs .sub.new { color: var(--clay-ink); font-weight: 600 }
+/* Settings page */
+#v-settings { max-width: 860px }
+.set-sec { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px 8px; margin-bottom: 16px }
+.set-sec h3 { margin: 0 0 2px; font-size: 16px }
+.set-sec .sub { font-size: 12.5px; color: var(--mute); line-height: 1.45; margin-top: 2px }
+.set-sec .sub .new { color: var(--clay-ink); font-weight: 600 }
+.set-row { display: flex; align-items: center; gap: 18px; padding: 13px 0; border-top: 1px solid var(--line) }
+.set-sec h3 + .set-row { margin-top: 12px }
+.set-row input[type=number] { width: 84px } .set-row input[type=time], .set-row select, .set-row input[type=number] { height: 32px }
+.set-unit { display: inline-flex; align-items: center; gap: 6px; color: var(--mute) }
+.set-row input.sw { appearance: none; -webkit-appearance: none; flex: none; width: 36px; min-width: 36px; height: 21px; padding: 0; border: 0; border-radius: 999px; background: var(--line2); position: relative; cursor: pointer; transition: background .15s; margin: 0; accent-color: auto }
+.set-row input.sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: transform .15s }
+.set-row input.sw:checked { background: var(--clay) } .set-row input.sw:checked::after { transform: translateX(15px) } .set-row input.sw:disabled { opacity: .45; cursor: not-allowed }
+label.set-row { cursor: pointer }
+.skins { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 14px 0 12px }
+.skin { text-align: left; background: var(--soft); border: 1.5px solid var(--line); border-radius: 14px; padding: 12px 14px 12px; display: block }
+.skin:hover { border-color: var(--line2); background: var(--card) }
+.skin.on { border-color: var(--clay); background: var(--clay-soft) }
+.skin-pv { display: flex; align-items: flex-end; gap: 4px; height: 80px; padding: 10px 0 8px; overflow: hidden }
+.skin-nm { display: flex; align-items: center; gap: 8px; font-size: 14.5px }
+.skin-on { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--clay-ink) }
+.cap-row .btn.on { color: var(--clay-ink); background: var(--clay-soft) }
 .pref-ver { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft) }
 .today-line { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .cap .bar { height: 4px; background: var(--line2); border-radius: 999px; overflow: hidden }

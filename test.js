@@ -636,7 +636,22 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
   eq(qt.splitSticker('[sticker:ok]'), { text: '', sticker: 'ok' })
   eq(qt.splitSticker('Done.\n[sticker:PARTY]\n[sticker:nope]'), { text: 'Done.\n\n[sticker:nope]', sticker: 'party' })
   eq(Object.keys(require('./common.js').STICKER), qt.STICKERS)
-  assert.ok(require('./common.js').stickerSvg('ok', '#abc').includes('#abc') && require('./common.js').stickerSvg('nope') === '')
+  { // skins: the classic bee is drawn, the others are pictures chosen by the bee's colour, its face and what it is doing
+    const cm = require('./common.js')
+    cm.setSkin('classic'); assert.ok(cm.stickerSvg('ok', '#abc').includes('#abc') && cm.stickerSvg('nope') === '')
+    eq(Object.keys(cm.SKINS).sort(), ['bee', 'classic', 'maid']); eq(cm.SKIN_COLORS.length, 8)
+    eq([cm.skinIdx('#9CC9F0'), cm.skinIdx('#F6C86B'), cm.skinIdx('#9dc8ee')], [1, 5, 1])
+    cm.setSkin('maid')
+    assert.ok(cm.beeSvg('#9CC9F0', 'sad', 44).includes('skins/maid/1/sad.webp'))
+    assert.ok(cm.beeSvg('#9CC9F0', 'happy', 44, false, 'running').includes('skins/maid/1/a-run.webp'))
+    assert.ok(cm.beeSvg('#9CC9F0', 'happy', 20, false, 'idle').includes('skins/maid/1/happy.webp'), 'a small idle bee is a still')
+    assert.ok(cm.beeSvg('#9CC9F0', 'sleep', 20, false, 'sleeping').includes('skins/maid/1/a-sleep.webp'))
+    assert.ok(cm.beeSvg('#9CC9F0', 'sleep', 44, false, 'paused').includes('skins/maid/1/flat.webp'))
+    assert.ok(cm.beeSvg('#9CC9F0', 'happy', 44, false, 'stopped').includes('/happy.webp'))
+    assert.ok(cm.stickerSvg('ok', '#F2A97E').includes('skins/maid/0/happy.webp') && cm.stickerSvg('ok', '#F2A97E').includes('#3FA66B'))
+    cm.setSkin('nope'); assert.ok(cm.beeSvg('#9CC9F0').includes('skins/bee/1/'))
+    cm.setSkin('classic')
+  }
   // Queen dispatches and group mentions never trigger a relay
   eq(relayPlan([A0 = { id: 'A', name: 'W', status: 'idle' }, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'queen' }), [])
   eq(relayPlan([A0, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'room' }), [])
