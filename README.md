@@ -14,9 +14,13 @@ A free, open-source Mac app that turns Claude Code, Codex, Gemini CLI, Antigravi
   <a href="https://github.com/ericwang915/agent-hive/releases/latest"><b>⬇️ Download for Mac</b></a> · <a href="#install">Install</a> · <a href="#what-you-can-do-with-it">Features</a> · <a href="#how-it-compares">How it compares</a> · <a href="#faq">FAQ</a> · <a href="https://ericwang915.github.io/agent-hive/">Website</a> · <a href="README.zh-CN.md">中文</a>
 </p>
 
-<p align="center"><img src="docs/bees.svg" width="860" alt="Seven cartoon bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job"></p>
+<p align="center"><img src="docs/bees.svg" width="860" alt="Seven sticker bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job"></p>
 
 <p align="center"><i>Every agent is a bee with a name, a face and a job. They bob while they work, doze when they are idle,<br>and earn a new look as they climb from Bronze to Master.</i></p>
+
+<p align="center"><img src="docs/skins.svg" width="860" alt="Two rows of eight stickers in the eight bee colours: honey bees on top, anime maids with pigtails below, each with a different face"></p>
+
+<p align="center"><i>Bees by default, maids if you like: pick a skin in Settings → Appearance.</i></p>
 
 ![Agent Hive's honeycomb running a relay team of coding agents: one bee writes, another reviews and sends it back, a third tests](docs/relay.gif)
 

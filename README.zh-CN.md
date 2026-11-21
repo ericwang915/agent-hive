@@ -13,9 +13,13 @@
   <a href="https://github.com/ericwang915/agent-hive/releases/latest"><b>⬇️ 下载 Mac 版</b></a> · <a href="#安装">安装</a> · <a href="#能用它做什么">功能</a> · <a href="#常见问题">常见问题</a> · <a href="README.md">English</a>
 </p>
 
-<p align="center"><img src="docs/bees.svg" width="860" alt="七只卡通蜜蜂排成一排：戴王冠的 Queen，然后是 Hazel、Buzz、Mochi、Puff、Nori 和睡着的 Olive"></p>
+<p align="center"><img src="docs/bees.svg" width="860" alt="七只贴纸风蜜蜂排成一排：戴王冠的 Queen，然后是 Hazel、Buzz、Mochi、Puff、Nori 和睡着的 Olive"></p>
 
 <p align="center"><i>每个 agent 都是一只有名字、有表情、有分工的蜜蜂。干活时上下浮动，闲下来打瞌睡，<br>从青铜一路升到大师，每升一级换一个造型。</i></p>
+
+<p align="center"><img src="docs/skins.svg" width="860" alt="两排贴纸，八种蜜蜂颜色各一个：上排是小蜜蜂，下排是双马尾日漫女仆，表情各不相同"></p>
+
+<p align="center"><i>默认是小蜜蜂，也可以换成女仆：在 Settings → Appearance 里选皮肤。</i></p>
 
 ![Agent Hive 的蜂巢视图里，一支接力小队在工作：一只写代码，一只评审并退回修改，一只跑测试](docs/relay.gif)
 

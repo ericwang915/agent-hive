@@ -41,7 +41,21 @@ nav a:hover { color: var(--clay-ink) }
 .btn.ghost { background: var(--card); color: var(--ink); border-color: var(--line) }
 .sub { margin-top: 12px; font-size: 14px; color: var(--mute) }
 .sub a { color: var(--mute) }
-.bees { display: block; width: 100%; max-width: 860px; margin: 30px auto 4px }
+.hive { display: flex; flex-wrap: wrap; justify-content: center; max-width: 900px; margin: 26px auto 4px }
+.hive figure { flex: 0 0 14.28%; margin: 0; padding: 0 2px 10px; display: flex; flex-direction: column; align-items: center }
+.hive img, .hive svg { display: block; width: 100%; max-width: 118px; height: auto; aspect-ratio: 1 }
+.hive svg .st { display: none }
+.hive b { font-size: 15px; color: var(--honey-ink); line-height: 1.3 }
+.hive span { font-size: 12px; color: var(--mute); line-height: 1.35; text-wrap: balance }
+.note { color: var(--ink2); margin: 0; max-width: 700px } .note.small { font-size: 15px; color: var(--mute); margin-top: 14px }
+.skins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 22px }
+.skin { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px 18px }
+.skin .faces { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; margin-bottom: 8px }
+.skin img { display: block; width: 100%; height: auto; aspect-ratio: 1 }
+.skin b { display: block; font-size: 17px; margin-bottom: 2px }
+.skin b small { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--honey-ink); background: var(--honey-soft); border-radius: 999px; padding: 2px 9px; margin-left: 6px; vertical-align: 2px }
+.skin span { color: var(--ink2); font-size: 15.5px }
+@media (prefers-reduced-motion: reduce) { .hive svg .mv { display: none } .hive svg .st { display: inline } }
 .shot { display: block; width: 100%; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--card) }
 section { padding: 46px 0 }
 h2 { font-size: clamp(25px, 3.6vw, 34px); line-height: 1.2; margin: 0 0 10px; letter-spacing: -.01em; text-wrap: balance }
@@ -63,7 +77,7 @@ h2 { font-size: clamp(25px, 3.6vw, 34px); line-height: 1.2; margin: 0 0 10px; le
 footer { border-top: 1px solid var(--line); margin-top: 30px; padding: 26px 0 40px; text-align: center; color: var(--mute); font-size: 14.5px }
 footer a { color: var(--ink2) }
 @media (max-width: 860px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
-@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr) } .row, .row.flip { grid-template-columns: minmax(0, 1fr); gap: 16px } .row.flip > :first-child { order: 0 } nav a.hide { display: none } section { padding: 32px 0 } }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr) } .row, .row.flip { grid-template-columns: minmax(0, 1fr); gap: 16px } .row.flip > :first-child { order: 0 } nav a.hide { display: none } .hive figure { flex-basis: 25% } .skins { grid-template-columns: minmax(0, 1fr) } section { padding: 32px 0 } }
 </style>
 </head>
 <body>
@@ -71,6 +85,7 @@ footer a { color: var(--ink2) }
   <nav>
     <a class="brand" href="./"><img src="icon.png" alt="">Agent Hive</a>
     <a class="hide" href="#features">Features</a>
+    <a class="hide" href="#skins">Skins</a>
     <a class="hide" href="#install">Install</a>
     <a href="https://github.com/ericwang915/agent-hive">GitHub</a>
   </nav>
@@ -83,7 +98,15 @@ footer a { color: var(--ink2) }
       <a class="btn ghost" href="https://github.com/ericwang915/agent-hive">⭐ Star on GitHub</a>
     </div>
     <div class="sub">macOS 12 or later · <a href="https://github.com/ericwang915/agent-hive/releases/latest/download/Agent-Hive-arm64.dmg">Apple silicon</a> · <a href="https://github.com/ericwang915/agent-hive/releases/latest/download/Agent-Hive-x64.dmg">Intel</a> · signed and notarized by Apple · MIT licensed</div>
-    <img class="bees" src="bees.svg" alt="Seven cartoon bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job">
+    <div class="hive" role="img" aria-label="Seven sticker bees in a row: Queen with a crown, then Hazel, Buzz, Mochi, Puff, Nori and a sleeping Olive, each with a line about its job">
+      <figure><svg viewBox="-5 -7.6 50 50" aria-hidden="true"><image class="mv" href="skins/bee/5/a-idle.webp" x="-5" y="-7.6" width="50" height="50"/><image class="st" href="skins/bee/5/happy.webp" x="-5" y="-7.6" width="50" height="50"/><path transform="translate(20 1.5) scale(.7) translate(-20 -12.5)" d="M13.5 12.5l-1.2-6.2 4.3 3 3.4-4.6 3.4 4.6 4.3-3-1.2 6.2z" fill="#F0A93B" stroke="#B9741A" stroke-width="1.2" stroke-linejoin="round"/></svg><b>Queen</b><span>hands out the work</span></figure>
+      <figure><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/bee/0/happy.webp"><img src="skins/bee/0/a-run.webp" alt="" width="160" height="160"></picture><b>Hazel</b><span>writes the code</span></figure>
+      <figure><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/bee/1/happy.webp"><img src="skins/bee/1/a-run.webp" alt="" width="160" height="160"></picture><b>Buzz</b><span>reviews it</span></figure>
+      <figure><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/bee/4/happy.webp"><img src="skins/bee/4/a-run.webp" alt="" width="160" height="160"></picture><b>Mochi</b><span>runs the tests</span></figure>
+      <figure><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/bee/3/happy.webp"><img src="skins/bee/3/a-idle.webp" alt="" width="160" height="160"></picture><b>Puff</b><span>works at 9 every day</span></figure>
+      <figure><img src="skins/bee/2/love.webp" alt="" width="200" height="200"><b>Nori</b><span>made it to Master</span></figure>
+      <figure><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/bee/7/sleep.webp"><img src="skins/bee/7/a-sleep.webp" alt="" width="160" height="160"></picture><b>Olive</b><span>asleep until needed</span></figure>
+    </div>
   </header>
 
   <img class="shot" src="relay.gif" alt="The honeycomb view while a relay team works: one bee writes, another reviews and sends it back, a third tests" loading="lazy">
@@ -109,6 +132,23 @@ footer a { color: var(--ink2) }
       </div>
       <img class="shot" src="queen.gif" alt="Queen dispatches two bees from a group chat and reports back" loading="lazy">
     </div>
+  </section>
+
+  <section id="skins">
+    <div class="eyebrow">Skins</div>
+    <h2>Bees by default. Maids if you like.</h2>
+    <p class="note">Settings → Appearance changes who your agents are drawn as. Every bee keeps its own colour, has seven faces, and moves while it works, idles, sleeps or hits an error.</p>
+    <div class="skins">
+      <div class="skin">
+        <div class="faces" role="img" aria-label="Eight sticker bees, one per colour, with different faces"><img src="skins/bee/0/grin.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/bee/1/wow.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/bee/2/happy.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/bee/3/love.webp" alt="" width="200" height="200" loading="lazy"><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/bee/4/happy.webp"><img src="skins/bee/4/a-idle.webp" alt="" width="160" height="160" loading="lazy"></picture><img src="skins/bee/5/grin.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/bee/6/flat.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/bee/7/sad.webp" alt="" width="200" height="200" loading="lazy"></div>
+        <b>Honey bee <small>default</small></b><span>The hive’s own bees, drawn as stickers.</span>
+      </div>
+      <div class="skin">
+        <div class="faces" role="img" aria-label="Eight anime maids with pigtails, one hair colour per bee, with different faces"><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/maid/0/happy.webp"><img src="skins/maid/0/a-run.webp" alt="" width="160" height="160" loading="lazy"></picture><img src="skins/maid/1/grin.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/maid/2/wow.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/maid/3/love.webp" alt="" width="200" height="200" loading="lazy"><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/maid/4/happy.webp"><img src="skins/maid/4/a-idle.webp" alt="" width="160" height="160" loading="lazy"></picture><img src="skins/maid/5/happy.webp" alt="" width="200" height="200" loading="lazy"><img src="skins/maid/6/flat.webp" alt="" width="200" height="200" loading="lazy"><picture><source media="(prefers-reduced-motion: reduce)" srcset="skins/maid/7/sleep.webp"><img src="skins/maid/7/a-sleep.webp" alt="" width="160" height="160" loading="lazy"></picture></div>
+        <b>Maid café</b><span>Anime maids, one hair colour per bee.</span>
+      </div>
+    </div>
+    <p class="note small">Prefer it plain? The classic bee Agent Hive started with is still there as a third skin.</p>
   </section>
 
   <section>
