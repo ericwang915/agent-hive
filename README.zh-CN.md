@@ -17,9 +17,9 @@
 
 <p align="center"><i>每个 agent 都是一只有名字、有表情、有分工的蜜蜂。干活时上下浮动，闲下来打瞌睡，<br>从青铜一路升到大师，每升一级换一个造型。</i></p>
 
-<p align="center"><img src="docs/skins.svg" width="860" alt="两排贴纸，八种蜜蜂颜色各一个：上排是小蜜蜂，下排是双马尾日漫女仆，表情各不相同"></p>
+<p align="center"><img src="docs/skins.svg" width="860" alt="两排贴纸，八种蜜蜂颜色各一个：上排是双马尾日漫女仆，下排是穿燕尾服的日漫男仆，表情各不相同"></p>
 
-<p align="center"><i>默认是小蜜蜂，也可以换成女仆：在 Settings → Appearance 里选皮肤。</i></p>
+<p align="center"><i>默认是小蜜蜂，也可以换成女仆或男仆：在 Settings → Appearance 里选皮肤。<br>小蜜蜂、女仆和经典蜜蜂随 App 自带；男仆在 More skins 里点 Install 安装。</i></p>
 
 ![Agent Hive 的蜂巢视图里，一支接力小队在工作：一只写代码，一只评审并退回修改，一只跑测试](docs/relay.gif)
 

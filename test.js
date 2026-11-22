@@ -650,8 +650,39 @@ const g = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf
     assert.ok(cm.beeSvg('#9CC9F0', 'happy', 44, false, 'stopped').includes('/happy.webp'))
     assert.ok(cm.stickerSvg('ok', '#F2A97E').includes('skins/maid/0/happy.webp') && cm.stickerSvg('ok', '#F2A97E').includes('#3FA66B'))
     cm.setSkin('nope'); assert.ok(cm.beeSvg('#9CC9F0').includes('skins/bee/1/'))
+    // extra skins the user installed are read from their own folder, and go away again
+    cm.addSkins([{ id: 'cat', name: 'Cat', about: 'x', loops: ['run'], dir: 'file:///data/skins/cat' }, { id: 'bee', name: 'not this one' }])
+    eq(Object.keys(cm.SKINS).sort(), ['bee', 'cat', 'classic', 'maid']); cm.setSkin('cat')
+    assert.ok(cm.beeSvg('#9CC9F0', 'happy', 44, false, 'running').includes('file:///data/skins/cat/1/a-run.webp') && cm.beeSvg('#9CC9F0', 'happy', 44, false, 'sleeping').includes('cat/1/happy.webp'))
+    eq([cm.skinFallback('file:///data/skins/cat/3/a-run.webp'), cm.skinFallback('skins/maid/0/sad.webp'), cm.skinFallback('skins/bee/0/sad.webp'), cm.skinFallback('x.png')], ['skins/bee/3/a-run.webp', 'skins/bee/0/sad.webp', '', ''])
+    cm.addSkins([]); eq(Object.keys(cm.SKINS).sort(), ['bee', 'classic', 'maid']); assert.ok(cm.beeSvg('#9CC9F0').includes('skins/bee/1/'), 'a removed skin falls back to the bees')
     cm.setSkin('classic')
   }
+  ;(async () => { // skin packs: only a listed skin with the right checksum and nothing but pictures in it gets installed
+    const st = require('./skinstore'), fs = require('fs'), path = require('path'), os = require('os'), { execFileSync } = require('child_process')
+    eq(st.meta({ id: 'cat', name: ' Cat <b>', about: 'a\ncat', loops: ['run', 'fly'] }), { id: 'cat', name: 'Cat  b', about: 'a cat', loops: ['run'] })
+    eq([st.meta({ id: 'maid', name: 'x' }), st.meta({ id: '../x', name: 'x' }), st.meta({ id: 'cat' })], [null, null, null])
+    const sha = 'a'.repeat(64), res = o => ({ ok: true, status: 200, json: async () => o })
+    const cat = await st.catalog(async () => res({ skins: [{ id: 'cat', name: 'Cat', sha256: sha, size: 5, preview: 'https://evil/x', zip: 'https://evil/y' }, { id: 'cat', name: 'Twice', sha256: sha }, { id: 'dog', name: 'Dog', sha256: 'nope' }, { id: 'bee', name: 'Bee', sha256: sha }] }))
+    eq(cat, [{ id: 'cat', name: 'Cat', about: '', loops: [], sha256: sha, size: 5, preview: st.BASE + 'cat.webp' }])
+    eq(await st.catalog(async () => ({ ok: false, status: 404 })), [])
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skin-test-')), root = path.join(tmp, 'root')
+    try {
+      const src = path.join(tmp, 'cat'); fs.cpSync(path.join(__dirname, 'skins', 'maid'), src, { recursive: true })
+      for (let c = 0; c < 8; c++) fs.rmSync(path.join(src, String(c), 'a-error.webp'))
+      fs.writeFileSync(path.join(src, 'skin.json'), JSON.stringify({ id: 'cat', name: 'Cat', about: 'A cat', loops: st.LOOPS }))
+      const zip = path.join(tmp, 'cat.zip'); execFileSync('ditto', ['-c', '-k', '--keepParent', src, zip])
+      const e = { id: 'cat', name: 'Cat', sha256: await st.sha256(zip) }
+      await assert.rejects(st.unpack(zip, { ...e, sha256: sha }, root), /does not match/)
+      await assert.rejects(st.unpack(zip, { ...e, id: 'dog' }, root), /not the skin/)
+      eq((await st.unpack(zip, e, root)).loops, ['run', 'idle', 'sleep'])
+      const got = st.installed(root)
+      eq(got.map(k => [k.id, k.name, k.loops.length]), [['cat', 'Cat', 3]]); assert.ok(got[0].dir.startsWith('file://') && got[0].dir.endsWith('/root/cat'))
+      fs.writeFileSync(path.join(root, 'cat', '0', 'run.sh'), 'x'); eq(st.installed(root), [], 'a skin folder with anything but pictures in it is not used')
+      fs.rmSync(path.join(root, 'cat', '0', 'run.sh')); fs.writeFileSync(path.join(root, 'cat', '0', 'happy.webp'), 'not a picture'); eq(st.installed(root), [])
+      st.remove('cat', root); eq(fs.existsSync(path.join(root, 'cat')), false); assert.throws(() => st.remove('maid', root)); assert.throws(() => st.remove('../x', root))
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })().catch(e => { console.error(e); process.exit(1) })
   // Queen dispatches and group mentions never trigger a relay
   eq(relayPlan([A0 = { id: 'A', name: 'W', status: 'idle' }, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'queen' }), [])
   eq(relayPlan([A0, { id: 'B', name: 'R', status: 'idle', after: { ids: ['A'], prompt: 'x' } }], A0, 'ok', { why: 'room' }), [])

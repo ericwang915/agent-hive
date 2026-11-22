@@ -1093,7 +1093,7 @@ async function restoreTerms() {
 // ───────── Boot ─────────
 async function boot() {
   S = await hive.call('init')
-  setSkin(S.settings.skin)
+  addSkins(S.skins); setSkin(S.settings.skin)
   A = S.agents.find(a => a.id === ID)
   if (!A) { document.body.innerHTML = '<div class="note" style="padding:80px;text-align:center">This bee is gone</div>'; return }
   const TABS = ['chat', 'changes', 'files', 'media'], tab0 = new URLSearchParams(location.search).get('tab')

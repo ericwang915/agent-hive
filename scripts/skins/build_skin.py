@@ -3,10 +3,11 @@
 # and one copy per bee colour with the character's own colour (hair, body) swapped.
 # usage: SKIN_SRC=<folder with one folder per skin> build_skin.py <skin> [face or a-loop names...]
 # The source folder holds, per skin, happy.jpg … sleep.jpg (1:1, white background) and run.mp4, idle.mp4, sleep.mp4, error.mp4.
+# A skin that is not built in (see scripts/skins/pack_skin.js) is written to SKIN_OUT, outside the app's own skins/ folder.
 # Needs Pillow, numpy and ffmpeg.
 import sys, os, glob, subprocess, numpy as np
 from PIL import Image, ImageDraw, ImageFilter
-HERE = os.environ.get('SKIN_SRC') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'); OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'skins')
+HERE = os.environ.get('SKIN_SRC') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'); OUT = os.environ.get('SKIN_OUT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'skins')
 COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']
 MOODS = ['happy', 'grin', 'love', 'wow', 'flat', 'sad', 'sleep']; LOOPS = ['run', 'idle', 'sleep', 'error']
 # band: the hue range (degrees) of the part that takes the bee's colour, and the least saturation / brightness it has
@@ -15,6 +16,16 @@ CFG = {
                band=(300, 356), vband=(300, 363), vsmax=.43, smin=.10, vmin=.45, keep={'love': (.33, .44, .67, .54)}),
   'bee': dict(src='bee', stills={m: m + '.jpg' for m in MOODS}, band=(28, 62), vband=(28, 62), smin=.30, vmin=.62, keep={}),
 }
+# Any other skin is drawn like the maid: the part that takes the bee's colour is pink in the source pictures
+class Cfg(dict):
+    def __missing__(self, k): return {**CFG['maid'], 'src': k, 'stills': {m: m + '.jpg' for m in MOODS}, 'keep': {}, 'smax': .52, **MORE.get(k, {})}
+# smax: anything pinker than the character's own colour (heart eyes, an open mouth) is left as drawn
+MORE = {
+  'cat': dict(band=(300, 366), vband=(300, 366), smin=.08),      # pale pink fur that runs toward red
+  'shiba': dict(band=(340, 369), vband=(340, 369), smin=.25),    # a salmon hoodie; the fur and blush sit just past it
+  'pixel': dict(band=(315, 348), vband=(315, 348), smax=1),      # hot pink, with the heart eyes a redder hue
+}
+CFG = Cfg(CFG)
 SIDE, PAD, FOOT, FPS = 200, 1.25, .06, 8
 
 def hsv(rgb):
@@ -56,7 +67,7 @@ def place_like(im, box, still):                              # a video frame, at
     c = Image.new('RGBA', (C, C), (0, 0, 0, 0)); c.paste(im, (C // 2 - cx, top - y0)); return c.resize((SIDE, SIDE), Image.LANCZOS)
 def tint(im, cfg, target, ref, keep=None, band='band'):
     n = np.asarray(im).copy(); h, s, v = hsv(n[..., :3].astype(float)); lo, hi = cfg[band]
-    m = (((h - lo) % 360) <= hi - lo) & (s <= (cfg.get('vsmax', 1) if band == 'vband' else 1)) & (s >= cfg['smin']) & (v >= cfg['vmin'])
+    m = (((h - lo) % 360) <= hi - lo) & (s <= (cfg.get('vsmax', 1) if band == 'vband' else cfg.get('smax', 1))) & (s >= cfg['smin']) & (v >= cfg['vmin'])
     if keep: H, W = m.shape; x0, y0, x1, y1 = keep; m[int(y0 * H):int(y1 * H), int(x0 * W):int(x1 * W)] = False
     th, ts, tv = [x[0, 0] for x in hsv(np.array([[[int(target[i:i + 2], 16) for i in (1, 3, 5)]]], float))]
     rs, rv = ref
@@ -64,7 +75,7 @@ def tint(im, cfg, target, ref, keep=None, band='band'):
     out = rgb(np.full_like(h, th), s2, v2); n[..., :3][m] = out[m]; return Image.fromarray(n)
 def ref_of(im, cfg):
     n = np.asarray(im); h, s, v = hsv(n[..., :3].astype(float)); lo, hi = cfg['band']
-    m = (h >= lo) & (h <= hi) & (s >= cfg['smin']) & (v >= cfg['vmin']) & (n[..., 3] > 200)
+    m = (((h - lo) % 360) <= hi - lo) & (s >= cfg['smin']) & (v >= cfg['vmin']) & (n[..., 3] > 200)
     return float(np.median(s[m])), float(np.percentile(v[m], 80))
 def save_all(skin, name, frames, cfg, ref, keep=None, band='band'):
     for i, c in enumerate(COLORS):

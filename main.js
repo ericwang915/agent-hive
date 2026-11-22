@@ -11,7 +11,11 @@ const NIGHT = garden.NIGHT
 app.setName('Agent Hive')
 if (process.env.HIVE_DATA) app.setPath('userData', path.resolve(process.env.HIVE_DATA))      // use a separate data directory in tests
 const HOME = os.homedir(), MAX = 40
-const SKIN_IDS = ['bee', 'maid', 'classic']      // the skins common.js knows (SKINS)
+const skinstore = require('./skinstore')
+const SKIN_IDS = skinstore.BUILT_IN      // the skins that come with the app (SKINS in common.js); the others are installed into <data>/skins
+const skinRoot = () => path.join(DIR, 'skins')
+const skinKnown = id => SKIN_IDS.includes(id) || skinstore.installed(skinRoot()).some(k => k.id === id)
+let skinOffer = []      // the catalog as last read, so an install takes its checksum from there and not from the window
 const COLORS = ['#F2A97E', '#9CC9F0', '#A9D8B8', '#B8A4E8', '#F5B8CF', '#FFD27A', '#E8C48F', '#D9C2A3']
 const PERMS = ['ask', 'safe', 'full', 'plan'], MODES = ['manual', 'adhoc', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'event']
 const GATED = { event: 'event run', schedule: 'scheduled run', handoff: 'relay handoff', feedback: 'review feedback', resume: 'auto-resume', queen: 'task from Queen' }
@@ -62,7 +66,7 @@ function load() {
   const now = new Date(), st = s.settings || {}
   state = { agents: Array.isArray(s.agents) ? s.agents : [], feed: (Array.isArray(s.feed) ? s.feed : []).filter(f => !LEGACY_FEED.test(String(f.text))), spend: s.spend || { day: today(), usd: 0, tok: 0 } }
   state.settings = { workspaceRoot: path.join(HOME, 'AgentHive'), reportTime: '18:00', budget: 0, memoryInject: true, compactAt: 50, compactCold: true, choreModel: 'sonnet', autoUpdate: false, updateNotify: true, skin: 'bee', ...st }
-  if (!SKIN_IDS.includes(state.settings.skin)) state.settings.skin = 'bee'
+  if (!skinKnown(state.settings.skin)) state.settings.skin = 'bee'
   if (state.settings.lastReportKey === undefined) state.settings.lastReportKey = slotKey({ mode: 'daily', time: state.settings.reportTime }, now) || ''
   const night = {}
   for (const k in NIGHT) {     // don't run right after the first launch
@@ -1975,7 +1979,7 @@ function ipc() {
   handle('upgrade', () => upgrade())
   handle('init', () => ({
     update: updatePublic(), version: curVersion(), canSwap: canSwap(),
-    agents: state.agents, engines: enginesInfo(), settings: state.settings, max: MAX, home: HOME, names: core.NAMES, colors: COLORS,
+    agents: state.agents, engines: enginesInfo(), settings: state.settings, skins: skinstore.installed(skinRoot()), max: MAX, home: HOME, names: core.NAMES, colors: COLORS,
     hasGh: core.onPath('gh'), presets: core.PRESETS, maxRounds: core.MAX_ROUNDS, teamMax: core.TEAM_MAX, feed: state.feed, spend: (rollSpend(), state.spend), night: NIGHT, queenBusy, rooms: state.rooms.map(roomPublic),
   }))
   handle('isRepo', p => !!repoInfo(absPath(p)))
@@ -2156,6 +2160,22 @@ function ipc() {
   handle('roomDecide', (id, ok) => { const f = asks.get(String(id)); if (f) f(!!ok) })
   handle('roomStop', id => roomStop(needRoom(id)))
   handle('roomNew', id => roomNew(needRoom(id)))
+  // Extra skins: the list is only fetched when the user opens it, and a skin is only downloaded when they ask for it
+  const skinsChanged = () => {
+    const list = skinstore.installed(skinRoot())
+    if (!skinKnown(state.settings.skin)) { state.settings.skin = 'bee'; save() }
+    send('skins', { list, skin: state.settings.skin })
+    for (const w of BrowserWindow.getAllWindows()) if (w !== mainWin && !w.isDestroyed()) w.webContents.reload()
+    return list
+  }
+  handle('skinOffer', async () => { skinOffer = await skinstore.catalog(); return skinOffer })
+  handle('skinInstall', async id => {
+    const e = skinOffer.find(k => k.id === id)
+    if (!e) throw new Error('That skin is not on the list any more. Open the list again')
+    await skinstore.install(e, skinRoot())
+    return skinsChanged()
+  })
+  handle('skinRemove', id => { skinstore.remove(id, skinRoot()); return skinsChanged() })
   handle('settings', patch => {
     const st = state.settings; patch = patch || {}
     if (HHMM.test(patch.reportTime)) { st.reportTime = patch.reportTime; st.lastReportKey = slotKey({ mode: 'daily', time: st.reportTime }, new Date()) || '' }
@@ -2165,7 +2185,7 @@ function ipc() {
     if (patch.compactAt !== undefined) st.compactAt = Math.max(0, Math.min(95, Math.round(+patch.compactAt) || 0))
     if (typeof patch.compactCold === 'boolean') st.compactCold = patch.compactCold
     if (typeof patch.updateNotify === 'boolean') st.updateNotify = patch.updateNotify
-    if (SKIN_IDS.includes(patch.skin) && patch.skin !== st.skin) { st.skin = patch.skin; send('skin', st.skin); for (const w of BrowserWindow.getAllWindows()) if (w !== mainWin && !w.isDestroyed()) w.webContents.reload() }      // a chat window draws every picture anew
+    if (typeof patch.skin === 'string' && patch.skin !== st.skin && skinKnown(patch.skin)) { st.skin = patch.skin; send('skin', st.skin); for (const w of BrowserWindow.getAllWindows()) if (w !== mainWin && !w.isDestroyed()) w.webContents.reload() }      // a chat window draws every picture anew
     if (typeof patch.autoUpdate === 'boolean') { st.autoUpdate = patch.autoUpdate; if (st.autoUpdate) setTimeout(autoUpgrade, 500) }
     if (typeof patch.choreModel === 'string' && core.validModel(patch.choreModel) && patch.choreModel.length <= 80) st.choreModel = patch.choreModel
     save()

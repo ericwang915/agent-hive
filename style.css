@@ -278,6 +278,7 @@ label.set-row { cursor: pointer }
 .skin.on { border-color: var(--clay); background: var(--clay-soft) }
 .skin-pv { display: flex; align-items: flex-end; gap: 4px; height: 80px; padding: 10px 0 8px; overflow: hidden }
 .skin-nm { display: flex; align-items: center; gap: 8px; font-size: 14.5px }
+.store-row .store-pv { flex: none; width: 44px; height: 44px; display: grid; place-items: center; object-fit: contain }
 .skin-on { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--clay-ink) }
 .cap-row .btn.on { color: var(--clay-ink); background: var(--clay-soft) }
 .pref-ver { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft) }

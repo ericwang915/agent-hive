@@ -216,7 +216,7 @@ const engShort = a => ENG_SHORT[a.engine] || String(a.template || '').trim().spl
 function combCell(a, p) {
   const live = a.status === 'running', sched = scheduled(a), mood = a.status === 'error' ? 'sad' : a.status === 'sleeping' || a.status === 'paused' ? 'sleep' : 'happy'
   return `<div class="hx${live ? ' live' : ''}${a.id === combSel ? ' sel' : ''}${a.status === 'error' ? ' bad' : ''}" style="left:${p.x}px;top:${p.y}px;--bee:${esc(a.color)}" data-act="comb-pick" data-id="${a.id}" data-bee="${a.id}" draggable="true" title="${esc(a.name)} · ${esc(subline(a))} · ${esc(a.task)}${sched ? ' · ' + esc(schedText(a.schedule)) : ''}"><div class="hx-in${sched ? ' timed' : ''}">
-    ${beeFace(a, sched ? 32 : 38, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}<span class="hx-eng"> - ${esc(engShort(a))}</span></div><div class="hx-task ell">${esc(a.task)}</div>${sched ? `<div class="hx-when">${ICON.clock}<span class="ell">${esc(schedText(a.schedule))}</span></div>` : ''}${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
+    ${beeFace(a, sched ? 44 : 54, mood, live ? 'running' : '')}<div class="hx-nm round ell">${esc(a.name)}<span class="hx-eng"> - ${esc(engShort(a))}</span></div><div class="hx-task ell">${esc(a.task)}</div>${sched ? `<div class="hx-when">${ICON.clock}<span class="ell">${esc(schedText(a.schedule))}</span></div>` : ''}${pill(a.status)}${a.approvals && a.approvals.length ? '<i class="hx-ask" title="Needs approval"></i>' : ''}</div></div>`
 }
 // The badge on a link is a button: click or right-click it to take that link out
 const combLink = (p, q, sym, label, up, down) => `<div class="hx-link" data-link="${down.id}" data-up="${up.id}" data-act="link-menu" title="${esc(up.name)} → ${esc(down.name)} · click to remove this link" style="left:${(p.x + q.x) / 2 + HX.W / 2}px;top:${(p.y + q.y) / 2 + HX.H / 2}px"><span style="transform:rotate(${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg)">${sym}</span>${label ? `<em>${label}</em>` : ''}</div>`
@@ -1129,6 +1129,9 @@ const ACT = {
   found: el => foundRun(+el.dataset.i),
   prefs: () => show('settings'),
   skin: el => pickSkin(el.dataset.id),
+  'skin-offer': () => skinOffer(),
+  'skin-install': el => skinInstall(el.dataset.id),
+  'skin-remove': el => skinRemove(el.dataset.id),
   'prefs-check': () => checkNow(),
   'f-mcp-all': () => setMcpOff([]),
   'f-mcp-none': () => CS && setMcpOff(CS.servers.map(s => s.name)),
@@ -1231,7 +1234,8 @@ function renderSettings() {
   setHtml($('#v-settings'), `
   <div class="page-head"><div class="grow"><h1 class="round">Settings</h1></div></div>
   <div class="set-sec"><h3 class="round">Appearance</h3><div class="sub">Who the bees are drawn as, everywhere in the app. Each bee keeps its own colour.</div>
-    <div class="skins">${Object.entries(SKINS).map(skin).join('')}</div></div>
+    <div class="skins">${Object.entries(SKINS).map(skin).join('')}</div>
+    ${storeHtml()}</div>
   <div class="set-sec"><h3 class="round">Daily report and spending</h3>
     ${row('Daily report', 'The Queen writes up the day at this time.', `<input type="time" data-set="reportTime" value="${esc(st.reportTime || '18:00')}">`)}
     ${row('Daily budget', 'Bees stop starting new rounds once the day has cost this much. Empty means no limit.', `<span class="set-unit">$<input type="number" data-set="budget" min="0" step="1" placeholder="No limit" value="${st.budget || ''}"></span>`)}</div>
@@ -1244,6 +1248,40 @@ function renderSettings() {
     ${chk('autoUpdate', st.autoUpdate, 'Install new versions automatically', S.canSwap ? 'Downloads the release, checks that it is signed by the same developer and restarts, once no bee is working.' : 'Not available for this copy: it cannot replace itself. Use the download page.', !S.canSwap)}
     ${chk('updateNotify', st.updateNotify !== false, 'Tell me when a new version is out', 'A notification, once per version. The Upgrade button in the sidebar appears either way.')}</div>`)
 }
+// More skins: nothing is fetched until the list is opened, and a skin is downloaded only on Install
+const STORE = { list: null, busy: '', loading: false }
+const fmtMb = n => (n ? (n / 1048576).toFixed(1) + ' MB' : '')
+function storeHtml() {
+  const mine = Object.entries(SKINS).filter(([, k]) => k.extra).map(([id, k]) => ({ id, ...k, have: true }))
+  const more = (STORE.list || []).filter(k => !SKINS[k.id])
+  const row = k => `<div class="set-row store-row">${k.have ? `<span class="store-pv">${beeAs(k.id, SKIN_COLORS[4], 'happy', 40)}</span>` : `<img class="store-pv" src="${esc(k.preview)}" alt="">`}
+    <div class="grow"><b>${esc(k.name)}</b><div class="sub">${esc(k.about)}${!k.have && k.size ? ` · ${fmtMb(k.size)}` : ''}</div></div>
+    ${k.have ? `<button class="btn sm ghost" data-act="skin-remove" data-id="${k.id}" ${STORE.busy ? 'disabled' : ''}>Remove</button>` : `<button class="btn sm" data-act="skin-install" data-id="${k.id}" ${STORE.busy ? 'disabled' : ''}>${STORE.busy === k.id ? 'Installing…' : 'Install'}</button>`}</div>`
+  const note = STORE.loading ? 'Looking…' : STORE.list && !more.length ? (mine.length ? 'You have every skin there is.' : 'No more skins yet. New ones show up here.') : ''
+  return `<div class="set-row"><div class="grow"><b>More skins</b><div class="sub">Not part of the app: a skin is downloaded from the project’s GitHub releases when you install it, and can be removed again.</div></div>
+    <button class="btn sm" data-act="skin-offer" ${STORE.loading ? 'disabled' : ''}>${STORE.list ? 'Look again' : 'See more skins'}</button></div>
+    ${mine.map(row).join('')}${more.map(row).join('')}${note ? `<div class="set-row"><div class="sub">${note}</div></div>` : ''}`
+}
+async function skinOffer() {
+  STORE.loading = true; renderSettings()
+  const r = await call('skinOffer')
+  STORE.loading = false; if (r) STORE.list = r
+  renderSettings()
+}
+async function skinInstall(id) {
+  if (STORE.busy) return
+  STORE.busy = id; renderSettings()
+  const r = await call('skinInstall', id)
+  STORE.busy = ''
+  if (r) { toast('Installed'); await pickSkin(id) }
+  renderSettings()
+}
+async function skinRemove(id) {
+  if (!SKINS[id] || !confirm(`Remove the ${SKINS[id].name} skin?${SKIN === id ? '\n\nThe bees go back to the honey bee skin.' : ''}`)) return
+  await call('skinRemove', id)
+}
+// Main says which extra skins there are now (after an install or a removal) and which skin is in use
+function skinsNow(o) { S.skins = o.list; addSkins(o.list); applySkin(o.skin); renderSettings() }
 async function pickSkin(id) {
   if (id === SKIN || !SKINS[id]) return
   const r = await call('settings', { skin: id })
@@ -1651,6 +1689,7 @@ async function bootRoom() {
   hive.on('update', u => { S.update = u; renderUpdate(); renderSettings() })
   hive.on('show-settings', () => show('settings'))
   hive.on('skin', id => applySkin(id))
+  hive.on('skins', o => skinsNow(o))
   hive.on('engines', list => { S.engines = list })
   renderUpdate()
   hive.on('room-entry', addRoomEntry)
@@ -1673,7 +1712,7 @@ async function loadQueenLine() {
 async function boot() {
   S = await hive.call('init')
   queenBusy = !!S.queenBusy
-  setSkin(S.settings.skin)
+  addSkins(S.skins); setSkin(S.settings.skin)
   buildHive(); buildDash()
   show('hive')
   loadQueenLine()

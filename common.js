@@ -57,6 +57,12 @@ const SKINS = {
 const SKIN_DEFAULT = 'bee'
 let SKIN = SKIN_DEFAULT
 const setSkin = id => { SKIN = SKINS[id] ? id : SKIN_DEFAULT }
+// Extra skins the user installed: the same pictures, read from the data folder (dir) instead of the app
+const addSkins = list => {
+  for (const id of Object.keys(SKINS)) if (SKINS[id].extra) delete SKINS[id]
+  for (const k of list || []) if (k && k.id && !SKINS[k.id]) SKINS[k.id] = { name: k.name, about: k.about, loops: k.loops || [], dir: k.dir, extra: true }
+  if (!SKINS[SKIN]) SKIN = SKIN_DEFAULT
+}
 const LOOP_OF = { running: 'run', setup: 'run', idle: 'idle', sleeping: 'sleep', error: 'error' }, LOOP_MIN = 26      // smaller than this an idle bee is a still picture
 const rgbOf = h => [1, 3, 5].map(i => parseInt(String(h).slice(i, i + 2), 16) || 0)
 const skinIdx = color => {
@@ -69,7 +75,7 @@ const skinIdx = color => {
 // The picture sits on a canvas a quarter larger than the bee's box, so a hop or a swaying pigtail is not cut off
 function skinSvg(id, color, mood, size, crown, anim, extra, rank) {
   const sk = SKINS[id], loop = LOOP_OF[anim], moving = loop && sk.loops.includes(loop) && (size >= LOOP_MIN || loop !== 'idle')
-  const file = `skins/${id}/${skinIdx(color)}/${moving ? 'a-' + loop : mood === 'sleep' && anim === 'paused' ? 'flat' : mood}.webp`
+  const file = `${sk.dir || 'skins/' + id}/${skinIdx(color)}/${moving ? 'a-' + loop : mood === 'sleep' && anim === 'paused' ? 'flat' : mood}.webp`
   const gem = rank ? `<circle cx="34" cy="34" r="4.2" fill="${RANKS[rank].c}" stroke="#fff" stroke-width="1.3"/>` : ''
   return `<svg class="bee img${moving ? ' lp' : ''}${anim ? ' a-' + anim : ''}" width="${size}" height="${size}" viewBox="0 0 40 40" fill="none" aria-hidden="true">
 <g class="bee-all"><image href="${file}" x="-5" y="-7.6" width="50" height="50"/>
@@ -300,5 +306,19 @@ async function call(ch, ...args) {
 // Animation phase: stays continuous across re-renders
 const animT = () => `--t:${Math.round(performance.now())}`
 
+// A picture that does not load is never left as a broken image: a skin's picture falls back to the same face of the
+// built-in honey bee (an installed skin whose files went missing), a store preview to a drawn bee (offline)
+const skinFallback = href => { const m = String(href || '').match(/\/([0-7])\/((?:a-)?[a-z]+\.webp)$/); return m && !/^skins\/bee\//.test(href) ? `skins/bee/${m[1]}/${m[2]}` : '' }
+if (typeof document !== 'undefined') document.addEventListener('error', e => {
+  const t = e.target
+  if (!t || !t.getAttribute || t.dataset.fb) return
+  if (t.tagName === 'image') { const f = skinFallback(t.getAttribute('href')); if (f) { t.dataset.fb = '1'; t.setAttribute('href', f) } }
+  else if (t.tagName === 'IMG' && t.classList.contains('store-pv')) {
+    const k = SKIN, sp = document.createElement('span'); sp.className = 'store-pv'
+    SKIN = 'classic'; try { sp.innerHTML = beeSvg(SKIN_COLORS[4], 'happy', 36) } finally { SKIN = k }
+    t.replaceWith(sp)
+  }
+}, true)
+
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, SKINS, SKIN_COLORS, setSkin, skinIdx, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends, eventText }
+  module.exports = { esc, gentle, STATUS, RANKS, rankOf, beeSvg, SKINS, SKIN_COLORS, setSkin, addSkins, skinFallback, skinIdx, STICKER, stickerSvg, schedText, schedKind, dayMatch, nextRun, whenText, fmtDur, fmtTok, fmtUsd, ago, tilde, resolvePath, isWeekdays, isWeekends, eventText }
